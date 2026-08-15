@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 공통 레이아웃 규칙 — 화면 구현(NS2: P0–P11)이 이 위에 올라간다.
+   **데스크톱 전용**이다(D-12·§2.10): 뷰포트 폭 < 1024px 진입 차단은 P0 가드가 맡고,
+   여기에는 모바일 대응(터치 타깃·키보드 회피·safe-area) 규칙을 두지 않는다. */
+@layer base {
+  body {
+    @apply bg-white text-ink;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  /* 키보드 참여 최소선 — 배경색 있는 버튼 위에서 브라우저 기본 링이 묻힌다. */
+  :focus-visible {
+    outline: 3px solid theme('colors.accent.DEFAULT');
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* 세션은 Zoom 화면공유 중에 진행된다 — 한 화면이 공유 화면에서 통째로 읽혀야 한다. */
+  .screen {
+    @apply mx-auto w-full px-8 py-10;
+    max-width: 760px;
+  }
+  .screen-title {
+    @apply mb-4 text-xl font-semibold;
+  }
+  /* 섹션 카드 — 배경 틴트 없이 테두리만으로 긴 화면(P2 사전설문·P9 평정)을 덩어리로 나눈다. */
+  .sec {
+    @apply rounded-xl border border-hair p-4;
+  }
+  /* 안내 블록 — 놓치면 되돌릴 수 없는 고지 전용. 화면당 1개를 넘기지 않는다. */
+  .callout {
+    @apply rounded-r-lg border-l-4 border-accent bg-accent-soft px-4 py-3;
+  }
+}

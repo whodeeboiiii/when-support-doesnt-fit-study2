@@ -1,0 +1,41 @@
+# 비밀정보 (§2.9 — 환경변수 전용). 백업본(.env.bak 등)까지 함께 막는다.
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+backend/.venv/
+*.egg-info/
+.pytest_cache/
+
+# DEV_MODE 로컬 DB (§2.0)
+*.sqlite3
+dev_local.db*
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# macOS
+.DS_Store
+
+# --- dossier 실값 (§2.9 · CLAUDE.md 자산 원칙) -------------------------------
+# P01–P12의 **실값**은 리포에 커밋하지 않는다. 배포 환경에만 반입한다
+# `<TODO: PH-04 — 반입 절차: Railway volume 또는 환경 주입 방식 확정>`.
+# 커밋 대상은 `dossiers/P00.json`(QA 합성 실값)과 `dossiers/schema_dummy/`뿐이다.
+dossiers/P01.json
+dossiers/P02.json
+dossiers/P03.json
+dossiers/P04.json
+dossiers/P05.json
+dossiers/P06.json
+dossiers/P07.json
+dossiers/P08.json
+dossiers/P09.json
+dossiers/P10.json
+dossiers/P11.json
+dossiers/P12.json

@@ -1,0 +1,79 @@
+{
+  "participant_no": "P10",
+  "version": "p10_schema_dummy_v1",
+  "locked_at": null,
+  "hash": null,
+  "sampling": {
+    "actionability": 1,
+    "mismatch_locus": "content_depth",
+    "notes_ref": "<TODO: PH-03 — P10 dossier 실값 작성·2인 독립 판정·lock (§5.2)>. 이 파일은 스키마 준수 더미이며 전 필드가 placeholder다 (§11.1 더미 자산 원칙). sampling 값도 실제 판정 결과가 아니다."
+  },
+  "ai_visible": {
+    "situation_summary": "<TODO: PH-03 — P10 상황 요약 미착지> 참가자가 당시 대화에서 이미 제공한 상황 정보의 재구성이 이 자리에 들어간다.",
+    "original_request": "<TODO: PH-03 — P10 원 요청 미착지>",
+    "problematic_ai_response": "<TODO: PH-03 — P10 문제된 AI 응답(요약 재구성) 미착지>",
+    "trouble_cue": {
+      "text": "<TODO: PH-03 — P10 trouble cue 실제 표현 미착지>",
+      "form": "explicit"
+    },
+    "prior_evidence": [
+      "<TODO: PH-03 — P10 checkpoint 이전 turn의 support-relevant evidence 미착지>"
+    ]
+  },
+  "researcher_only": {
+    "retrospective_stance": "<TODO: PH-03 — P10 회고 stance 미착지>",
+    "unsent_at_the_time": "<TODO: PH-03 — P10 미전송 생각 미착지>",
+    "mismatch_interpretation": "<TODO: PH-03 — P10 mismatch 해석 미착지>",
+    "original_trajectory": "<TODO: PH-03 — P10 원 trajectory 미착지>",
+    "ideal_response_reported": "<TODO: PH-03 — P10 ideal response 미착지>",
+    "correction_labor_notes": "<TODO: PH-03 — P10 correction labor 기록 미착지>"
+  },
+  "derivation": {
+    "warranted_uptake": "<TODO: PH-03 — P10 현재 evidence가 정당화하는 조정의 서술 미착지>",
+    "prohibited_inference": [
+      "<TODO: PH-03 — P10 금지 추론 목록 미착지 (checker 판정 참조)>"
+    ],
+    "residual_uncertainty": {
+      "text": "<TODO: PH-03 — P10 consequential residual uncertainty 1개 미착지>",
+      "question_stem": "<TODO: PH-03 — P10 question stem 미착지> 지금 어느 쪽이 더 필요하세요?"
+    },
+    "focal_repair_relevant_content": "<TODO: PH-03 — P10 first-opportunity 태깅 기준 내용 미착지 (§7.6)>",
+    "stimuli": {
+      "C1": "<TODO: PH-03 — P10 C1 자극 원문 미착지> 스키마 검증용 더미 문장이다. 이 자리에는 recognition만 담긴 조건 자극이 들어간다.",
+      "C2": "<TODO: PH-03 — P10 C1 자극 원문 미착지> 스키마 검증용 더미 문장이다. 이 자리에는 recognition만 담긴 조건 자극이 들어간다. <TODO: PH-03 — P10 question stem 미착지> 지금 어느 쪽이 더 필요하세요?",
+      "C3": "<TODO: PH-03 — P10 C3 자극 원문 미착지> 스키마 검증용 더미 문장이다. 이 자리에는 동일 recognition에 enacted 조정이 더해진 조건 자극이 들어간다.",
+      "C4": "<TODO: PH-03 — P10 C3 자극 원문 미착지> 스키마 검증용 더미 문장이다. 이 자리에는 동일 recognition에 enacted 조정이 더해진 조건 자극이 들어간다. <TODO: PH-03 — P10 question stem 미착지> 지금 어느 쪽이 더 필요하세요?"
+    },
+    "stimuli_meta": {
+      "C1": {
+        "chars": 85,
+        "sentences": 2,
+        "questions": 0
+      },
+      "C2": {
+        "chars": 141,
+        "sentences": 3,
+        "questions": 1
+      },
+      "C3": {
+        "chars": 101,
+        "sentences": 2,
+        "questions": 0
+      },
+      "C4": {
+        "chars": 157,
+        "sentences": 3,
+        "questions": 1
+      }
+    },
+    "neutral_fallback": "<TODO: PH-03 — P10 neutral fallback 문안 미착지> 말씀해주신 내용은 잘 받았습니다. 지금 말씀해주신 범위 안에서 이어가겠습니다.",
+    "referent_map": [
+      {
+        "patterns": [
+          "그렇게 해줘"
+        ],
+        "proposition": "<TODO: PH-03 — P10 AI1 제안의 명시 명제문 미착지>"
+      }
+    ]
+  }
+}

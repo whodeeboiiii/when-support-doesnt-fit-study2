@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "study2-enactment"
+version = "0.1.0"
+description = "NOT QUITE YES — Study 2 re-grounding enactment 시스템 (구현명세서 v1.0.1)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "sqlalchemy[asyncio]>=2.0.36",
+    # 배포 DB = Supabase Postgres (§2.1)
+    "psycopg[binary]>=3.2",
+    # DEV_MODE=true 로컬 DB (§2.0 — "분기는 LLM 클라이언트·DB URL 두 지점뿐")
+    "aiosqlite>=0.20",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    # §2.9 앱 레벨 Fernet 암호화
+    "cryptography>=43",
+    # OpenRouter 게이트웨이 (§2.2) — 런타임 의존성. 테스트는 fake LLM을 주입한다.
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.setuptools]
+package-dir = { "" = "backend" }
+
+[tool.setuptools.packages.find]
+where = ["backend"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# DB 엔진은 세션 스코프이므로 이벤트 루프도 세션 스코프로 공유한다.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+filterwarnings = ["error::DeprecationWarning:app.*"]
