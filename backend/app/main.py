@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api import admin, branch, health, participant
 from app.assets import dossier_loader, presurvey
 from app.core.config import get_settings
-from app.llm import prompts
+from app.llm import normalization, prompts
 from app.llm.fake_llm import FakeLLM
 from app.llm.gateway.client import NoClientConfigured, set_client
 from app.llm.gateway.openrouter_client import OpenRouterClient
@@ -56,6 +56,7 @@ def validate_assets() -> None:
     """§5.4 기동 게이트. 예외를 삼키지 않는다 — 실패는 기동 실패다."""
     prompts.verify()
     presurvey.validate()
+    normalization.validate_patterns()
     dossiers = dossier_loader.validate_all()
     dummies = sorted(no for no, dossier in dossiers.items() if dossier.is_dummy)
     if dummies:

@@ -181,6 +181,96 @@ tests/{helpers.py,unit/{test_williams,test_state_machine,test_access_code}.py,
 
 ---
 
+## NS3 — AI2 파이프라인 (완료, 2026-08-16)
+
+### 완료 기준 대비 결과
+
+| 기준 (§11.1 NS3 행) | 결과 | 근거 |
+|---|---|---|
+| normalization | ✅ | `llm/normalization.py` + `fixtures/normalization_patterns_v1.json`(부록 A.3) |
+| 규칙 검사 | ✅ | `llm/integrity_rules.py` — R-1·R-2 추가(R-3·R-4는 NS1) |
+| checker | ✅ | `llm/checker.py` — 부록 A.2 3유형, 판정 불능은 `checker_skipped` |
+| 재생성·fallback | ✅ | `llm/ai2_pipeline.py` — 위반 → 재생성 1회 → `neutral_fallback` |
+| audit | ✅ | `generations` 행/시도 + `llm_calls` 1행/호출 (§8.4) |
+| DEV_MODE | ✅ | fake LLM에 fixture 트리거 추가(부록 A.5) — 위반 경로를 실호출 없이 재현 |
+| fixture 러너 | ✅ | `tests/fixture_runner.py`(구 alpha_runner 개조) + `scripts/run_fixtures.py` |
+| **NT-01** AI2 payload 불포함 | ✅ | `tests/integration/test_evidence_boundary.py` — sentinel 주입 후 전 호출 전문 검사 |
+| **NT-02** checker payload 허용 입력 외 불포함 | ✅ | 〃 (허용 4종은 **실제로 들어가는지**도 확인) |
+| **NT-03** normalization 입력 한정 | ✅ | `tests/unit/test_normalization.py` — 시그니처·import·조건 비의존 |
+| **NT-10** branch 격리 | ✅ | 4-branch 연속 fixture — 한 payload에 두 branch 발화 0회, payload 길이 비증가 |
+| **NT-11** 전 조건 동일 + 저장 | ✅ | 네 조건에서 동일 판정, raw/normalized/matched_pattern/referent 저장 |
+| **NT-15** audit 재구성 | ✅ | `reconstruct_path()`가 generations·llm_calls만으로 {정상\|재생성\|fallback} 복원 |
+| fixture 결정론부 100% | ✅ | NT-24 normalization 12건 100%, NT-25 규칙 계층 12건 100% |
+| 테스트 전체 green | ✅ | **444 passed** (기준선 188 → 400 → 444. 불감소) |
+
+추가로 착지: **NT-16**(sidecar 제출 전 AI2 호출 0건 — 상태·저장물 양쪽으로 확인), **NT-24·NT-25**, §9.1의 세 오류 경로(AI2 호출 실패 · checker 실패 · 재생성 후 위반) 전부 표시 가능한 텍스트로 수렴.
+
+### 검증 명령
+
+```bash
+./backend/.venv/bin/python -m pytest -q                    # 444 passed
+DEV_MODE=true ./backend/.venv/bin/python scripts/run_fixtures.py --out reports/fixtures.md
+#   normalization A/B/C = 100%, integrity R/C = 100% → 게이트 통과
+```
+
+### 실서버 확인 (DEV_MODE)
+
+P00 세션에서 `응 그렇게 해줘` 제출 → 정규화 → AI2 → checker까지 실경로로 확인했다.
+
+- `normalizations`: `applied=1, NP-01, R-01` — 지시 대상이 `두 선택지의 장단점을 더 정리해줘`로 복원
+- `generations`: 1행(`attempt=1, final=1, fallback_used=0, rule_violations=[]`, checker 판정 전문 저장)
+- `llm_calls`: `main ok` + `validator ok` 2행 (prompt_hash·파라미터·자산 버전 포함)
+- SQLite 파일 바이트 검사 — User1·sidecar·AI2 평문 **0건**
+
+### 구현물 (NS3 추가분)
+
+```
+backend/app/llm/
+  normalization.py     §6.4 지시 복원 — 입력 {user1, referent_map, patterns}뿐 (NT-03)
+  context.py           §6.2 allowlist 강제 지점 — AiVisible + 문자열만 받는다 (NT-01·NT-02)
+  checker.py           §6.5 LLM checker — 판정 불능은 checker_skipped로 흡수 (§9.1)
+  integrity_rules.py   R-1·R-2 추가 (대조 문자열은 호출부가 넘긴다 — NT-04)
+  ai2_pipeline.py      §6.1 사다리 — 생성 → 규칙 → checker → 재생성 1회 → fallback
+  fake_llm.py          부록 A.5 fixture 트리거 + 규칙표 기반 결정론 checker
+backend/app/api/leakage_sources.py   R-1·R-2 대조 문자열 수집 (llm/ 밖에 두는 이유는 NT-04)
+fixtures/normalization_patterns_v1.json   부록 A.3 패턴 목록 (PH-05)
+fixtures/normalization_fixture_v1.jsonl   §10.1 케이스 12건 (치환·다의·무매칭·부분 인용)
+fixtures/integrity_fixture_v1.jsonl       §10.1 케이스 16건 (R-1–R-4 + checker 3유형 + 정상)
+tests/fixture_runner.py · scripts/run_fixtures.py
+tests/{unit/test_normalization.py, integration/{test_evidence_boundary,test_ai2_pipeline,test_fixture_runner}.py}
+```
+
+### 설계 메모 (읽는 사람이 헷갈릴 지점)
+
+- **R-2를 문자 그대로 적용하면 정상 세션이 깨진다.** 참가자가 두 branch에서 같은 말을 하면 이번 branch의 정상 응답이 "타 branch User1 문자열"로 걸리고, 재생성해도 같은 이유로 걸려 fallback으로 떨어진다. 그래서 두 가지를 좁혔다: ① 이번 호출의 payload에 이미 있는 문자열은 대조에서 뺀다 ② 타 branch **AI2**는 전문 일치로만 보고(같은 정책·같은 dossier에서 나온 문구 겹침은 격리 실패가 아니다), 그 branch의 User1이 이번과 같으면 대조에서 제외한다. 이 조정이 없으면 fallback이 예외 경로가 아니라 상시 경로가 된다.
+- **규칙 위반이 이미 있으면 checker를 부르지 않는다.** 판정 결과(재생성)가 같고 §6.1의 시간 예산을 아낀다. 기록에서는 `rule_violations`가 비어 있지 않고 `checker_result=null`인 상태로 구분된다.
+- **fallback은 별도 `generations` 행**이다(마지막 시도 번호 + `fallback_used=true`). 기각된 초안 원문을 fallback 문안으로 덮어쓰지 않기 위해서다 — 초안이 남아야 "무엇이 왜 기각됐는지"를 보고할 수 있다.
+- **프롬프트는 정책(system)과 자료(user)로 나눠 보낸다.** 이어 붙이면 부록 A.1 전문 그대로다 — 문안은 그대로 두고 채팅 API의 role 구분만 따른다.
+- **재생성 피드백에는 위반 유형만 싣는다.** span에는 sidecar·researcher_only 문자열이 들어 있을 수 있어서, 그대로 돌려보내면 그 자체가 §1.2 위반이다.
+
+---
+
+## 확인 필요 (NS3) — 명세서에 없어 내가 정한 사항
+
+| # | 정한 것 | 명세서 상태 | 반려 시 비용 |
+|---|---|---|---|
+| ① | **R-2 대조 정밀화 2건**(위 설계 메모) | §6.5는 "타 branch User1/AI2 문자열의 등장"만 | 중간 — 되돌리면 정상 세션이 fallback으로 떨어진다 |
+| ② | 규칙 위반 시 checker 생략 | §6.1은 [4]→[5] 순서만 | 낮음 (항상 호출로 바꾸면 최악 경로 +45s) |
+| ③ | fallback을 별도 `generations` 행으로 | §8.1은 `attempt(1/2)`만 | 낮음 |
+| ④ | 누출 대조 최소 길이 8자 | §6.5는 "필드 값 문자열 대조" | 낮음 [파일럿 확정 태그] |
+| ⑤ | `{ai_visible_context}` 렌더 형식(항목별 라벨 5줄) | 부록 A.1은 자리만 지정 | 낮음 |
+| ⑥ | `trouble_cue.form`(explicit/mitigated/…)을 payload에서 제외 | §6.2는 "ai_visible layer(checkpoint 정보)" | 낮음 — 연구자 코딩 라벨이라 제외했다 |
+| ⑦ | 프롬프트를 system/user로 분할 | 부록 A.1은 한 덩어리 | 낮음 (이어 붙이면 원문 동일) |
+| ⑧ | `referent_id` 형식 `R-01` / `R-01+R-02`, 병기 연결자 `, ` | §5.2에 id 필드 없음, §8.1은 값을 요구 | 낮음 |
+| ⑨ | 재생성 안내 문안 [제안] | §6.5는 "위반 유형 피드백 포함"만 | 낮음 |
+| ⑩ | A.3 패턴의 정규식화(공백 유연) + 패턴 자산 버전 교차 검증 | 부록 A.3은 "정규식 취지" | 낮음 `<TODO: PH-05>` |
+| ⑪ | checker 판정에서 `violations`를 `pass`보다 권위로 | 부록 A.2는 둘 다 출력 | 낮음 |
+| ⑫ | checker 판정 불능을 **통과**로 취급 | §9.1은 "규칙 계층만으로 판정"이라고만 | 낮음 |
+| ⑬ | `leakage_sources`의 복호화 | §2.9는 복호화 지점 2곳(콘솔·export) | 중간 — R-1·R-2가 평문 대조를 요구하므로 규칙 자체가 세 번째 지점을 만든다 |
+| ⑭ | fake LLM fixture 트리거 토큰 `[[fixture:…]]` | 부록 A.5는 "트리거 문자열"만 | 낮음 |
+
+---
+
 ## 확인 필요 (NS2) — 명세서에 없어 내가 정한 사항
 
 NS2에서 명세서가 값을 고정하지 않은 지점이다. **①–③이 연구 의미와 닿아 있고 나머지는 구현 관례**다. 전부 되돌리기 쉬운 상태다.
@@ -231,19 +321,22 @@ NS1을 진행하기 위해 필요했지만 명세서가 값을 고정하지 않�
 - `PH-04` 실값 배포 반입 절차(Railway volume/환경 주입) — 로더는 이미 실값 우선으로 찾는다.
 - `PH-01` 사전설문 **문항 원문·번역** — 구조·로더·계약 테스트는 NS2에서 착지했다. 원문만 넣으면 된다.
 - `PH-02` P10에서 sidecar 비표시 — 현재 비표시로 구현(PI 승인 대상).
-- `PH-05` normalization 패턴 목록, `PH-IRB-1~7` 문안 — NS3·NS4에서 착지.
+- `PH-05` normalization 패턴 **보강 확정** — 부록 A.3의 NP-01~03 초판이 NS3에서 자산으로 들어갔다. 파일럿에서 1회 보강한다.
+- `PH-IRB-1~7` 문안 — NS4·IRB 제출 시 착지.
+- 부록 A.1·A.2 프롬프트 문안의 **PI 승인·lock** — 현재 `prompts/prompt_config_v1.json`은 [제안] 상태다(§1.4).
+- `[확인 4]` integrity checker 실모델 실행 시점·비용 — `scripts/run_fixtures.py --real`이 준비됐다(§10.1 "QA 직전 1회").
 - `[확인 1·2]` 모델 슬러그(`anthropic/claude-opus-4.8`·`openai/gpt-5.4`) 가용성과 provider 고정 문법 — 실호출 전 확인. DEV_MODE에서는 불요.
 - P00b(낮은 actionability 리허설 변형, 부록 A.6 "선택") 미작성.
 - SS90(연구자 abort)·SS91(dropout)은 **상태머신·화면까지만** 있고 API·콘솔은 NS4다. `POST /admin/sessions/{id}/{flag,abort,dropout}`·모니터·review·export 미구현.
-- `tests/alpha_runner.py` 개조는 NS3(§10.1 fixture 러너)로 이월.
 
-## 다음 단계 — NS3 (AI2 파이프라인)
+## 다음 단계 — NS4 (콘솔·마감)
 
-완료 기준(§11.1): NT-01–NT-03·NT-10·NT-11·NT-15 통과, fixture 결정론부 100%.
+완료 기준(§11.1): 부록 D.1 리허설 완료, Definition of Done 전 항목.
 
-1. `llm/normalization.py` — §6.4 규칙 기반 지시표현 치환 + `fixtures/normalization_patterns_v1.json` `<TODO: PH-05>` (NT-11·NT-03)
-2. `llm/context.py` — §6.2 입력 allowlist 3종만으로 payload 조립. 필드 주입 fixture 전수 검사(NT-01·NT-02·NT-10)
-3. `llm/ai2_pipeline.py` 교체 — MAIN 호출 → 규칙 R-1~R-4 → checker → 재생성 1회 → neutral fallback (§6.5·§6.6)
-4. `llm/integrity_rules.py`에 R-1·R-2 추가, `llm/checker.py` 신설
-5. `generations`·`llm_calls`만으로 경로 복원(NT-15), sidecar 제출 전 호출 0건(NT-16 시간 순서 fixture)
-6. `tests/alpha_runner.py` 개조 — normalization·integrity fixture 러너(§10.1), 결정론부 100%
+1. **R1 세션 관리** — 참가자 목록·sequence 표시, 세션 생성·코드 발급(NS2 API 재사용), SS91 처리, dossier lock 상태, `GET /costs`(§2.8 usage 합산)
+2. **R2 라이브 모니터** — 3s 폴링, transcript·이벤트 스트림, flag(non-blocking) · abort(SS90) — NT-26
+3. **R3 review 뷰** — P10과 같은 4열 + sidecar·평정·flag·researcher_only(콘솔 전용 — `dossier_private`) 열람
+4. **R4 dossier·자극 뷰어** — 3층·AI1 4종·fallback·referent_map, hash·lock 시각
+5. **export** — `analysis/export_trajectory.py`·`tagging_flags.py`: participant × condition trajectory + first_opportunity·carryover 플래그, 자유 텍스트 열 opt-in 분리 (NT-30)
+6. 복호화 audit(NT-28) · 콘솔 전 행위 audit(NT-26) · 번들 비밀 0건 실측(NT-13)
+7. 부록 D.1 QA 리허설(P00) — 4 branch × 종결 3종, 재접속·코드 재발급·중복 제출·flag·abort 각 1회

@@ -9,8 +9,9 @@
   정상 경로를 돌아야 하기 때문이다.
 - checker(`integrity_checker`): `{"violations": [], "pass": true}` 결정론 JSON.
 
-⚠ 부록 A.5의 "fixture 트리거 문자열로 위반 유형 재현"은 NS3(§10.1 integrity fixture)에서
-`stub()` 위에 얹는다. NS1은 정상 경로 응답과 장애 주입(`fail()`)까지만 제공한다.
+부록 A.5의 "fixture 트리거 문자열로 위반 유형 재현"도 여기 있다(§10.1). User1에 `[[fixture:…]]`
+토큰이 들어오면 해당 위반을 가진 결정론 초안을 낸다 — 위반 경로(재생성·fallback)를 실호출 없이
+끝까지 태우기 위해서다. checker 역할은 초안에서 **규칙표 문구**를 찾아 결정론 JSON을 낸다.
 """
 
 from __future__ import annotations
@@ -27,7 +28,41 @@ from app.llm.prompts import AI2_PROMPT_KEY, CHECKER_PROMPT_KEY
 _CONTEXT_BLOCK = "[대화 맥락]"
 _MESSAGE_BLOCK = "[사용자 메시지]"
 
+_DRAFT_BLOCK = "[AI 응답 초안]"
+
 _CHECKER_PASS = json.dumps({"violations": [], "pass": True}, ensure_ascii=False)
+
+#: 부록 A.5 — fixture 트리거. User1 텍스트에 이 토큰이 있으면 해당 위반 초안을 낸다.
+FIXTURE_TOKEN = "[[fixture:{name}]]"
+
+#: 트리거별 결정론 초안. 규칙 계층(R-3·R-4)과 checker(부록 A.2 3유형)를 모두 재현한다.
+FIXTURE_DRAFTS: dict[str, str] = {
+    "clean": "말씀하신 범위 안에서 다음 내용을 이어가겠습니다.",
+    # R-3 — 질문 2개(상한 1개)
+    "questions_2": "어떤 쪽이 더 필요하세요? 아니면 다른 방식이 좋을까요?",
+    # R-4 — 길이 상한 초과
+    "too_long": "같은 내용을 길게 반복합니다. " * 80,
+    # checker — expansion
+    "expansion": "말씀하신 내용을 받아 6개월 커리어 계획을 새로 정리해 드리겠습니다.",
+    # checker — unsupported_inference
+    "unsupported_inference": "많이 불안하신 것 같아요. 정서적인 지지가 필요하신 상태로 보입니다.",
+    # checker — correction_ignored
+    "correction_ignored": "요청하신 것과 별개로 앞서 드린 장기 계획을 계속 진행하겠습니다.",
+}
+
+#: checker 결정론 규칙표 — 초안에 이 문구가 있으면 해당 유형을 보고한다.
+CHECKER_SIGNALS: dict[str, str] = {
+    "expansion": "6개월 커리어 계획",
+    "unsupported_inference": "많이 불안하신 것 같아요",
+    "correction_ignored": "앞서 드린 장기 계획을 계속",
+}
+
+
+def fixture_token(name: str) -> str:
+    """fixture·테스트가 User1에 심는 트리거 문자열."""
+    if name not in FIXTURE_DRAFTS:
+        raise KeyError(f"알 수 없는 fixture 트리거: {name!r}")
+    return FIXTURE_TOKEN.format(name=name)
 
 
 def _block(text: str, name: str) -> str:
@@ -44,16 +79,37 @@ def _default_ai2(request: LLMRequest) -> str:
     """규칙을 지키는 AI2 응답의 모사 — 새 추론 없이 받은 내용만 되짚는다.
 
     질문을 만들지 않는다(R-3 통과). 새 주제로 확장하지 않는다(checker `expansion` 미해당).
+    단, User1에 fixture 트리거가 있으면 해당 위반 초안을 낸다(부록 A.5).
     """
     joined = f"{request.system}\n{request.user}"
+    for name in FIXTURE_DRAFTS:
+        if FIXTURE_TOKEN.format(name=name) in joined:
+            return FIXTURE_DRAFTS[name]
+
     message = _block(joined, _MESSAGE_BLOCK) or _block(joined, _CONTEXT_BLOCK)
     echo = _first_sentence(message)
     tail = f" 말씀하신 부분({echo})은 그대로 두고 이어가겠습니다." if echo else ""
     return f"말씀해주신 내용을 그대로 받아서 다음 응답을 이어갑니다.{tail}"
 
 
-_DYNAMIC_DEFAULTS = {AI2_PROMPT_KEY: _default_ai2}
-_STATIC_DEFAULTS = {CHECKER_PROMPT_KEY: _CHECKER_PASS}
+def _default_checker(request: LLMRequest) -> str:
+    """규칙표 기반 결정론 JSON (부록 A.5·A.2).
+
+    초안 블록만 본다 — 맥락·User1에 같은 문구가 있어도 위반이 아니다(위반은 **AI 출력**의
+    성질이다).
+    """
+    draft = _block(f"{request.system}\n{request.user}", _DRAFT_BLOCK)
+    violations = [
+        {"type": violation_type, "span": signal, "rationale": "fake checker 규칙표 일치"}
+        for violation_type, signal in CHECKER_SIGNALS.items()
+        if signal in draft
+    ]
+    if not violations:
+        return _CHECKER_PASS
+    return json.dumps({"violations": violations, "pass": False}, ensure_ascii=False)
+
+
+_DYNAMIC_DEFAULTS = {AI2_PROMPT_KEY: _default_ai2, CHECKER_PROMPT_KEY: _default_checker}
 
 
 class FakeLLM:
@@ -102,10 +158,8 @@ class FakeLLM:
             if isinstance(value, Exception):
                 raise value
             text = value
-        elif request.prompt_key in _DYNAMIC_DEFAULTS:
-            text = _DYNAMIC_DEFAULTS[request.prompt_key](request)
         else:
-            text = _STATIC_DEFAULTS[request.prompt_key]
+            text = _DYNAMIC_DEFAULTS[request.prompt_key](request)
         return LLMResponse(
             text=text,
             provider_reported_model=f"fake/{request.role}",

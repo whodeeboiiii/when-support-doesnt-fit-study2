@@ -18,11 +18,11 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.api import store
+from app.api import leakage_sources, store
 from app.api.deps import CurrentSession, DbSession, require_active
 from app.api.participant import open_branch
 from app.api.state_payload import build_state
-from app.assets import rating_items, screen_copy
+from app.assets import dossier_loader, rating_items, screen_copy
 from app.core.idempotency import is_replay_b
 from app.core.state_machine import (
     BState,
@@ -34,7 +34,7 @@ from app.core.state_machine import (
     b_state_after_sidecar,
     has_ai2,
 )
-from app.llm import ai2_pipeline
+from app.llm import ai2_pipeline, normalization
 from app.models import tables
 from app.security import fernet
 
@@ -103,14 +103,26 @@ async def submit_user1(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "답장하지 않는 선택에는 본문이 없습니다")
 
     if text:
+        # §8.3-1 — 저장 + normalization을 **제출 시점에** 끝낸다(동기, <100ms). AI2 호출은
+        # sidecar 제출 뒤에만 일어나므로(§0.4 · NT-16) 여기서 미리 생성하지 않는다.
+        dossier = dossier_loader.load(session.participant_no)
+        result = normalization.normalize(text, dossier.derivation.referent_map)
         db.add(
             tables.Turn(
                 branch_id=branch.id,
                 role="user1",
                 text=fernet.encrypt(text),
-                # `<TODO: NS3 — §6.4 referential normalization 결과를 text_normalized에 저장>`
-                text_normalized=None,
+                # 정규화본 = 실제로 payload에 실릴 문자열(부록 A.3 형식, 원문 병기).
+                text_normalized=fernet.encrypt(result.text),
                 submitted_at=_now(),
+            )
+        )
+        db.add(
+            tables.Normalization(
+                branch_id=branch.id,
+                applied=result.applied,
+                matched_pattern_id=result.matched_pattern_id,
+                referent_id=result.referent_id,
             )
         )
     branch.user1_disposition = disposition.value
@@ -194,30 +206,35 @@ async def run_ai2(
         # 새로고침·중복 요청 — **재생성 0건**(§8.3-4 · NT-08).
         return await _reply(db, session, replayed=True)
 
+    dossier = dossier_loader.load(session.participant_no)
     user1 = await store.turn(db, branch.id, "user1")
-    outcome = await ai2_pipeline.generate(
+    normalized = (
+        fernet.decrypt(user1.text_normalized) if user1 and user1.text_normalized else ""
+    )
+    # R-1·R-2 대조 문자열 — **판정에만** 쓰이고 어떤 프롬프트에도 실리지 않는다(§6.5).
+    forbidden = await leakage_sources.collect(
+        db,
+        session_id=session.id,
         participant_no=session.participant_no,
-        user1_text=fernet.decrypt(user1.text) if user1 and user1.text else "",
-    )
-    generation = tables.Generation(
         branch_id=branch.id,
-        attempt=outcome.attempt,
-        output_text=fernet.encrypt(outcome.text),
-        rule_violations=outcome.rule_violations,
-        checker_result=outcome.checker_result,
-        checker_skipped=outcome.checker_skipped,
-        fallback_used=outcome.fallback_used,
-        final=True,
     )
-    db.add(generation)
-    await db.flush()
+    outcome = await ai2_pipeline.run(
+        db,
+        branch_id=branch.id,
+        # §6.2 allowlist — ai_visible 층과 정규화본 User1뿐이다. dossier 전체를 넘기지 않는다.
+        ai_visible=dossier.ai_visible,
+        user1_normalized=normalized,
+        neutral_fallback=dossier.derivation.neutral_fallback,
+        prohibited_inference=dossier.derivation.prohibited_inference,
+        forbidden=forbidden,
+    )
     db.add(
         tables.Turn(
             branch_id=branch.id,
             role="ai2",
             text=fernet.encrypt(outcome.text),
             rendered_at=_now(),
-            generation_id=generation.id,
+            generation_id=outcome.generation_id,
         )
     )
     # b_state는 B4에 머문다 — 표시가 끝나고 참가자가 진행할 때 `POST /advance`가 B5로 옮긴다.
