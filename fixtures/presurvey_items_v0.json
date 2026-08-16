@@ -1,0 +1,150 @@
+{
+  "version": "presurvey_items_v0",
+  "_note": "구현명세서 §4.2·§7.1 사전설문 자산 **placeholder**. <TODO: PH-01 — 문항 원문·번역 확정(O-8)>. 구조(문항 수·유형·섹션)만 먼저 세우고 원문은 착지 시 교체한다. 이 파일의 `_note`·`reverse`·`section`·`id`는 참가자 payload로 내려가지 않는다(NT-05).",
+  "sections": {
+    "ai_use_frequency": "① 생성형 AI 전반·영역별 사용 빈도",
+    "misfit_response": "② AI가 빗나갔을 때의 평소 대응",
+    "study_disclosure": "③ study-specific disclosure 2문항",
+    "ddi_excerpt": "④ DDI 발췌 4문항 (validated short form 아님 — 기술 전용)"
+  },
+  "items": [
+    {
+      "id": "ai_use_freq_overall",
+      "section": "ai_use_frequency",
+      "type": "single_choice",
+      "text": "<TODO: PH-01 — 생성형 AI 전반 사용 빈도 문항 원문>",
+      "options": [
+        { "value": "ph_1", "label": "<TODO: PH-01 — 빈도 선택지 1>" },
+        { "value": "ph_2", "label": "<TODO: PH-01 — 빈도 선택지 2>" },
+        { "value": "ph_3", "label": "<TODO: PH-01 — 빈도 선택지 3>" },
+        { "value": "ph_4", "label": "<TODO: PH-01 — 빈도 선택지 4>" },
+        { "value": "ph_5", "label": "<TODO: PH-01 — 빈도 선택지 5>" }
+      ],
+      "reverse": false,
+      "_note": "전반 빈도. 영역별 4문항과 같은 척도를 쓴다."
+    },
+    {
+      "id": "ai_use_freq_personal_concern",
+      "section": "ai_use_frequency",
+      "type": "single_choice",
+      "text": "<TODO: PH-01 — 개인 고민 영역 사용 빈도 문항 원문>",
+      "options": [
+        { "value": "ph_1", "label": "<TODO: PH-01 — 빈도 선택지 1>" },
+        { "value": "ph_2", "label": "<TODO: PH-01 — 빈도 선택지 2>" },
+        { "value": "ph_3", "label": "<TODO: PH-01 — 빈도 선택지 3>" },
+        { "value": "ph_4", "label": "<TODO: PH-01 — 빈도 선택지 4>" },
+        { "value": "ph_5", "label": "<TODO: PH-01 — 빈도 선택지 5>" }
+      ],
+      "reverse": false,
+      "_note": "논문 초안 §7.4의 영역 ①"
+    },
+    {
+      "id": "ai_use_freq_emotion",
+      "section": "ai_use_frequency",
+      "type": "single_choice",
+      "text": "<TODO: PH-01 — 정서 영역 사용 빈도 문항 원문>",
+      "options": [
+        { "value": "ph_1", "label": "<TODO: PH-01 — 빈도 선택지 1>" },
+        { "value": "ph_2", "label": "<TODO: PH-01 — 빈도 선택지 2>" },
+        { "value": "ph_3", "label": "<TODO: PH-01 — 빈도 선택지 3>" },
+        { "value": "ph_4", "label": "<TODO: PH-01 — 빈도 선택지 4>" },
+        { "value": "ph_5", "label": "<TODO: PH-01 — 빈도 선택지 5>" }
+      ],
+      "reverse": false,
+      "_note": "논문 초안 §7.4의 영역 ②"
+    },
+    {
+      "id": "ai_use_freq_relationship",
+      "section": "ai_use_frequency",
+      "type": "single_choice",
+      "text": "<TODO: PH-01 — 관계 영역 사용 빈도 문항 원문>",
+      "options": [
+        { "value": "ph_1", "label": "<TODO: PH-01 — 빈도 선택지 1>" },
+        { "value": "ph_2", "label": "<TODO: PH-01 — 빈도 선택지 2>" },
+        { "value": "ph_3", "label": "<TODO: PH-01 — 빈도 선택지 3>" },
+        { "value": "ph_4", "label": "<TODO: PH-01 — 빈도 선택지 4>" },
+        { "value": "ph_5", "label": "<TODO: PH-01 — 빈도 선택지 5>" }
+      ],
+      "reverse": false,
+      "_note": "논문 초안 §7.4의 영역 ③"
+    },
+    {
+      "id": "ai_use_freq_decision",
+      "section": "ai_use_frequency",
+      "type": "single_choice",
+      "text": "<TODO: PH-01 — 의사결정 영역 사용 빈도 문항 원문>",
+      "options": [
+        { "value": "ph_1", "label": "<TODO: PH-01 — 빈도 선택지 1>" },
+        { "value": "ph_2", "label": "<TODO: PH-01 — 빈도 선택지 2>" },
+        { "value": "ph_3", "label": "<TODO: PH-01 — 빈도 선택지 3>" },
+        { "value": "ph_4", "label": "<TODO: PH-01 — 빈도 선택지 4>" },
+        { "value": "ph_5", "label": "<TODO: PH-01 — 빈도 선택지 5>" }
+      ],
+      "reverse": false,
+      "_note": "논문 초안 §7.4의 영역 ④"
+    },
+    {
+      "id": "misfit_usual_response",
+      "section": "misfit_response",
+      "type": "multi_choice",
+      "text": "<TODO: PH-01 — AI가 빗나갔을 때의 평소 대응 문항 원문>",
+      "options": [
+        { "value": "re_explain_same_chat", "label": "<TODO: PH-01 — 같은 대화에서 다시 설명한다>" },
+        { "value": "new_chat", "label": "<TODO: PH-01 — 새 채팅을 시작한다>" },
+        { "value": "other_ai", "label": "<TODO: PH-01 — 다른 AI를 쓴다>" },
+        { "value": "human", "label": "<TODO: PH-01 — 사람에게 묻는다>" },
+        { "value": "stop", "label": "<TODO: PH-01 — 그만둔다>" }
+      ],
+      "reverse": false,
+      "_note": "선택지 코드는 §4.2 본문의 5종(같은 대화 재설명/새 채팅/다른 AI/사람/중단)에 대응. **§4.8 downstream 7코드와는 다른 축이다** — 혼동 금지."
+    },
+    {
+      "id": "disclosure_1",
+      "section": "study_disclosure",
+      "type": "likert_1_7",
+      "text": "<TODO: PH-01 — study-specific disclosure 문항 1 원문>",
+      "reverse": false,
+      "_note": "study-specific. validated scale 아님."
+    },
+    {
+      "id": "disclosure_2",
+      "section": "study_disclosure",
+      "type": "likert_1_7",
+      "text": "<TODO: PH-01 — study-specific disclosure 문항 2 원문>",
+      "reverse": true,
+      "_note": "역채점 예시 자리 — 역채점 메타가 참가자 payload로 새지 않는지 NT-05가 본다."
+    },
+    {
+      "id": "ddi_1",
+      "section": "ddi_excerpt",
+      "type": "likert_1_7",
+      "text": "<TODO: PH-01 — DDI 발췌 문항 1 원문·번역>",
+      "reverse": false,
+      "_note": "DDI 발췌 4문항 — validated short form이 아니며 기술 전용(§4.2)."
+    },
+    {
+      "id": "ddi_2",
+      "section": "ddi_excerpt",
+      "type": "likert_1_7",
+      "text": "<TODO: PH-01 — DDI 발췌 문항 2 원문·번역>",
+      "reverse": false,
+      "_note": "DDI 발췌"
+    },
+    {
+      "id": "ddi_3",
+      "section": "ddi_excerpt",
+      "type": "likert_1_7",
+      "text": "<TODO: PH-01 — DDI 발췌 문항 3 원문·번역>",
+      "reverse": true,
+      "_note": "DDI 발췌"
+    },
+    {
+      "id": "ddi_4",
+      "section": "ddi_excerpt",
+      "type": "likert_1_7",
+      "text": "<TODO: PH-01 — DDI 발췌 문항 4 원문·번역>",
+      "reverse": false,
+      "_note": "DDI 발췌"
+    }
+  ]
+}

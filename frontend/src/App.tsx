@@ -1,53 +1,97 @@
 /**
- * 앱 셸 (NS1 스캐폴드).
+ * 앱 셸 — 서버 상태 → 화면 (구현명세서 §1.3 · §3.5 · §2.10).
  *
- * 클라이언트 라우터를 두지 않는다: 상태는 서버가 소유하고(§1.3·§3.5), 화면 선택은 `GET /state`가
- * 알려준 SS·B 상태로 한다. 그 셸은 NS2에서 P0–P11과 함께 붙는다.
+ * **클라이언트 라우터가 없다.** URL은 하나이고, 어느 화면을 그릴지는 `GET /state`가 알려준 SS·B
+ * 상태가 정한다. 새로고침·뒤로가기가 연구 상태를 흔들 수 없는 구조다(§3.5 · NT-08).
  *
- * 지금은 기동 확인용 화면만 있다 — 백엔드 `/api/health`를 한 번 부르고 결과를 보여준다.
+ * 데스크톱 가드(§2.10 · NT-19): 뷰포트 폭이 1024px 미만이면 어떤 화면도 그리지 않는다. 모바일
+ * 대응 CSS를 쓰지 않기로 한 이상(D-12), 좁은 화면에서 "어떻게든 보이게" 두면 자극 표시 조건이
+ * 참가자마다 달라진다.
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { ApiError, AppState, api } from './api'
+import { DESKTOP_ONLY, MIN_VIEWPORT_WIDTH, RESTORING } from './copy'
+import { Chat, Ai2, Downstream, Ratings, Reentry, Sidecar } from './screens/Branch'
+import { Checkpoint, Consent, Presurvey } from './screens/Intro'
+import Join from './screens/Join'
+import { CrossReview, Debrief, Ended } from './screens/Wrap'
 
-interface Health {
-  status: string
-  study_version: string
-  dev_mode: boolean
-  dossiers: { loaded: number; schema_dummy: string[]; locked: string[] }
+function DesktopGuard() {
+  return (
+    <div className="screen">
+      <p role="alert">{DESKTOP_ONLY}</p>
+    </div>
+  )
+}
+
+function useViewportGuard(): boolean {
+  const [tooNarrow, setTooNarrow] = useState(() => window.innerWidth < MIN_VIEWPORT_WIDTH)
+  useEffect(() => {
+    const onResize = () => setTooNarrow(window.innerWidth < MIN_VIEWPORT_WIDTH)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  return tooNarrow
 }
 
 export default function App() {
-  const [health, setHealth] = useState<Health | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [state, setState] = useState<AppState | null>(null)
+  const [loading, setLoading] = useState(true)
+  const tooNarrow = useViewportGuard()
 
-  useEffect(() => {
-    fetch('/api/health')
-      .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
-      .then(setHealth)
-      .catch((reason) => setError(String(reason)))
+  const restore = useCallback(async () => {
+    try {
+      setState(await api.state())
+    } catch (reason) {
+      // 세션이 없으면 P0으로 — 401은 오류 화면이 아니라 접속 화면이다(§9.1).
+      if (!(reason instanceof ApiError) || reason.status !== 401) {
+        console.warn('상태 복구 실패', reason)
+      }
+      setState(null)
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  return (
-    <div className="screen">
-      <h1 className="screen-title">NOT QUITE YES — Study 2</h1>
-      <div className="sec">
-        <p className="text-sm text-gray-600">
-          NS1 스캐폴드 화면입니다. 참가자 화면(P0–P11)은 NS2에서 붙습니다.
-        </p>
-        {error && <p className="mt-3 text-sm">서버 상태를 불러오지 못했습니다 ({error}).</p>}
-        {health && (
-          <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-            <dt className="text-gray-500">study_version</dt>
-            <dd>{health.study_version}</dd>
-            <dt className="text-gray-500">DEV_MODE</dt>
-            <dd>{String(health.dev_mode)}</dd>
-            <dt className="text-gray-500">dossier</dt>
-            <dd>
-              {health.dossiers.loaded}건 (스키마 더미 {health.dossiers.schema_dummy.length}건)
-            </dd>
-          </dl>
-        )}
-      </div>
-    </div>
-  )
+  useEffect(() => {
+    void restore()
+  }, [restore])
+
+  useEffect(() => {
+    if (state) api.event('screen_enter', state.branch_index, { screen: state.screen })
+  }, [state?.screen, state?.branch_index])
+
+  if (tooNarrow) return <DesktopGuard />
+  if (loading) return <div className="screen">{RESTORING}</div>
+  if (!state) return <Join onState={setState} />
+
+  const props = { state, onState: setState }
+  switch (state.screen) {
+    case 'P1':
+      return <Consent {...props} />
+    case 'P2':
+      return <Presurvey {...props} />
+    case 'P3':
+      return <Checkpoint {...props} />
+    case 'P4':
+      return <Reentry {...props} />
+    case 'P5':
+      // branch가 바뀌면 채팅 화면 상태를 새로 만든다 — 이전 branch의 입력이 남지 않는다(§3.4 reset).
+      return <Chat key={`p5-${state.branch_index}`} {...props} />
+    case 'P6':
+      return <Sidecar key={`p6-${state.branch_index}`} {...props} />
+    case 'P7':
+      return <Ai2 key={`p7-${state.branch_index}`} {...props} />
+    case 'P8':
+      return <Downstream key={`p8-${state.branch_index}`} {...props} />
+    case 'P9':
+      return <Ratings key={`p9-${state.branch_index}`} {...props} />
+    case 'P10':
+      return <CrossReview {...props} />
+    case 'P11':
+      return <Debrief {...props} />
+    default:
+      return <Ended state={state} />
+  }
 }

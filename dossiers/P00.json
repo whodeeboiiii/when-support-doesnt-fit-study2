@@ -6,7 +6,7 @@
   "sampling": {
     "actionability": 2,
     "mismatch_locus": "trajectory_timing",
-    "notes_ref": "QA 전용 합성 사건 — 구현명세서 부록 A.6(논문 초안 §7.6 synthetic example). 분석 제외, is_test=true."
+    "notes_ref": "QA 전용 합성 사건 — 구현명세서 부록 A.6(논문 초안 §7.6 synthetic example). 분석 제외, is_test=true. mismatch_locus=trajectory_timing 판단 근거(PI 확정 2026-08-16): ① 원 요청(장단점)은 이행되었으므로 content 층의 불일치가 아니다 ② C3 [정본]의 uptake가 내용 대체가 아니라 확장분 회수·범위 복귀다 ③ residual uncertainty가 대화의 다음 단계에 걸려 있다."
   },
   "ai_visible": {
     "situation_summary": "이직을 할지 말지 고민 중인 상황을 AI와 상의하고 있다. 대화에서 이미 밝힌 내용은 두 가지다. 현재 직장은 안정적이지만 성장이 정체되어 있고, 새로 제안받은 직무는 역할을 확장할 수 있지만 불확실성이 크다.",

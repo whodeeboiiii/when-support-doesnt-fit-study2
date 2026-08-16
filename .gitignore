@@ -11,6 +11,8 @@ backend/.venv/
 *.egg-info/
 .pytest_cache/
 
+*.docx
+
 # DEV_MODE 로컬 DB (§2.0)
 *.sqlite3
 dev_local.db*

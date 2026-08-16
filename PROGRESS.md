@@ -103,11 +103,118 @@ tests/{assets,unit,integration}/
 
 ---
 
-## 확인 필요 — 명세서에 없어 내가 정한 사항
+## NS2 — 상태머신·화면 (완료, 2026-08-16)
+
+### 완료 기준 대비 결과
+
+| 기준 (§11.1 NS2 행) | 결과 | 근거 |
+|---|---|---|
+| SS·B 상태머신 | ✅ | `core/state_machine.py` — SS00–SS07·SS90/91 × B0–B7, 전이표에 역방향 간선 0건 |
+| Williams 매핑 | ✅ | `core/williams.py` — §3.3 표 + `(P번호−1) mod 4 + 1`. 배정 로직은 이 파일이 유일 |
+| P0–P11 화면 + 저장 | ✅ | `frontend/src/screens/` 4파일 12화면 + `api/participant.py`·`api/branch.py` |
+| idempotency·복구 | ✅ | `core/idempotency.py` (별도 테이블 없이 상태 순위로 판정) — NT-08·09 |
+| 사전설문 로더 | ✅ | `assets/presurvey.py` + `fixtures/presurvey_items_v0.json`(placeholder, PH-01) |
+| **NT-06** Williams 표·순환 매핑 | ✅ | `tests/unit/test_williams.py` — 위치별 조건 1회 + adjacent pair 12종 각 1회 |
+| **NT-07** condition·stimulus_hash 불변 | ✅ | `tests/integration/test_session_flow.py` — 재진입·새로고침 반복 후 동일, ai1 turn 1건 |
+| **NT-08** 새로고침·재접속 복구 | ✅ | 자극 재추첨 0건·AI2 재생성 0건·문항 순서 동일, 쿠키 삭제 후 재접속 복원 |
+| **NT-09** 중복 제출 idempotency | ✅ | 세션 4단계·branch 5단계 전부 200 + 기존 레코드(행 증가 0) |
+| **NT-12** 참가자당 완료 세션 1개 | ✅ | `POST /admin/sessions` 409 (P00은 무제한) |
+| **NT-14** 비합법 전이 거부 | ✅ | 규칙 층 `tests/unit/test_state_machine.py` + API 층 409 8종 |
+| 문안 [정본] 초안 대조 | ✅ | `tests/assets/test_screen_copy_canonical.py` — sidecar 2변형·평정 12문항을 §7.3 표 행 단위로 대조 |
+| 테스트 전체 green | ✅ | **400 passed** (기준선 188 → 400. 불감소) |
+
+**DEV_MODE DB 가드 (승인 2026-08-16)**: `DEV_MODE=true`인데 `DATABASE_URL`이 로컬 SQLite가 아니면 **기동을 차단**한다(`core/config.py` + `main.validate_runtime_config()`). 근거는 §0.5의 DEV_MODE 정의 자체다 — "fake LLM + 로컬 DB — 팀 시연 구성". 첫 요청까지 미루지 않고 기동 시점에 보는 이유는, 그때 실패해야 서버가 "정상"으로 보이지 않기 때문이다. 검사는 `tests/unit/test_config.py`(오류 문안에 자격증명 미포함 포함).
+
+추가로 착지한 부록 C 항목: **NT-05**(사전설문 메타키 미노출), **NT-17**(no_reply/end에 AI2·downstream 부재), **NT-18**(2블록·블록 내 무작위·block/display_order 저장·합산 부재), **NT-27**(코드 TTL·재발급 동일 세션 바인딩), **NT-29**(렌더 beacon→제출 이벤트 쌍), **NT-19·NT-13 부분**(아래 한계 참조).
+
+### 시연 확인 (DEV_MODE, 실제 서버)
+
+`uvicorn` + `curl`로 P00 세션을 SS00→SS07 완주했다(§11.3 Definition of Done 1행).
+
+- 종결 유형 조합: branch1 `reply` · branch2 `no_reply` · branch3 `reply` · branch4 `end`
+- 저장 결과: branches 4(조건 **C4·C1·C3·C2** = P00의 S4 행) · ratings 48 · sidecar 4 · generations 2 · downstream 2 · presurvey 12 · audit 2
+- no_reply branch에서 `POST /ai2`·`POST /downstream` → **409** (NT-17)
+- P10 payload에 조건 라벨(C1–C4·uptake·elicitation) 0건, sidecar 0건
+- SQLite 파일을 바이트로 뒤져 User1·sidecar·AI2 평문 **0건**(§2.9)
+
+```bash
+DEV_MODE=true DATABASE_URL="sqlite+aiosqlite:///./dev_local.db" \
+  ADMIN_USER=demo ADMIN_PASS=demo-pass FERNET_KEY=<키> \
+  ./backend/.venv/bin/python scripts/init_db.py
+DEV_MODE=true … ./backend/.venv/bin/python -m uvicorn app.main:app --port 8000 --app-dir backend
+curl -u demo:demo-pass -X POST localhost:8000/admin/sessions -H 'Content-Type: application/json' -d '{"participant_no":"P00"}'
+```
+
+### 구현물 (NS2 추가분)
+
+```
+backend/app/
+  core/williams.py           §3.3 결정론 배정 (이 파일이 배정의 전부)
+  core/state_machine.py      SS·B 전이표 + 화면 매핑 (§3.1·§3.2)
+  core/idempotency.py        제출 단위 재제출 판정 (§3.5 — 별도 테이블 없음)
+  core/randomization.py      시드 고정 순서 (§4.9 블록 내 무작위 + NT-08 불변)
+  core/access_code.py        6자리 코드·TTL 24h·실패 지연 (§2.5·§4.0)
+  security/tokens.py         세션 토큰 서명 (§2.5 httpOnly 쿠키)
+  assets/screen_copy.py      §4·§9.1 화면 문안 ([정본]·[제안] 구분 주석)
+  assets/rating_items.py     §7.3 평정 12문항 [정본] + 2블록 제시 순서
+  assets/presurvey.py        §4.2 자산 로더 + 참가자 payload allowlist (NT-05)
+  api/deps.py                세션 쿠키·Basic auth (§2.7)
+  api/store.py               저장 상태 조회 헬퍼
+  api/state_payload.py       GET /state 화면 payload 조립
+  api/participant.py         §8.2 세션 수준 + beacon
+  api/branch.py              §8.2 branch 수준 (§3.2 인과 창)
+  api/admin.py               세션 생성·코드 재발급 (NS4 콘솔의 최소 선행분)
+  llm/ai2_pipeline.py        **NS2 이음매** — §9.1 종착지(neutral_fallback)로 수렴
+fixtures/presurvey_items_v0.json   PH-01 placeholder (12문항·4섹션)
+frontend/src/{api.ts,copy.ts,App.tsx,screens/{common,Join,Intro,Branch,Wrap}.tsx}
+tests/{helpers.py,unit/{test_williams,test_state_machine,test_access_code}.py,
+       assets/{test_presurvey_contract,test_screen_copy_canonical,test_frontend_contract}.py,
+       integration/{test_session_flow,test_events}.py}
+```
+
+### 설계 메모 (읽는 사람이 헷갈릴 지점)
+
+- **AI2는 아직 없다.** `llm/ai2_pipeline.py`는 §6 파이프라인 대신 참가자별 `neutral_fallback`을 돌려준다. 빈 자리를 두지 않은 이유는 §9.1의 dead-end 금지이고, 그 결과 시연 중 P7에 뜨는 문안은 fallback이며 `generations.fallback_used=true`·§2.8 알림으로 **사실 그대로** 기록된다. NS3이 이 함수만 교체한다.
+- **화면 문안이 서버에 있다.** [정본] 대조를 기계가 하려면 한 곳에 있어야 한다(`assets/screen_copy.py`). 프런트엔드에는 세션 없이 필요한 문안(P0·데스크톱 가드)과 이동 버튼 라벨만 남겼다(`frontend/src/copy.ts`).
+- **문항 ID가 클라이언트로 가지 않는다.** 사전설문(§4.2 규칙)과 평정(변수명 = 구성개념 라벨) 모두 **위치**로만 오간다. 위치 → 문항 ID 매핑은 서버에만 있다.
+- **평정 순서는 저장하지 않고 시드로 재현한다.** §8.1에 순서 테이블이 없어서다. 시드는 세션 UUID + branch + block이고, 제출 시점에 `ratings.display_order`로 남는다.
+
+---
+
+## 확인 필요 (NS2) — 명세서에 없어 내가 정한 사항
+
+NS2에서 명세서가 값을 고정하지 않은 지점이다. **①–③이 연구 의미와 닿아 있고 나머지는 구현 관례**다. 전부 되돌리기 쉬운 상태다.
+
+| # | 정한 것 | 명세서 상태 | 반려 시 비용 |
+|---|---|---|---|
+| ① | **참가자 화면에 문항 ID 대신 위치를 내린다** — 평정 12문항에도 적용 | §4.2는 사전설문에만 명시(NT-05). 평정은 무언급 | 낮음 (payload 형태만 변경) |
+| ② | **평정 제시 순서를 저장하지 않고 시드로 재현** | §8.1에 순서 테이블 없음, §3.5는 "순서 재추첨 없음"만 요구 | 중간 (저장 방식으로 바꾸면 테이블 1개 추가) |
+| ③ | **NS2의 P7은 neutral_fallback을 표시**한다 | §11.1이 AI2를 NS3으로 배치 | 없음 (NS3에서 교체 예정) |
+| ④ | 세션 토큰 = HMAC 서명한 세션 id (비밀은 `FERNET_KEY` 파생) | §2.5는 "서버 세션 토큰(httpOnly cookie)"만 지정 | 낮음 |
+| ⑤ | `POST /api/events` beacon 엔드포인트 신설 | §8.2 표에 없음. §2.11·§7.5·NT-29가 요구 | 낮음 |
+| ⑥ | `POST /advance` body = `{from_screen}` | §8.2는 body 미지정 | 낮음 |
+| ⑦ | `checkpoint_viewed_at`·`debrief_confirmed_at`·`user_agent`·`viewport`를 `events` 행으로 저장 | §4.0·§4.3·§4.11이 저장을 지시하지만 §8.1 표에 열이 없음 | 낮음 (열 추가 시 마이그레이션) |
+| ⑧ | 동의 항목 키 5종(`participation`·`study1_data_use`·`recording`·`overseas_transfer`·`withdrawal_and_compensation`) | §4.1 필수 포함 항목 ①–⑤의 구조만 확정, 문안은 `<TODO: PH-IRB-1>` | 낮음 |
+| ⑨ | 사전설문 스키마 초판 — 12문항·4섹션·유형 3종(single/multi/likert_1_7) | §4.2 구성 ①–④만 서술, 원문은 `<TODO: PH-01>` | 낮음 |
+| ⑩ | 세션 생성 차단 조건 = 해당 참가자에 `active`·`done` 세션 존재 (P00 예외) | §2.5·NT-12는 "완료 세션 1개"만 | 낮음 (재시작하려면 NS4의 abort/dropout 필요) |
+| ⑪ | sidecar "있음"에서 free_text·relevance **필수**, reason 선택 | §4.6은 세 입력을 나열만 | 낮음 |
+| ⑫ | downstream 7선택은 **명세서 표 순서 고정**(무작위 아님) | §4.8은 "표시 순서" 저장만 지시. 무작위는 §7.3 평정의 규칙(D-13) | 낮음 |
+| ⑬ | 접속 코드 해시에 참가자 번호 결합, 실패 지연은 번호 단위 프로세스 메모리 | §2.5·§4.0은 해시 방식·카운터 위치 미지정 | 낮음 |
+| ⑭ | P10에서 **참가자 본인** 텍스트를 복호화해 표시 | §2.9는 "복호화 지점 2곳(콘솔·export)", §4.10은 4 trajectory 재표시 요구 — 문면상 긴장 | 중간 (금지하면 §4.10 재표시 불가) |
+| ⑮ | UI 이동 라벨(`계속하기`·`시작`·`제출하기`·`시작하기`·종료 안내) | §4에 라벨 없음 | 낮음 |
+
+**한계로 남긴 것**
+
+- **NT-19(데스크톱 가드)는 정적 검사만** 걸었다 — 임계값 1024·문안 일치·가드가 화면 선택보다 앞이라는 것까지 본다. 렌더 동작 검증에는 JS 테스트 러너가 필요한데 이 리포의 테스트는 pytest다(CLAUDE.md). **vitest 도입 여부는 결정 사항**이다. 현재는 §10.2 QA 워크스루에서 사람이 확인한다.
+- **NT-13도 정적 층**이다: 소스·빌드 산출물에 비밀·자산 원문이 없다는 것까지 확인한다(`tests/assets/test_frontend_contract.py`).
+
+---
+
+## 확인 필요 (NS1) — 명세서에 없어 내가 정한 사항
 
 NS1을 진행하기 위해 필요했지만 명세서가 값을 고정하지 않은 항목이다. **연구 의미가 걸린 것은 ①뿐이고 나머지는 구현 관례**다. 되돌리기 쉬운 상태로 두었으니 반려하면 그대로 바꾼다.
 
-1. **P00 `sampling.mismatch_locus = "trajectory_timing"`** — 부록 A.6은 P00의 mismatch locus를 명시하지 않는다. "요청 범위를 넘어 장기 계획으로 진행"을 §5.1의 5축 중 trajectory·timing으로 읽었다. `content_depth`로 보는 것이 맞다면 한 줄 수정이다. (P00은 분석 제외 QA 자산)
+1. ~~**P00 `sampling.mismatch_locus`**~~ → **해소 (PI 확정 2026-08-16): `trajectory_timing` 유지.** 근거 ① 원 요청(장단점)은 이행되었으므로 content 층의 불일치가 아니다 ② C3 [정본]의 uptake가 내용 대체가 아니라 확장분 회수·범위 복귀다 ③ residual uncertainty가 대화의 다음 단계에 걸려 있다. 근거는 `dossiers/P00.json`의 `sampling.notes_ref`에 기록했다.
 2. **dossier 더미 배치** — 위 [자산 현황](#자산-현황)의 2단 배치. CLAUDE.md("P01–P12는 커밋하지 않는다, 스키마 더미만 커밋")를 만족시키려면 실값과 더미의 경로가 갈려야 했다.
 3. **`backend/app/notify/` 패키지 위치** — §2.3 폴더 목록에는 notify가 없지만 §2.1이 "`notify` 이식"을 지정한다. 구 리포와 같은 이름의 top-level 패키지로 두었다(`core/`에 넣는 대안도 있었음).
 4. **서버 5xx 누적 알림 임계 = 3회 연속** — §2.8은 트리거만 있고 임계가 없다. `[파일럿 확정]` 태그를 달아 두었다(`notify/watch.py`).
@@ -118,22 +225,25 @@ NS1을 진행하기 위해 필요했지만 명세서가 값을 고정하지 않�
 9. **dossier hash 정규화** — §5.2의 "전체 JSON sha256"을 `hash` 필드 자신만 제외한 canonical JSON으로 계산한다(자기참조 회피). `locked_at`은 포함.
 10. **§8.1 전 테이블을 NS1에 정의** — `init_db.py` 이식과 DEV_MODE 기동이 모델을 요구한다. 컬럼은 §8.1 표대로이고 **동작 로직은 넣지 않았다**(상태 전이 NS2, 생성 기록 NS3).
 
-## 미해결 (명세서 TODO — NS1 밖)
+## 미해결 (명세서 TODO)
 
 - `PH-03` dossier P01–P12 실값 작성·2인 판정·lock — **본 모집 전 필수**. 현재는 스키마 더미로 CI·시연이 돈다.
 - `PH-04` 실값 배포 반입 절차(Railway volume/환경 주입) — 로더는 이미 실값 우선으로 찾는다.
-- `PH-01` 사전설문 자산, `PH-05` normalization 패턴 목록, `PH-IRB-1~7` 문안 — 각 스프린트에서 착지.
+- `PH-01` 사전설문 **문항 원문·번역** — 구조·로더·계약 테스트는 NS2에서 착지했다. 원문만 넣으면 된다.
+- `PH-02` P10에서 sidecar 비표시 — 현재 비표시로 구현(PI 승인 대상).
+- `PH-05` normalization 패턴 목록, `PH-IRB-1~7` 문안 — NS3·NS4에서 착지.
 - `[확인 1·2]` 모델 슬러그(`anthropic/claude-opus-4.8`·`openai/gpt-5.4`) 가용성과 provider 고정 문법 — 실호출 전 확인. DEV_MODE에서는 불요.
-- git 저장소는 아직 초기화하지 않았다(`.gitignore`만 배치). 최초 커밋 시점은 사용자 판단.
 - P00b(낮은 actionability 리허설 변형, 부록 A.6 "선택") 미작성.
+- SS90(연구자 abort)·SS91(dropout)은 **상태머신·화면까지만** 있고 API·콘솔은 NS4다. `POST /admin/sessions/{id}/{flag,abort,dropout}`·모니터·review·export 미구현.
+- `tests/alpha_runner.py` 개조는 NS3(§10.1 fixture 러너)로 이월.
 
-## 다음 단계 — NS2 (상태머신·화면)
+## 다음 단계 — NS3 (AI2 파이프라인)
 
-완료 기준(§11.1): NT-06–NT-09·NT-12·NT-14 통과, 문안 [정본] 항목 초안 대조.
+완료 기준(§11.1): NT-01–NT-03·NT-10·NT-11·NT-15 통과, fixture 결정론부 100%.
 
-1. `core/williams.py` — §3.3 표 + `(P번호−1) mod 4 + 1` 결정론 매핑 (NT-06)
-2. `core/` 상태머신 SS00–SS07·SS90/91 × B0–B7, 합법 전이만 허용 (NT-14)
-3. §8.2 참가자 API + idempotency(`session_id, branch_index, step`) (NT-09), 새로고침·재접속 복구 (NT-07·08)
-4. P0–P11 화면 — [정본] 문안(sidecar 2변형·평정 12문항)은 명세서에서 **복사**, 데스크톱 가드(NT-19)
-5. 사전설문 로더 + 자산 계약(NT-05), `tests/helpers.py` 신판
-6. 접속 코드 발급·TTL·재발급 동일 세션 바인딩 (NT-27), 참가자당 완료 세션 1개 (NT-12)
+1. `llm/normalization.py` — §6.4 규칙 기반 지시표현 치환 + `fixtures/normalization_patterns_v1.json` `<TODO: PH-05>` (NT-11·NT-03)
+2. `llm/context.py` — §6.2 입력 allowlist 3종만으로 payload 조립. 필드 주입 fixture 전수 검사(NT-01·NT-02·NT-10)
+3. `llm/ai2_pipeline.py` 교체 — MAIN 호출 → 규칙 R-1~R-4 → checker → 재생성 1회 → neutral fallback (§6.5·§6.6)
+4. `llm/integrity_rules.py`에 R-1·R-2 추가, `llm/checker.py` 신설
+5. `generations`·`llm_calls`만으로 경로 복원(NT-15), sidecar 제출 전 호출 0건(NT-16 시간 순서 fixture)
+6. `tests/alpha_runner.py` 개조 — normalization·integrity fixture 러너(§10.1), 결정론부 100%

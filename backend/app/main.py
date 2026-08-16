@@ -10,8 +10,8 @@
 2. **LLM 클라이언트 주입(§2.0)**: DEV_MODE면 fake LLM, 아니면 OpenRouter. 배포 구성과 동일
    코드 경로이고 분기는 이 지점과 DB URL 두 곳뿐이다.
 
-NS1 범위에서는 라우터가 `/api/health`뿐이다. 참가자 API(§8.2)는 NS2, AI2 파이프라인은 NS3,
-연구자 콘솔 R1–R4는 NS4에서 붙인다.
+NS2까지의 라우터: `/api/health`, 참가자 API(§8.2 — `api/participant.py`·`api/branch.py`),
+연구자 세션 생성·코드 발급(`api/admin.py`). AI2 파이프라인 본체는 NS3, 콘솔 R1–R4는 NS4다.
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app.api import health
-from app.assets import dossier_loader
+from app.api import admin, branch, health, participant
+from app.assets import dossier_loader, presurvey
 from app.core.config import get_settings
 from app.llm import prompts
 from app.llm.fake_llm import FakeLLM
@@ -36,9 +36,26 @@ logger = logging.getLogger(__name__)
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
+def validate_runtime_config() -> None:
+    """§2.4·§0.5 구성 게이트 — DB 대상이 실행 구성과 맞는지 **기동 시점에** 본다.
+
+    첫 요청까지 미루면 서버는 정상으로 보이고 참가자 화면만 500이 된다. 특히 DEV_MODE에
+    원격 DB가 물린 구성은 조용히 성공하는 편이 더 위험하다(시연 데이터가 배포 DB로 간다).
+    """
+    settings = get_settings()
+    url = settings.resolved_database_url
+    logger.info(
+        "DB 대상: %s (DEV_MODE=%s, schema=%s)",
+        "로컬 SQLite" if url.startswith("sqlite") else "원격",
+        settings.dev_mode,
+        settings.db_schema,
+    )
+
+
 def validate_assets() -> None:
     """§5.4 기동 게이트. 예외를 삼키지 않는다 — 실패는 기동 실패다."""
     prompts.verify()
+    presurvey.validate()
     dossiers = dossier_loader.validate_all()
     dummies = sorted(no for no, dossier in dossiers.items() if dossier.is_dummy)
     if dummies:
@@ -70,6 +87,7 @@ async def lifespan(_app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    validate_runtime_config()
     validate_assets()
     settings = get_settings()
     app = FastAPI(
@@ -82,6 +100,9 @@ def create_app() -> FastAPI:
         openapi_url=None,
     )
     app.include_router(health.router)
+    app.include_router(participant.router)
+    app.include_router(branch.router)
+    app.include_router(admin.router)
 
     if FRONTEND_DIST.is_dir():
         # SPA 정적 서빙 (§2.0). 빌드 산출물이 없으면(API 전용 개발) 그냥 건너뛴다.

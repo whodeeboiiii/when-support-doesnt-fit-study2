@@ -88,6 +88,14 @@ def llm(_test_env: None) -> AsyncIterator:
 
 
 @pytest.fixture(autouse=True)
+def _reset_access_code_throttle() -> None:
+    """§4.0 실패 지연 카운터도 프로세스 메모리다 — 테스트 간 누수를 막는다."""
+    from app.core import access_code
+
+    access_code.reset_throttle()
+
+
+@pytest.fixture(autouse=True)
 def _reset_notify_state() -> None:
     """§2.8 watch는 프로세스 메모리 상태를 쓴다 — 테스트 간 누수를 막는다."""
     from app.notify import watch
