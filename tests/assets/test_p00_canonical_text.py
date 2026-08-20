@@ -1,58 +1,111 @@
-"""P00 [정본] 문안의 글자 단위 대조 (§0.4 "윤문 금지" · 부록 A.6 · 부록 D.1).
+"""P00 [정본] 문안 대조 (구현명세서 §5.5 · §0.4 "윤문 금지" · 부록 D.1 마지막 줄).
 
-명세서는 [정본] 표시가 붙은 문안을 **한 글자도 고치지 말라**고 못박는다. 사람이 눈으로
-대조하는 항목(부록 D.1 체크리스트)이지만, P00은 파일로 존재하므로 기계가 대신 볼 수 있다.
-자극 문장이 조용히 다듬어지면 조작 자체가 달라진다.
+§5.5는 P00의 R/U/Q segment와 trouble cue를 **초안 신 §7.6 worked example에서 글자 그대로**
+가져오라고 지시한다. 사람 눈으로 대조하면 언젠가 조사 하나가 바뀌므로 기계가 본다.
 
-대조 기준은 리포에 함께 있는 `docs/구현명세서_v1.0.1.md`다 — 명세서가 개정되면 이 테스트가
-먼저 깨져서 자산 동기화를 강제한다.
+대조 대상은 명세서 파일 자체다 — 상수를 코드에 복사하면 "복사본끼리 일치"만 확인하게 된다.
+명세서에서 문자열을 뽑아 dossier와 맞춘다.
+
+⚠ trouble cue의 마침표: §5.5가 "(초안에 마침표 없음 — 그대로)"라고 못박았다. 마침표를 붙이면
+이 테스트가 깨진다. 그게 목적이다.
 """
 
 from __future__ import annotations
 
-import json
+import re
 from pathlib import Path
 
 import pytest
 
+from app.assets import dossier_loader
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SPEC_TEXT = (REPO_ROOT / "docs" / "구현명세서_v1.0.1.md").read_text(encoding="utf-8")
-P00 = json.loads((REPO_ROOT / "dossiers" / "P00.json").read_text(encoding="utf-8"))
+SPEC_PATH = REPO_ROOT / "docs" / "구현명세서_v2.0.md"
 
 
-def _canonical_strings() -> dict[str, str]:
-    derivation = P00["derivation"]
-    return {
-        # 부록 A.6 — trouble cue·residual uncertainty·question stem
-        "trouble_cue": P00["ai_visible"]["trouble_cue"]["text"],
-        "residual_uncertainty": derivation["residual_uncertainty"]["text"],
-        "question_stem": derivation["residual_uncertainty"]["question_stem"],
-        # 부록 A.6 stimuli [정본 — 초안 §7.6]
-        "stimuli.C1": derivation["stimuli"]["C1"],
-        "stimuli.C3": derivation["stimuli"]["C3"],
-        # 부록 A.4 P00 예시 fallback
-        "neutral_fallback": derivation["neutral_fallback"],
-    }
+@pytest.fixture(scope="module")
+def spec() -> str:
+    return SPEC_PATH.read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("label,text", sorted(_canonical_strings().items()))
-def test_p00_canonical_text_matches_spec(label: str, text: str) -> None:
-    assert text in SPEC_TEXT, f"P00 {label}: 명세서 원문과 다르다 (윤문 금지 — §0.4)"
+@pytest.fixture(scope="module")
+def p00() -> dossier_loader.Dossier:
+    dossier_loader.reset_cache()
+    return dossier_loader.load("P00")
 
 
-def test_c2_and_c4_are_exactly_c1_c3_plus_the_question_stem() -> None:
-    """부록 A.6 — "C2: C1 + question stem", "C4: C3 + question stem".
+def _quoted_after(spec: str, marker: str) -> str:
+    """§5.5의 `- \\`r\\` = "…"` 형식에서 큰따옴표 안을 뽑는다."""
+    index = spec.index(marker)
+    match = re.search(r'"([^"]+)"', spec[index : index + 400])
+    assert match, f"명세서에서 {marker!r} 뒤의 인용문을 찾지 못했다"
+    return match.group(1)
 
-    P00은 명세서가 결합 방식까지 지정한 유일한 dossier다. P01–P12에는 이 제약을 걸지
-    않는다 — §5.3이 요구하는 것은 recognition의 **동등성**이지 문자열 동일성이 아니다.
+
+# --------------------------------------------------------------------------- #
+# §5.5 [정본] — segment 3종
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("key", ["r", "u", "q"])
+def test_segment_matches_spec_verbatim(
+    key: str, spec: str, p00: dossier_loader.Dossier
+) -> None:
+    """§5.5 segment **[정본, 초안 §7.6 표]** — 글자 단위 일치. 윤문 0건."""
+    expected = _quoted_after(spec, f"- `{key}` = ")
+    assert p00.stimulus.segment(key) == expected
+
+
+def test_trouble_cue_matches_spec_without_period(
+    spec: str, p00: dossier_loader.Dossier
+) -> None:
+    """§5.5 — trouble cue **[정본]** "장기 계획까지 짜달라는 건 아니야" (마침표 없음, 그대로)."""
+    expected = _quoted_after(spec, "trouble cue **[정본]**")
+    assert p00.ai_visible.trouble_cue == expected
+    assert not p00.ai_visible.trouble_cue.endswith("."), "§5.5는 마침표 없음을 명시한다"
+
+
+def test_assembled_conditions_match_spec_segments(p00: dossier_loader.Dossier) -> None:
+    """§5.5 — "조립 결과가 초안 §7.6 표의 C1–C4 문자열과 글자 단위 일치해야 한다".
+
+    명세서 v2.0 본문은 조립 결과 4종을 따로 싣지 않고 **조립 규칙**(D-35)을 준다. 그래서
+    여기서는 segment로부터 규칙대로 조립한 결과와 로더의 산출을 대조한다 — 규칙이 바뀌면
+    이 테스트가 먼저 깨진다.
     """
-    stimuli = P00["derivation"]["stimuli"]
-    stem = P00["derivation"]["residual_uncertainty"]["question_stem"]
-    assert stimuli["C2"] == f"{stimuli['C1']} {stem}"
-    assert stimuli["C4"] == f"{stimuli['C3']} {stem}"
+    stimulus = p00.stimulus
+    assert p00.assemble("C1") == stimulus.r
+    assert p00.assemble("C2") == f"{stimulus.r} {stimulus.q}"
+    assert p00.assemble("C3") == f"{stimulus.r} {stimulus.u}"
+    assert p00.assemble("C4") == f"{stimulus.r} {stimulus.u} {stimulus.q}"
 
 
-def test_p00_is_marked_as_qa_only() -> None:
-    """§5.1 — P00은 QA 전용 합성 참가자다. 분석 제외 표시가 자산에 남아 있어야 한다."""
-    assert P00["participant_no"] == "P00"
-    assert "QA" in P00["sampling"]["notes_ref"]
+# --------------------------------------------------------------------------- #
+# §5.5 evidence_code — PI 확정 근거
+# --------------------------------------------------------------------------- #
+
+
+def test_evidence_code_matches_spec(p00: dossier_loader.Dossier) -> None:
+    """§5.5 — a_level A2 · locus trajectory_timing · permitted_operation · residual_uncertainty."""
+    code = p00.evidence_code
+    assert code.a_level == "A2"
+    assert code.mismatch_locus == "trajectory_timing"
+    assert code.permitted_operation == "long-term expansion을 제거하고 present decision frame으로 돌아감"
+    assert code.residual_uncertainty == "현재 결정에서 stability와 growth 중 무엇에 더 weight를 둘지"
+
+
+def test_neutral_fallback_matches_spec(spec: str, p00: dossier_loader.Dossier) -> None:
+    """§5.5 neutral_fallback [제안 승계]."""
+    expected = _quoted_after(spec, "neutral_fallback [제안 승계]: ")
+    assert p00.stimulus.neutral_fallback == expected
+
+
+def test_checkpoint_mentions_three_year_plan(p00: dossier_loader.Dossier) -> None:
+    """§5.5 — AI가 이를 **3-year career plan**으로 확장했다(v1의 6개월이 아니다)."""
+    assert "3년" in p00.ai_visible.problematic_ai_response
+
+
+def test_p00_is_qa_synthetic_not_a_real_participant(p00: dossier_loader.Dossier) -> None:
+    """§5.1 — P00 = QA 합성(`is_test=true`). 배정표에 없다."""
+    from app.core import assignment
+
+    assert not assignment.load().has("P00")

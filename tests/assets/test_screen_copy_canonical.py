@@ -1,148 +1,192 @@
-"""화면 문안 대조 (구현명세서 §0.4 "윤문 금지" · §4 · §7.3 · §9.1).
+"""화면 문안 [정본] 대조 (구현명세서 §4 · §0.4 "윤문 금지" · 부록 D.1 마지막 줄).
 
-§11.1 NS2의 완료 기준 중 하나가 "문안 [정본] 항목 초안 대조"다. 사람이 눈으로 하는 대조를
-기계가 대신한다 — 대조 기준은 리포에 함께 있는 `docs/구현명세서_v1.0.1.md`이고, 명세서가
-개정되면 이 테스트가 먼저 깨져서 자산 동기화를 강제한다.
+**[정본] 7건**(§4.2 checkpoint 안내 · §4.4 User1 지시 · §4.5 sidecar 3단 · §5.5 P00 R/U/Q)이
+동결 대상이다. 이 파일은 앞의 다섯(화면 문안)을 보고, P00 자극 3종은 dossier 자산이라
+`test_p00_canonical_text.py`가 본다.
 
-[정본]과 [제안]을 나눠 검사하는 이유: 둘 다 지금은 명세서 원문과 일치해야 하지만, 어긋났을 때
-할 일이 다르다. [정본]이 어긋나면 **코드를 되돌린다**(윤문 금지). [제안]이 어긋나면 PI 승인
-이력을 확인하고 명세서·코드를 함께 고친다(§1.4).
+대조 대상은 **명세서 파일 자체**다. 상수를 테스트에 복사하면 "복사본끼리 일치"만 확인하게
+되고, 명세서가 개정될 때 코드가 따라가지 않는다.
+
+[제안] 문안은 글자 대조를 걸지 않는다 — PI 승인 대상이라 바뀔 수 있다. 대신 **금지 표현이
+없는지**를 본다(§4.5 규범 어휘 금지, §4 서두 조건 라벨 금지).
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 
-from app.assets import rating_items, screen_copy
+from app.assets import screen_copy
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SPEC_TEXT = (REPO_ROOT / "docs" / "구현명세서_v1.0.1.md").read_text(encoding="utf-8")
-
-#: **[정본]** — 논문 초안 수록 원문. 윤문 금지(§0.4).
-CANONICAL = {
-    "sidecar 질문(reply)": screen_copy.SIDECAR_QUESTION_REPLY,
-    "sidecar 질문(no_reply·end)": screen_copy.SIDECAR_QUESTION_NO_REPLY,
-    "sidecar '있음' 안내": screen_copy.SIDECAR_HAS_NOTICE,
-    "sidecar 관련성 평정": screen_copy.SIDECAR_RELEVANCE_QUESTION,
-}
-
-#: [제안] — PI 승인 대상. 현재는 명세서 본문이 유일한 출처다.
-PROPOSED = {
-    "P0 검증 실패": screen_copy.JOIN_FAILED,
-    "P0 데스크톱 가드": screen_copy.DESKTOP_ONLY,
-    "P3 안내": screen_copy.CHECKPOINT_INTRO,
-    "P4 재진입 안내": screen_copy.BRANCH_REENTRY,
-    "P5 답장하지 않기": screen_copy.NO_REPLY_BUTTON,
-    "P5 대화 종료": screen_copy.END_BUTTON,
-    "P6 전환 안내": screen_copy.SIDECAR_TRANSITION,
-    "P6 미전송 이유": screen_copy.SIDECAR_REASON_PROMPT,
-    "P7 로딩": screen_copy.AI2_LOADING,
-    "P8 지시": screen_copy.DOWNSTREAM_INSTRUCTION,
-    "P9 블록 1 지시": screen_copy.RATINGS_BLOCK1_INSTRUCTION,
-    "P9 블록 2 지시": screen_copy.RATINGS_BLOCK2_INSTRUCTION,
-    "P9 척도 하단": screen_copy.RATINGS_SCALE_MIN_LABEL,
-    "P9 척도 상단": screen_copy.RATINGS_SCALE_MAX_LABEL,
-    "P10 종료 버튼": screen_copy.CROSS_REVIEW_END_BUTTON,
-    "§9.1 AI2 지연": screen_copy.AI2_DELAYED,
-    "§9.1 저장 실패": screen_copy.SAVE_FAILED,
-    "§9.1 복구": screen_copy.RESTORING,
-    "§9.1 코드 만료": screen_copy.CODE_EXPIRED,
-    "§9.1 abort": screen_copy.SESSION_ABORTED,
-}
+SPEC_PATH = REPO_ROOT / "docs" / "구현명세서_v2.0.md"
 
 
-@pytest.mark.parametrize("label,text", sorted(CANONICAL.items()))
-def test_canonical_copy_matches_spec(label: str, text: str) -> None:
-    assert text in SPEC_TEXT, f"[정본] {label}: 명세서 원문과 다르다 (윤문 금지 — §0.4)"
+@pytest.fixture(scope="module")
+def spec() -> str:
+    return SPEC_PATH.read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("label,text", sorted(PROPOSED.items()))
-def test_proposed_copy_matches_spec(label: str, text: str) -> None:
-    assert text in SPEC_TEXT, f"[제안] {label}: 명세서 문안과 다르다 (§1.4 변경 절차)"
+def _normalize(text: str) -> str:
+    """명세서는 인용 블록(`> `)에서 줄바꿈으로 접어 놓는다 — 공백만 정규화해 대조한다."""
+    return re.sub(r"\s+", " ", text.replace("> ", " ")).strip()
 
 
-@pytest.mark.parametrize("item", rating_items.RATING_ITEMS, ids=lambda item: item.item_id)
-def test_rating_item_row_matches_the_spec_table(item: rating_items.RatingItem) -> None:
-    """§7.3 표의 한 행 전체 — 번호·변수명·원문이 **같이** 맞아야 한다."""
-    row = f"| {item.number} | `{item.item_id}` | {item.text} |"
-    assert row in SPEC_TEXT, f"§7.3 표와 다르다: {row}"
+# --------------------------------------------------------------------------- #
+# [정본] 5건 — 화면 문안
+# --------------------------------------------------------------------------- #
 
 
-def test_twelve_items_two_blocks() -> None:
-    """§4.9·D-22 — 12문항, 블록 1은 문항 1·2, 블록 2는 문항 3–12."""
-    assert rating_items.ITEM_COUNT == 12
-    anchor = rating_items.items_in_block(rating_items.BLOCK_ANCHOR)
-    interaction = rating_items.items_in_block(rating_items.BLOCK_INTERACTION)
-    assert [item.number for item in anchor] == [1, 2]
-    assert [item.number for item in interaction] == list(range(3, 13))
-    assert [item.item_id for item in anchor] == ["recognition", "substantive_uptake"]
+@pytest.mark.parametrize(
+    ("constant", "marker"),
+    [
+        (screen_copy.CHECKPOINT_VERIFY_INTRO, "다음은 이전에 말씀해주신"),
+        (screen_copy.USER1_INSTRUCTION, "이 연구에서는 대화를 한 번 더"),
+        (screen_copy.SIDECAR_Q1, "방금 보낸 답장에는 포함하지 않았지만"),
+        (screen_copy.SIDECAR_Q2, "그 생각이나 정보는 방금 답장을"),
+        (screen_copy.SIDECAR_Q3, "답장에 그 내용을 넣지 않은 이유가"),
+    ],
+)
+def test_canonical_copy_matches_spec(constant: str, marker: str, spec: str) -> None:
+    """[정본] — 명세서 원문과 글자 그대로. 윤문 0건(§0.4 동결)."""
+    normalized_spec = _normalize(spec)
+    assert _normalize(constant) in normalized_spec, (
+        f"[정본] 문안이 명세서와 다르다 — 시작: {constant[:24]!r}"
+    )
+    assert marker in constant, "대조 대상이 바뀌었는지 확인하라"
 
 
-def test_scale_is_one_to_seven() -> None:
-    """§0.5 — 평정 척도 1–7."""
-    assert (rating_items.SCALE_MIN, rating_items.SCALE_MAX) == (1, 7)
-    assert rating_items.is_valid_value(1) and rating_items.is_valid_value(7)
-    assert not rating_items.is_valid_value(0)
-    assert not rating_items.is_valid_value(8)
-    assert not rating_items.is_valid_value(True), "bool은 척도값이 아니다"
+def test_canonical_copy_registry_has_five_screen_items() -> None:
+    """부록 H.2가 지정한 [정본] 상수명 5종이 전부 등록돼 있다."""
+    assert len(screen_copy.CANONICAL_COPY) == 5
+    assert screen_copy.CHECKPOINT_VERIFY_INTRO in screen_copy.CANONICAL_COPY
+    assert screen_copy.SIDECAR_Q3 in screen_copy.CANONICAL_COPY
 
 
-def test_downstream_codes_are_the_seven_fixed_codes() -> None:
-    """§4.8 — 영문 코드 고정, 7종. 라벨은 [제안]."""
-    assert screen_copy.DOWNSTREAM_CODES == (
-        "continue_reply",
-        "correct_reformulate",
-        "pause",
-        "end",
+def test_checkpoint_intro_keeps_the_private_thought_clause() -> None:
+    """§4.2 — "속마음을 다시 설명하지 않으셔도 됩니다"는 §3.4가 명시적으로 의지하는 문장이다."""
+    assert "속마음을 다시 설명하지 않으셔도 됩니다" in screen_copy.CHECKPOINT_VERIFY_INTRO
+
+
+# --------------------------------------------------------------------------- #
+# 금지 표현 (§4 서두 · §4.2 · §4.5 · §1.5)
+# --------------------------------------------------------------------------- #
+
+
+def _all_participant_copy() -> str:
+    """참가자 화면에 나갈 수 있는 문자열 전부."""
+    pieces: list[str] = []
+    for name in dir(screen_copy):
+        if name.startswith("_"):
+            continue
+        value = getattr(screen_copy, name)
+        if isinstance(value, str):
+            pieces.append(value)
+        elif isinstance(value, (tuple, list)):
+            for item in value:
+                if isinstance(item, str):
+                    pieces.append(item)
+                elif isinstance(item, tuple):
+                    pieces.extend(str(part) for part in item)
+                elif hasattr(item, "label"):
+                    pieces.append(item.label)
+        elif isinstance(value, dict):
+            pieces.extend(str(item) for item in value.values())
+    return "\n".join(pieces)
+
+
+@pytest.mark.parametrize(
+    "banned",
+    [
+        # §4 서두 — 조건명·구성 원리 비공개
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "uptake",
+        "elicitation",
+        "recognition segment",
+        "focal",
+        "actionability",
+        # §4.5 — sidecar 규범 어휘 금지(§1.5-7)
+        "빠뜨린",
+        "알아야 했던",
+        "말했어야",
+        "withholding",
+        # §4.2 · 부록 D.3 — 선호 재활성화 질문 금지
+        "무엇을 원했",
+        "뭘 원했",
+    ],
+)
+def test_participant_copy_has_no_banned_expression(banned: str) -> None:
+    """§4 서두 · §4.2 · §4.5 — 이 문자열이 생기면 그건 조작 노출이거나 규범 유도다."""
+    assert banned not in _all_participant_copy()
+
+
+def test_alt_exposure_label_has_no_condition_name() -> None:
+    """§4.9 — 라벨은 "다른 응답 1/2/3"이고 조건명이 없다."""
+    label = screen_copy.ALT_EXPOSURE_LABEL.format(position=1)
+    assert label == "다른 응답 1"
+
+
+def test_pairwise_labels_are_positions_not_conditions() -> None:
+    """§4.10 — 「응답 A」(좌)·「응답 B」(우). 어느 쪽이 focal인지 라벨링하지 않는다."""
+    assert screen_copy.PAIRWISE_SIDE_LABELS == ("응답 A", "응답 B")
+
+
+# --------------------------------------------------------------------------- #
+# 구조 — v2에서 바뀐 것들
+# --------------------------------------------------------------------------- #
+
+
+def test_consent_has_six_items_including_alternative_exposure() -> None:
+    """§4.1 — 항목 키 6종. ⑥ `alternative_exposure`가 v2 신설이다."""
+    fields = [item.field for item in screen_copy.CONSENT_ITEMS]
+    assert fields == [
+        "participation",
+        "study1_data_use",
+        "recording",
+        "overseas_transfer",
+        "withdrawal_and_compensation",
+        "alternative_exposure",
+    ]
+
+
+def test_sidecar_provenance_choices_are_three(spec: str) -> None:
+    """§4.5 · §7.3 — preexisting / prompt_evoked / uncertain. 4범주는 **사후 코딩**이다."""
+    values = [value for value, _label in screen_copy.SIDECAR_PROVENANCE_CHOICES]
+    assert values == ["preexisting", "prompt_evoked", "uncertain"]
+    # deliberate withholding은 시스템 값이 아니다(§1.5-7).
+    assert "deliberate" not in _all_participant_copy()
+
+
+def test_sidecar_third_step_only_for_preexisting() -> None:
+    """§4.5 — 3단은 `preexisting`인 경우에만 뜬다."""
+    assert screen_copy.SIDECAR_REASON_PROVENANCE == "preexisting"
+
+
+def test_end_types_are_six_with_fixed_codes() -> None:
+    """§4.7 — 영문 코드 고정 6종, 표 순서 그대로(무작위 아님)."""
+    assert screen_copy.END_TYPE_CODES == (
+        "stop_here",
         "new_chat",
         "switch_ai",
         "seek_human",
+        "no_further_need",
+        "other",
     )
-    for option in screen_copy.DOWNSTREAM_OPTIONS:
-        # §4.8은 라벨과 코드를 붙여서 적는다 — "① 이어서 답장한다 `continue_reply`"
-        assert f"{option.label} `{option.code}`" in SPEC_TEXT, f"§4.8과 다르다: {option.label}"
 
 
-def test_sidecar_choices_are_the_three_spec_options() -> None:
-    """§4.6 — 없음 / 있음 / 건너뛰기 → 저장값 none/has/skip(§8.1)."""
-    assert [value for value, _ in screen_copy.SIDECAR_CHOICES] == ["none", "has", "skip"]
-    assert [label for _, label in screen_copy.SIDECAR_CHOICES] == ["없음", "있음", "건너뛰기"]
-    assert "선택지: 없음 / 있음 / 건너뛰기" in SPEC_TEXT
+def test_no_reply_button_does_not_exist() -> None:
+    """D-32 — "답장 보내지 않기"·"대화 종료" 버튼이 v2에 없다(User1 필수)."""
+    copy = _all_participant_copy()
+    assert "답장 보내지 않기" not in copy
+    assert not hasattr(screen_copy, "NO_REPLY_BUTTON")
 
 
-def test_no_normative_vocabulary_in_sidecar_copy() -> None:
-    """§4.6 금지 — "AI가 알아야 했던"·"말했어야 했던"·"빠뜨린" 류 규범적 표현(§1.5-6)."""
-    sidecar_copy = " ".join(
-        [
-            screen_copy.SIDECAR_TRANSITION,
-            screen_copy.SIDECAR_QUESTION_REPLY,
-            screen_copy.SIDECAR_QUESTION_NO_REPLY,
-            screen_copy.SIDECAR_HAS_NOTICE,
-            screen_copy.SIDECAR_RELEVANCE_QUESTION,
-            screen_copy.SIDECAR_REASON_PROMPT,
-        ]
-    )
-    for banned in ("알아야 했", "말했어야", "빠뜨린", "누락"):
-        assert banned not in sidecar_copy, f"규범적 표현: {banned}"
-
-
-def test_participant_copy_never_names_conditions() -> None:
-    """§4.4·§4.10 — 조건명·구성 원리는 참가자 화면에 없다."""
-    # 주석·docstring은 조건을 언급할 수 있으므로 **문자열 상수만** 본다.
-    strings = [
-        value
-        for name, value in vars(screen_copy).items()
-        if isinstance(value, str) and not name.startswith("__")
-    ]
-    assert len(strings) > 20, "검사 대상 문안이 사라졌다"
-    for text in strings:
-        for banned in ("C1", "C2", "C3", "C4", "uptake", "elicitation", "조건"):
-            assert banned not in text, f"참가자 문안에 조작이 노출됐다: {text!r}"
-
-
-def test_p9_instructions_do_not_reveal_branch_number() -> None:
-    """§4.4 — branch 번호·조건명 비표시. 라벨 템플릿은 서식만 갖는다."""
-    assert "{index}" in screen_copy.CROSS_REVIEW_BRANCH_LABEL
-    assert "branch" not in screen_copy.CROSS_REVIEW_BRANCH_LABEL.lower()
+def test_no_presurvey_copy_remains() -> None:
+    """D-31 — 사전 설문 폐기. 화면 문안에 흔적이 남지 않는다."""
+    assert "사전 설문" not in _all_participant_copy()
+    assert not hasattr(screen_copy, "PRESURVEY_INTRO")

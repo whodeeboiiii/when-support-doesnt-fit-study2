@@ -32,10 +32,10 @@ class Settings(BaseSettings):
 
     # --- DB (§2.4) ---
     # schema는 연결 수준(search_path)에서만 결정한다 — 코드에 schema-qualified 이름 금지.
-    # `proto_v1`(시연·QA) → `main_v1`(본실험). Alembic 미도입 — 전환은 schema 단위로 한다.
+    # `proto_v2`(시연·QA) → `main_v2`(본실험). Alembic 미도입 — 전환은 schema 단위로 한다.
     database_url: str = ""
-    db_schema: str = "proto_v1"
-    study_version: str = "proto_v1"
+    db_schema: str = "proto_v2"
+    study_version: str = "proto_v2"
 
     # --- LLM (§2.2) ---
     openrouter_api_key: str | None = None
@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     # --- 운영 알림 (§2.8) ---
     discord_webhook_url: str | None = None
 
+    # --- 자산 경로 (§2.4 신설) ---
+    #: PH-04 볼륨 마운트 오버라이드. 기본 = 리포 `dossiers/`.
+    #: ⚠ 실제로 읽는 곳은 `assets/files.py`다 — 자산 로더가 pydantic settings에 묶이지
+    #: 않도록 거기서 환경변수를 직접 본다. 여기 두는 이유는 §2.4 목록의 완결성이다.
+    dossier_dir: str | None = None
+    #: 기본 `assignments/assignment_v1.json`, 없으면 `assignment_dummy.json`(is_dummy 표시).
+    assignment_path: str | None = None
+
     # --- 팀 시연·CI 구성 (§0.5·§2.0) ---
     dev_mode: bool = False
 
@@ -69,7 +77,7 @@ class Settings(BaseSettings):
           데이터가 배포 DB 밖에 쌓인다.
         - 시연(DEV_MODE=true)에서 원격 DB 지정 → **기동 실패**. §0.5는 DEV_MODE를
           "fake LLM + 로컬 DB — 팀 시연 구성"으로 정의한다. 시연·QA 데이터가 배포 DB에
-          섞이면 §2.4의 schema 전환 규율(`proto_v1` → `main_v1`)이 무의미해지고,
+          섞이면 §2.4의 schema 전환 규율(`proto_v2` → `main_v2`)이 무의미해지고,
           fake AI2 산출물이 실참가자 데이터와 같은 테이블에 남는다.
         """
         if self.database_url:

@@ -1,220 +1,211 @@
-"""NT-14의 규칙 층 — SS·B 전이표 자체 (구현명세서 §3.1 · §3.2 · §1.3).
+"""SS·F 상태머신 (구현명세서 §3.1 · §3.2 · §3.3 · NT-14 · NT-33).
 
-API 층의 거부(409)는 `tests/integration/test_session_flow.py`가 본다. 여기서는 그 근거가 되는
-표를 본다 — 표에 없는 간선은 만들어지지 않았는가, 역방향 간선이 몰래 생기지 않았는가.
-
-"연구 상태는 뒤로 돌리지 않는다"(§1.3)는 원칙은 코드 한 줄로 보이지 않는다. 전이표에 역방향
-간선이 **없다**는 사실로만 보인다.
+전이 **규칙** 층만 본다 — API 층의 409는 `tests/integration/test_session_flow.py`가 확인한다.
+둘을 나눠 두는 이유: 규칙이 맞아도 라우터가 안 부르면 소용없고, 라우터가 불러도 규칙이
+틀리면 소용없다. 각각 따로 깨져야 한다.
 """
 
 from __future__ import annotations
 
-import itertools
-
 import pytest
 
 from app.core.state_machine import (
-    ACTIVE_SS,
-    B_NEXT,
+    ALT_POSITIONS,
+    F_NEXT,
     INTERRUPT_STATES,
+    PAIR_POSITIONS,
+    POST_FOCAL_MEASURE_SS,
     SS_NEXT,
     TERMINAL_SS,
-    BState,
     Disposition,
+    EndType,
+    FState,
     IllegalTransition,
     SsState,
-    assert_b_transition,
+    alt_exposure_allowed,
+    assert_f_transition,
+    assert_position,
     assert_ss_transition,
-    b_state_after_sidecar,
-    has_ai2,
     screen_for,
 )
 
 
-def test_ss_states_match_the_spec_table() -> None:
-    """§3.1 — SS00–SS07 + SS90 + SS91."""
-    assert [state.value for state in SsState] == [
-        "SS00",
-        "SS01",
-        "SS02",
-        "SS03",
-        "SS04",
-        "SS05",
-        "SS06",
-        "SS07",
-        "SS90",
-        "SS91",
-    ]
-
-
-def test_b_states_match_the_spec_table() -> None:
-    """§3.2 — B0–B7."""
-    assert [state.value for state in BState] == [f"B{n}" for n in range(8)]
-
-
 def test_ss_chain_is_linear_and_forward_only() -> None:
-    assert SS_NEXT[SsState.CREATED] is SsState.JOINED_CONSENT
-    assert SS_NEXT[SsState.BRANCH_BLOCK] is SsState.CROSS_REVIEW
-    assert SS_NEXT[SsState.DEBRIEF] is SsState.DONE
+    """§3.1 — "각 상태의 다음 상태는 정확히 하나다. 역방향 간선 없음"."""
+    order = [
+        SsState.CREATED,
+        SsState.CONSENT,
+        SsState.CHECKPOINT,
+        SsState.REENTRY,
+        SsState.FOCAL,
+        SsState.FOCAL_MEASURES,
+        SsState.ALT_EXPOSURE,
+        SsState.PAIRWISE,
+        SsState.INTERVIEW,
+        SsState.DEBRIEF,
+        SsState.DONE,
+    ]
+    assert [state for state in SS_NEXT] == order[:-1]
+    for current, expected in zip(order, order[1:], strict=False):
+        assert SS_NEXT[current] is expected
+
+    # 역방향 간선 0건 — 뒤 상태에서 앞 상태로 가는 전이가 표에 없다.
+    rank = {state: index for index, state in enumerate(order)}
     for current, target in SS_NEXT.items():
-        assert SS_NEXT.get(target) is not current, f"역방향 간선: {target} → {current}"
+        assert rank[target] == rank[current] + 1
 
 
-@pytest.mark.parametrize(
-    "current,target",
-    [
-        (SsState.CREATED, SsState.PRESURVEY),  # 동의를 건너뛴다
-        (SsState.PRESURVEY, SsState.BRANCH_BLOCK),  # 사전설문 제출 없이 branch
-        (SsState.CROSS_REVIEW, SsState.BRANCH_BLOCK),  # 뒤로
-        (SsState.DONE, SsState.DEBRIEF),  # 종결 후 되돌리기
-    ],
-)
-def test_illegal_ss_transitions(current: SsState, target: SsState) -> None:
+def test_ss_skipping_a_state_is_illegal() -> None:
+    """NT-14 — checkpoint 없이 focal, focal 없이 대안 노출."""
     with pytest.raises(IllegalTransition):
-        assert_ss_transition(current, target)
-
-
-@pytest.mark.parametrize("state", sorted(ACTIVE_SS, key=lambda s: s.value))
-@pytest.mark.parametrize("interrupt", sorted(INTERRUPT_STATES, key=lambda s: s.value))
-def test_abort_and_dropout_are_reachable_from_every_active_state(
-    state: SsState, interrupt: SsState
-) -> None:
-    """§3.1 — 연구자 개입(abort·dropout)은 진행 중 어느 상태에서도 가능해야 한다(§9.2 안전)."""
-    assert_ss_transition(state, interrupt)
-
-
-@pytest.mark.parametrize("terminal", sorted(TERMINAL_SS, key=lambda s: s.value))
-def test_terminal_states_accept_no_further_transition(terminal: SsState) -> None:
-    for interrupt in INTERRUPT_STATES:
-        with pytest.raises(IllegalTransition):
-            assert_ss_transition(terminal, interrupt)
-
-
-def test_b_chain_matches_the_spec_table() -> None:
-    """§3.2 — B3에서만 갈래가 둘이다(reply → B4, no_reply·end → B6)."""
-    assert B_NEXT[BState.SIDECAR] == frozenset({BState.AI2, BState.RATINGS})
-    assert B_NEXT[BState.AI2] == frozenset({BState.DOWNSTREAM})
-    assert B_NEXT[BState.RESET_DONE] == frozenset()
-
-
-@pytest.mark.parametrize(
-    "current,target",
-    [
-        (BState.SIDECAR, BState.DOWNSTREAM),  # NT-14 예시 — B4 없이 B5
-        (BState.REENTRY, BState.USER1),  # AI1 표시 없이 User1
-        (BState.USER1, BState.AI2),  # sidecar 없이 AI2 (§0.4 sidecar 배치 동결)
-        (BState.RATINGS, BState.AI2),  # 평정 뒤에 AI2
-        (BState.DOWNSTREAM, BState.AI2),  # 뒤로
-    ],
-)
-def test_illegal_b_transitions(current: BState, target: BState) -> None:
+        assert_ss_transition(SsState.CONSENT, SsState.FOCAL)
     with pytest.raises(IllegalTransition):
-        assert_b_transition(current, target)
+        assert_ss_transition(SsState.FOCAL, SsState.ALT_EXPOSURE)
+    with pytest.raises(IllegalTransition):
+        assert_ss_transition(SsState.CREATED, SsState.DONE)
 
 
-def test_no_backward_edges_in_branch_chain() -> None:
-    order = list(BState)
-    for current, targets in B_NEXT.items():
-        for target in targets:
-            assert order.index(target) > order.index(current), f"역방향: {current} → {target}"
+def test_interrupts_reachable_from_any_active_state() -> None:
+    """§3.1 — SS90·SS91은 진행 중 어느 상태에서도 진입 가능, 종결 상태에서는 불가."""
+    for state in SS_NEXT:
+        for target in INTERRUPT_STATES:
+            assert_ss_transition(state, target)
+    for state in TERMINAL_SS:
+        for target in INTERRUPT_STATES:
+            with pytest.raises(IllegalTransition):
+                assert_ss_transition(state, target)
 
 
-def test_sidecar_routing_is_the_only_disposition_branch() -> None:
-    """§3.2 · NT-17 — no_reply/end는 AI2·downstream을 건너뛴다(실패가 아니라 다른 trajectory)."""
-    assert b_state_after_sidecar(Disposition.REPLY) is BState.AI2
-    assert b_state_after_sidecar(Disposition.NO_REPLY) is BState.RATINGS
-    assert b_state_after_sidecar(Disposition.END) is BState.RATINGS
-    assert has_ai2(Disposition.REPLY) is True
-    assert has_ai2(Disposition.NO_REPLY) is False
-    assert has_ai2(None) is False
+def test_f_chain_has_no_branching() -> None:
+    """§3.2 — F 전이에 갈래가 없다.
+
+    v1.0.1의 B3는 disposition에 따라 둘로 갈렸지만(reply → B4 / no_reply·end → B6), v2에서는
+    User1이 필수이고(D-32) F4의 reply/end가 **둘 다 F5**로 간다. 판정 코드 금지(§0.3)의
+    상태머신 층 표현이다.
+    """
+    for state, targets in F_NEXT.items():
+        assert len(targets) <= 1, f"{state}에 갈래가 생겼다 — §3.2는 단선이다"
+    assert F_NEXT[FState.CLOSED] == frozenset()
 
 
-def test_every_branch_path_ends_at_ratings() -> None:
-    """D-22 — 세 종결 유형 전부 B6(12문항 2블록)를 지나 B7에서 끝난다."""
-    for disposition in Disposition:
-        state = b_state_after_sidecar(disposition)
-        visited = [state]
-        while B_NEXT[state]:
-            assert len(B_NEXT[state]) == 1, f"{state} 이후에 갈래가 생겼다"
-            state = next(iter(B_NEXT[state]))
-            visited.append(state)
-        assert BState.RATINGS in visited
-        assert visited[-1] is BState.RESET_DONE
+def test_f_transition_rejects_skipping_sidecar() -> None:
+    """NT-14 · NT-16 — sidecar(F2) 없이 AI2(F3)로 갈 수 없다."""
+    with pytest.raises(IllegalTransition):
+        assert_f_transition(FState.USER1, FState.AI2)
+    with pytest.raises(IllegalTransition):
+        assert_f_transition(FState.AI1_PENDING, FState.DOWNSTREAM)
+    assert_f_transition(FState.SIDECAR, FState.AI2)
+
+
+def test_no_ai3_state_exists() -> None:
+    """D-33 — AI3가 없다. F 상태 목록과 turn role 어디에도 자리가 없다."""
+    assert [state.value for state in FState] == ["F0", "F1", "F2", "F3", "F4", "F5"]
+
+
+def test_disposition_has_no_no_reply() -> None:
+    """D-32 — no_reply 분기 폐기. v1.0.1의 3분기가 2종으로 줄었다."""
+    assert {item.value for item in Disposition} == {"reply", "end"}
+    assert "no_reply" not in {item.value for item in Disposition}
+
+
+def test_end_types_are_six_codes() -> None:
+    """§4.7 — 이탈 유형 6코드(D-26)."""
+    assert {item.value for item in EndType} == {
+        "stop_here",
+        "new_chat",
+        "switch_ai",
+        "seek_human",
+        "no_further_need",
+        "other",
+    }
+
+
+# --------------------------------------------------------------------------- #
+# §3.3 위치 인덱스 (NT-33)
+# --------------------------------------------------------------------------- #
+
+
+def test_position_must_match_server_index() -> None:
+    """NT-33 — position 건너뛰기 불가."""
+    assert_position(2, 2, limit=ALT_POSITIONS, label="alt")
+    with pytest.raises(IllegalTransition):
+        assert_position(1, 2, limit=ALT_POSITIONS, label="alt")  # 건너뛰기
+    with pytest.raises(IllegalTransition):
+        assert_position(2, 1, limit=PAIR_POSITIONS, label="pair")  # 되돌아가기
+    with pytest.raises(IllegalTransition):
+        assert_position(1, 0, limit=PAIR_POSITIONS, label="pair")  # 범위 밖
+    with pytest.raises(IllegalTransition):
+        assert_position(3, 4, limit=PAIR_POSITIONS, label="pair")
+
+
+# --------------------------------------------------------------------------- #
+# NT-31 — 대안 노출 허용 구간
+# --------------------------------------------------------------------------- #
+
+
+def test_alt_exposure_allowed_only_after_focal_measures() -> None:
+    """§1.2 · NT-31 — focal 측정(SS05) **완료** 전에는 대안 자극이 허용되지 않는다.
+
+    SS05 자체가 포함되지 않는 것이 핵심이다 — 평정 화면은 아직 제출 전이고, 그 화면에
+    대안이 실리면 평정이 오염된다.
+    """
+    forbidden = [
+        SsState.CREATED,
+        SsState.CONSENT,
+        SsState.CHECKPOINT,
+        SsState.REENTRY,
+        SsState.FOCAL,
+        SsState.FOCAL_MEASURES,
+    ]
+    for state in forbidden:
+        assert not alt_exposure_allowed(state), f"{state}에서 대안이 허용됐다 (NT-31)"
+    for state in POST_FOCAL_MEASURE_SS:
+        assert alt_exposure_allowed(state)
+
+
+# --------------------------------------------------------------------------- #
+# 화면 매핑 (§0.2 P0–P12)
+# --------------------------------------------------------------------------- #
 
 
 @pytest.mark.parametrize(
-    "ss_state,b_state,expected",
+    ("ss_state", "f_state", "screen"),
     [
         (SsState.CREATED, None, "P0"),
-        (SsState.JOINED_CONSENT, None, "P1"),
-        (SsState.PRESURVEY, None, "P2"),
-        (SsState.CHECKPOINT_REVIEW, None, "P3"),
-        (SsState.BRANCH_BLOCK, BState.REENTRY, "P4"),
-        (SsState.BRANCH_BLOCK, BState.AI1_SHOWN, "P5"),
-        (SsState.BRANCH_BLOCK, BState.USER1, "P5"),
-        (SsState.BRANCH_BLOCK, BState.SIDECAR, "P6"),
-        (SsState.BRANCH_BLOCK, BState.AI2, "P7"),
-        (SsState.BRANCH_BLOCK, BState.DOWNSTREAM, "P8"),
-        (SsState.BRANCH_BLOCK, BState.RATINGS, "P9"),
-        (SsState.CROSS_REVIEW, None, "P10"),
-        (SsState.DEBRIEF, None, "P11"),
+        (SsState.CONSENT, None, "P1"),
+        (SsState.CHECKPOINT, None, "P2"),
+        (SsState.REENTRY, None, "P3"),
+        (SsState.FOCAL, FState.AI1_PENDING, "P4"),
+        (SsState.FOCAL, FState.USER1, "P4"),
+        (SsState.FOCAL, FState.SIDECAR, "P5"),
+        (SsState.FOCAL, FState.AI2, "P6"),
+        (SsState.FOCAL, FState.DOWNSTREAM, "P7"),
+        (SsState.FOCAL, FState.CLOSED, "P7"),
+        (SsState.FOCAL_MEASURES, None, "P8"),
+        (SsState.ALT_EXPOSURE, None, "P9"),
+        (SsState.PAIRWISE, None, "P10"),
+        (SsState.INTERVIEW, None, "P11"),
+        (SsState.DEBRIEF, None, "P12"),
+        (SsState.DONE, None, "DONE"),
         (SsState.RESEARCHER_ABORT, None, "ABORTED"),
         (SsState.DROPOUT, None, "ABORTED"),
     ],
 )
-def test_screen_mapping(ss_state: SsState, b_state: BState | None, expected: str) -> None:
-    """§3.1·§3.2 표의 화면 열."""
-    assert screen_for(ss_state, b_state) == expected
+def test_screen_mapping(ss_state: SsState, f_state: FState | None, screen: str) -> None:
+    """§0.2 — 상태 → 화면. 13종(P0–P12) 전부 매핑된다."""
+    assert screen_for(ss_state, f_state) == screen
 
 
-def test_screen_ids_are_within_the_reserved_range() -> None:
-    """§1.5-8 ID 예약 — 참가자 화면은 P0–P11 12종뿐이다(§0.2)."""
-    screens = {screen_for(SsState.BRANCH_BLOCK, b) for b in BState}
-    screens |= {
-        screen_for(state, None) for state in SsState if state is not SsState.BRANCH_BLOCK
-    }
-    participant_screens = {name for name in screens if name.startswith("P")}
-    assert participant_screens <= {f"P{n}" for n in range(12)}
-
-
-def test_ss04_without_branch_state_is_a_broken_record() -> None:
+def test_focal_without_f_state_is_broken_storage() -> None:
+    """SS04인데 F 상태가 없으면 저장 상태가 깨진 것이다 — 조용히 그리지 않는다."""
     with pytest.raises(IllegalTransition):
-        screen_for(SsState.BRANCH_BLOCK, None)
+        screen_for(SsState.FOCAL, None)
 
 
-def test_state_ids_do_not_collide_with_condition_ids() -> None:
-    """§1.5-8 — C1–C4는 실험 조건 전용이다. 상태 ID가 그 공간을 침범하지 않는다."""
-    all_states = {state.value for state in SsState} | {state.value for state in BState}
-    assert not all_states & {"C1", "C2", "C3", "C4"}
-
-
-def test_no_acceptance_or_routing_vocabulary_in_the_state_machine() -> None:
-    """§1.5-10 · §0.3 — 판정·라우팅·eligible 개념은 이 시스템에 없다."""
-    import inspect
-
-    from app.core import state_machine
-
-    source = inspect.getsource(state_machine).lower()
-    for banned in ("acceptance", "eligible", "routing", "route_to"):
-        assert banned not in source, f"금지 어휘: {banned}"
-
-
-def test_state_machine_has_no_disposition_dependent_rating_variants() -> None:
-    """D-22 — 종결 유형별 축소형 문항은 없다. 분기 함수는 sidecar 다음 상태 하나뿐이다."""
-    from app.assets import rating_items
-
-    assert rating_items.ITEM_COUNT == 12
-    assert len(rating_items.items_in_block(rating_items.BLOCK_ANCHOR)) == 2
-    assert len(rating_items.items_in_block(rating_items.BLOCK_INTERACTION)) == 10
-
-
-def test_all_b_states_have_a_screen() -> None:
-    for b_state in BState:
-        assert screen_for(SsState.BRANCH_BLOCK, b_state).startswith("P")
-
-
-def test_transition_tables_cover_every_state() -> None:
-    """표에 빠진 상태가 생기면 KeyError가 아니라 여기서 잡힌다."""
-    assert set(B_NEXT) == set(BState)
-    assert set(SS_NEXT) | TERMINAL_SS == set(SsState)
-    assert not set(itertools.chain.from_iterable(B_NEXT.values())) - set(BState)
+def test_all_screens_p0_to_p12_are_reachable() -> None:
+    """§0.2 — 화면 13종이 전부 어떤 상태에서든 나온다(빠진 화면이 없다)."""
+    reachable = {screen_for(SsState.FOCAL, f_state) for f_state in FState}
+    reachable |= {
+        screen_for(state, None) for state in SsState if state is not SsState.FOCAL
+    }
+    assert {f"P{index}" for index in range(13)} <= reachable

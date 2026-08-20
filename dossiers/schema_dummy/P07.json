@@ -1,24 +1,38 @@
 {
   "participant_no": "P07",
-  "version": "p07_schema_dummy_v1",
+  "version": "p07_schema_dummy_v2",
   "locked_at": null,
   "hash": null,
-  "sampling": {
-    "actionability": 1,
+  "evidence_code": {
+    "a_level": "A0",
     "mismatch_locus": "content_depth",
-    "notes_ref": "<TODO: PH-03 — P07 dossier 실값 작성·2인 독립 판정·lock (§5.2)>. 이 파일은 스키마 준수 더미이며 전 필드가 placeholder다 (§11.1 더미 자산 원칙). sampling 값도 실제 판정 결과가 아니다."
+    "mismatch_locus_text": "<TODO: PH-03 — P07 무엇이 problematized되었는지 미착지>",
+    "directional_constraint": "<TODO: PH-03 — P07 evidence의 방향 제약 미착지>",
+    "permitted_operation": "<TODO: PH-03 — P07 U의 상한 미착지>",
+    "residual_uncertainty": "<TODO: PH-03 — P07 minimum U 이후 남는 consequential uncertainty 미착지>",
+    "consequential_justification": "<TODO: PH-03 — P07 plausible next move 분기 근거 미착지>",
+    "prohibited_inference": [
+      "<TODO: PH-03 — P07 금지 추론 목록 미착지 (checker 판정 참조)>"
+    ],
+    "coders": "researcher_only_ref",
+    "adjudicated_at": null
   },
   "ai_visible": {
-    "situation_summary": "<TODO: PH-03 — P07 상황 요약 미착지> 참가자가 당시 대화에서 이미 제공한 상황 정보의 재구성이 이 자리에 들어간다.",
-    "original_request": "<TODO: PH-03 — P07 원 요청 미착지>",
-    "problematic_ai_response": "<TODO: PH-03 — P07 문제된 AI 응답(요약 재구성) 미착지>",
-    "trouble_cue": {
-      "text": "<TODO: PH-03 — P07 trouble cue 실제 표현 미착지>",
-      "form": "explicit"
-    },
+    "situation_summary": "<TODO: PH-03 — P07 상황 요약 미착지> 사건 이해에 필요한 최소 context가 이 자리에 들어간다.",
     "prior_evidence": [
-      "<TODO: PH-03 — P07 checkpoint 이전 turn의 support-relevant evidence 미착지>"
-    ]
+      "<TODO: PH-03 — P07 checkpoint 이전에 사용자가 이미 제공한 정보 미착지>"
+    ],
+    "original_request": "<TODO: PH-03 — P07 원 요청 미착지>",
+    "problematic_ai_response": "<TODO: PH-03 — P07 문제된 AI 응답 발췌 미착지>",
+    "trouble_cue": "<TODO: PH-03 — P07 실제 AI-visible trouble turn 미착지>",
+    "provenance": {
+      "situation_summary": "researcher_paraphrase",
+      "prior_evidence": "participant_quote",
+      "original_request": "verbatim_log",
+      "problematic_ai_response": "participant_quote",
+      "trouble_cue": "verbatim_log"
+    },
+    "excerpt_note": "<TODO: PH-03 — P07 발췌 생략 범위·2인 확인 기록 참조 미착지>"
   },
   "researcher_only": {
     "retrospective_stance": "<TODO: PH-03 — P07 회고 stance 미착지>",
@@ -26,54 +40,45 @@
     "mismatch_interpretation": "<TODO: PH-03 — P07 mismatch 해석 미착지>",
     "original_trajectory": "<TODO: PH-03 — P07 원 trajectory 미착지>",
     "ideal_response_reported": "<TODO: PH-03 — P07 ideal response 미착지>",
-    "correction_labor_notes": "<TODO: PH-03 — P07 correction labor 기록 미착지>"
+    "correction_labor_notes": "<TODO: PH-03 — P07 correction labor 기록 미착지>",
+    "verification_notes": "<TODO: PH-03 — P07 P2·인터뷰에서 나온 private preference 기록 자리>"
   },
-  "derivation": {
-    "warranted_uptake": "<TODO: PH-03 — P07 현재 evidence가 정당화하는 조정의 서술 미착지>",
-    "prohibited_inference": [
-      "<TODO: PH-03 — P07 금지 추론 목록 미착지 (checker 판정 참조)>"
-    ],
-    "residual_uncertainty": {
-      "text": "<TODO: PH-03 — P07 consequential residual uncertainty 1개 미착지>",
-      "question_stem": "<TODO: PH-03 — P07 question stem 미착지> 지금 어느 쪽이 더 필요하세요?"
-    },
-    "focal_repair_relevant_content": "<TODO: PH-03 — P07 first-opportunity 태깅 기준 내용 미착지 (§7.6)>",
-    "stimuli": {
-      "C1": "<TODO: PH-03 — P07 C1 자극 원문 미착지> 스키마 검증용 더미 문장이다. 이 자리에는 recognition만 담긴 조건 자극이 들어간다.",
-      "C2": "<TODO: PH-03 — P07 C1 자극 원문 미착지> 스키마 검증용 더미 문장이다. 이 자리에는 recognition만 담긴 조건 자극이 들어간다. <TODO: PH-03 — P07 question stem 미착지> 지금 어느 쪽이 더 필요하세요?",
-      "C3": "<TODO: PH-03 — P07 C3 자극 원문 미착지> 스키마 검증용 더미 문장이다. 이 자리에는 동일 recognition에 enacted 조정이 더해진 조건 자극이 들어간다.",
-      "C4": "<TODO: PH-03 — P07 C3 자극 원문 미착지> 스키마 검증용 더미 문장이다. 이 자리에는 동일 recognition에 enacted 조정이 더해진 조건 자극이 들어간다. <TODO: PH-03 — P07 question stem 미착지> 지금 어느 쪽이 더 필요하세요?"
-    },
+  "stimulus": {
+    "r": "<TODO: PH-03 — P07 R(recognition) segment 미착지> 이 자리에는 문제 지점을 알아차렸음을 보이는 최소 문장이 들어간다.",
+    "u": "<TODO: PH-03 — P07 U(minimum substantive uptake) segment 미착지> 이 자리에는 현재 evidence가 정당화하는 최소 조정의 실행문이 들어간다.",
+    "q": "<TODO: PH-03 — P07 Q(minimum elicitation) segment 미착지> 지금은 어느 쪽이 더 필요하세요?",
     "stimuli_meta": {
       "C1": {
-        "chars": 85,
-        "sentences": 2,
+        "chars": 84,
+        "sentences": 1,
         "questions": 0
       },
       "C2": {
-        "chars": 141,
-        "sentences": 3,
+        "chars": 158,
+        "sentences": 2,
         "questions": 1
       },
       "C3": {
-        "chars": 101,
+        "chars": 190,
         "sentences": 2,
         "questions": 0
       },
       "C4": {
-        "chars": 157,
+        "chars": 264,
         "sentences": 3,
         "questions": 1
       }
     },
     "neutral_fallback": "<TODO: PH-03 — P07 neutral fallback 문안 미착지> 말씀해주신 내용은 잘 받았습니다. 지금 말씀해주신 범위 안에서 이어가겠습니다.",
-    "referent_map": [
-      {
-        "patterns": [
-          "그렇게 해줘"
-        ],
-        "proposition": "<TODO: PH-03 — P07 AI1 제안의 명시 명제문 미착지>"
-      }
-    ]
+    "qc": {
+      "r_identity": false,
+      "u_identity": false,
+      "q_identity": false,
+      "permitted_boundary": false,
+      "leakage": false,
+      "minimum_q": false,
+      "reviewer": "<TODO: PH-03 — P07 독립 second researcher QC 미실시>",
+      "at": null
+    }
   }
 }

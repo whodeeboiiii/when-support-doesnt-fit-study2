@@ -1,235 +1,309 @@
-"""분석 export (구현명세서 §7.6 · 부록 B · §2.9 — NT-30).
+"""분석 export (구현명세서 §7.7 · 부록 B · §2.9 · NT-30 개정).
 
-    NT-30 export 비식별 — 자유 텍스트 열 opt-in 분리, 태깅 플래그 열 존재
-
-검사의 축은 **기본 실행이 무엇을 내보내지 않는가**다. "옵션을 켜면 텍스트가 나온다"는 쉬운
-쪽이고, 지켜야 하는 건 "옵션을 켜지 않으면 어디에도 문장이 없다" 쪽이다. 그래서 참가자·
-연구자가 쓴 문자열을 sentinel로 심고 기본 출력 전 파일을 통째로 훑는다.
+세 가지를 본다.
+1. **비식별·자유 텍스트 분리** — 기본 실행의 어떤 파일에도 참가자·연구자가 쓴 문장이 없다.
+   `--include-text`를 준 실행만 `free_text.csv`를 만든다.
+2. **v2 파일 구성** — trajectory · checkpoint_edits · ratings · pairwise · alt_exposure ·
+   generation_integrity · events · dossier_provenance (부록 H.2).
+3. **삭제된 열이 돌아오지 않는다** — `sequence_index`·`branch_index`·`normalization_*`·
+   `presurvey_*`·`first_opportunity`·`carryover_sensitive`(부록 B 삭제 목록).
 """
 
 from __future__ import annotations
 
-import csv
 from pathlib import Path
-from typing import Any
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from analysis import export_trajectory, tagging_flags
+from analysis import export_trajectory
 from app.models import tables
 from tests import helpers
-from tests.helpers import ADMIN_AUTH
 
-USER1_TEXT = "참가자자유기술센티넬알파 장단점만 정리해줘"
-SIDECAR_TEXT = "사이드카자유기술센티넬베타"
-SIDECAR_REASON = "미전송사유센티넬감마"
-FLAG_REASON = "연구자플래그사유센티넬델타"
+#: 세션에 심어 두고 기본 export에 새지 않는지 보는 문장들.
+USER1_TEXT = "장기 계획 말고 두 선택지 비교만 해줘"
+SIDECAR_TEXT = "사실은 이직 쪽으로 이미 기울어 있었다"
+REASON_TEXT = "다시 설명하기가 번거로웠다"
+EDIT_TEXT = "실제로는 3년이 아니라 5년 계획을 제시했다"
+END_REASON = "지금은 여기까지면 충분하다"
 
-ACTOR = "test-researcher"
 
-
-async def _run_session(client: AsyncClient) -> str:
-    """P00 한 세션: branch 1 reply(사이드카 있음) + 나머지 3 branch."""
-    created, _ = await helpers.open_and_join(client, "P00")
+@pytest.fixture
+async def exported(client: AsyncClient, session: AsyncSession):
+    """자유 텍스트를 전부 심은 완주 세션 1건."""
+    await helpers.open_and_join(client)
     await helpers.consent(client)
-    await helpers.presurvey(client)
-    await client.post("/api/checkpoint/confirm")
+    await helpers.edit_checkpoint(client, "problematic_ai_response", EDIT_TEXT)
+    await helpers.confirm_checkpoint(client)
+    await helpers.advance(client, "P3")
 
-    await helpers.advance(client, "P4")
-    await client.post("/api/branch/1/user1", json={"disposition": "reply", "text": USER1_TEXT})
+    await client.post("/api/focal/user1", json={"text": USER1_TEXT})
     await client.post(
-        "/api/branch/1/sidecar",
+        "/api/focal/sidecar",
         json={
-            "choice": "has",
+            "has_more": True,
             "free_text": SIDECAR_TEXT,
-            "relevance": 5,
-            "reason": SIDECAR_REASON,
+            "provenance": "preexisting",
+            "reason": REASON_TEXT,
         },
     )
-    await client.post("/api/branch/1/ai2")
-    await helpers.advance(client, "P7")
-    await client.post("/api/branch/1/downstream", json={"code": "correct_reformulate"})
-    await client.post("/api/branch/1/ratings", json=helpers.ratings_payload())
-
-    await helpers.complete_branch(client, 2, "no_reply")
-    await helpers.complete_branch(client, 3, "end")
-    await helpers.complete_branch(client, 4, "reply")
-
+    await client.post("/api/focal/ai2")
+    await helpers.advance(client, "P6")
     await client.post(
-        f"/admin/sessions/{created['session_id']}/flag",
-        json={"reason": FLAG_REASON},
-        auth=ADMIN_AUTH,
+        "/api/focal/downstream",
+        json={"disposition": "end", "end_type": "seek_human", "reason": END_REASON},
     )
-    return created["session_id"]
+    await helpers.advance(client, "P7")
+    await helpers.submit_ratings(client)
+    await helpers.complete_alt_exposures(client)
+    await helpers.complete_pairwise(client)
+    return session
 
 
-def _all_text(files: dict[str, list[dict[str, Any]]]) -> str:
+def _all_text(tables_: export_trajectory.ExportTables, *, include_free_text: bool) -> str:
+    files = tables_.as_files()
+    if not include_free_text:
+        files.pop(export_trajectory.FREE_TEXT_FILE, None)
     return "\n".join(
         str(value) for rows in files.values() for row in rows for value in row.values()
     )
 
 
-async def test_nt30_default_export_carries_no_free_text(client: AsyncClient, session) -> None:
-    await _run_session(client)
-    exported = await export_trajectory.collect(session, actor=ACTOR)
-
-    files = exported.as_files()
-    assert export_trajectory.FREE_TEXT_FILE not in files, "기본 실행이 자유 텍스트 파일을 만들었다"
-    blob = _all_text(files)
-    for sentinel in (USER1_TEXT, SIDECAR_TEXT, SIDECAR_REASON, FLAG_REASON):
-        assert sentinel not in blob, f"기본 export에 자유 텍스트가 있다: {sentinel[:12]}"
+# --------------------------------------------------------------------------- #
+# NT-30 — 비식별 · 자유 텍스트 opt-in 분리
+# --------------------------------------------------------------------------- #
 
 
-async def test_nt30_text_export_is_opt_in_and_lands_in_its_own_file(
-    client: AsyncClient, session
-) -> None:
-    await _run_session(client)
-    exported = await export_trajectory.collect(session, actor=ACTOR, include_text=True)
-
-    files = exported.as_files()
-    assert export_trajectory.FREE_TEXT_FILE in files
-    # 텍스트는 분리 파일에만 있다 — 다른 파일은 기본 실행과 같아야 한다.
-    others = {name: rows for name, rows in files.items() if name != export_trajectory.FREE_TEXT_FILE}
-    blob = _all_text(others)
-    for sentinel in (USER1_TEXT, SIDECAR_TEXT, SIDECAR_REASON, FLAG_REASON):
-        assert sentinel not in blob
-
-    # branch마다 같은 필드명이 나오므로 (branch, field)로 읽는다.
-    fields = {(row["branch_index"], row["field"]): row["text"] for row in exported.free_text}
-    assert fields[(1, "user1_raw")] == USER1_TEXT
-    assert fields[(1, "sidecar_text")] == SIDECAR_TEXT
-    assert fields[(1, "sidecar_reason")] == SIDECAR_REASON
-    assert fields[("", "researcher_flag.reason")] == FLAG_REASON
-    assert fields[(1, "ai2_final_text")]
+async def test_default_export_has_no_free_text(exported: AsyncSession) -> None:
+    """§2.9 — 기본 출력에는 참가자·연구자가 쓴 문장이 **한 글자도** 없다."""
+    result = await export_trajectory.collect(exported, actor="tester")
+    text = _all_text(result, include_free_text=False)
+    for secret in (USER1_TEXT, SIDECAR_TEXT, REASON_TEXT, EDIT_TEXT, END_REASON):
+        assert secret not in text, f"기본 export에 자유 텍스트가 있다: {secret[:12]}…"
+    assert result.free_text == [], "--include-text 없이 free_text가 채워졌다"
 
 
-async def test_nt30_tagging_flag_columns_exist_on_every_row(
-    client: AsyncClient, session
-) -> None:
-    """§7.6 — first-opportunity·carryover는 export가 **열로** 제공한다."""
-    await _run_session(client)
-    exported = await export_trajectory.collect(session, actor=ACTOR)
+async def test_include_text_creates_a_separate_file(exported: AsyncSession) -> None:
+    """NT-30 — `--include-text`만 `free_text.csv`를 만든다. 열이 아니라 **파일** 분리다."""
+    result = await export_trajectory.collect(exported, actor="tester", include_text=True)
+    assert export_trajectory.FREE_TEXT_FILE in result.as_files()
 
-    assert len(exported.trajectory) == 4
-    for row in exported.trajectory:
-        assert set(tagging_flags.FLAG_COLUMNS) <= set(row)
-    by_branch = {row["branch_index"]: row for row in exported.trajectory}
-    assert by_branch[1]["first_opportunity"] is True
-    assert by_branch[3]["first_opportunity"] is False
-    # 코딩 입력이 없으면 carryover는 **빈 칸**이다 — False가 아니다(§7.2 부재≠정보 없음).
-    assert by_branch[2]["carryover_sensitive"] == ""
-    assert by_branch[2]["carryover_source"] == tagging_flags.UNCODED
+    fields = {row["field"] for row in result.free_text}
+    assert {"user1", "sidecar_text", "sidecar_reason", "end_reason"} <= fields
+    assert any("checkpoint_edit" in field for field in fields), "수정 원문·수정본이 빠졌다"
+
+    # 다른 파일들은 여전히 깨끗하다.
+    text = _all_text(result, include_free_text=False)
+    assert SIDECAR_TEXT not in text
 
 
-async def test_carryover_flag_uses_the_coding_input(client: AsyncClient, session, tmp_path: Path) -> None:
-    await _run_session(client)
-    coding = tmp_path / "coding.csv"
-    coding.write_text(
-        "participant_no,branch_index,focal_content_expressed\n"
-        "P00,1,true\nP00,2,false\nP00,3,false\nP00,4,false\n",
-        encoding="utf-8",
-    )
-    exported = await export_trajectory.collect(session, actor=ACTOR, coding_path=coding)
-    by_branch = {row["branch_index"]: row for row in exported.trajectory}
-    assert by_branch[1]["carryover_sensitive"] is False  # 이전 branch가 없다
-    assert by_branch[2]["carryover_sensitive"] is True  # branch 1에서 이미 표현됐다
-    assert by_branch[4]["carryover_source"] == tagging_flags.CODED
-
-
-async def test_trajectory_row_matches_the_data_dictionary(client: AsyncClient, session) -> None:
-    """부록 B — 한 행이 한 participant × branch trajectory다."""
-    await _run_session(client)
-    exported = await export_trajectory.collect(session, actor=ACTOR)
-    row = next(row for row in exported.trajectory if row["branch_index"] == 1)
-
-    assert row["participant_no"] == "P00"
-    assert row["condition"] == "C4"  # P00 → S4 (§3.3)
-    assert row["user1_disposition"] == "reply"
+async def test_lengths_are_exported_without_the_text(exported: AsyncSession) -> None:
+    """§7.4 — 텍스트 **길이**는 행동 측정이라 기본 실행에도 나간다(그래서 복호화가 필요하다)."""
+    result = await export_trajectory.collect(exported, actor="tester")
+    row = result.trajectory[0]
     assert row["user1_chars"] == len(USER1_TEXT)
-    assert row["sidecar_choice"] == "has" and row["sidecar_relevance"] == 5
     assert row["sidecar_text_chars"] == len(SIDECAR_TEXT)
-    assert row["downstream_action"] == "correct_reformulate"
-    assert row["ai2_present"] is True and row["fallback_used"] is False
-    assert row["actionability"] in (0, 1, 2) and row["mismatch_locus"]
-    # §7.3 12문항이 열로 있고 **합산 열은 없다**(§0.4).
-    rating_columns = [key for key in row if key.startswith("rating_")]
-    assert len(rating_columns) == 12
-    assert not any(key in row for key in ("rating_total", "regrounding_score", "sum"))
+    assert row["end_reason_chars"] == len(END_REASON)
 
 
-async def test_no_reply_branch_has_no_ai2_or_downstream_columns_filled(
-    client: AsyncClient, session
-) -> None:
-    """NT-17이 저장에서도 성립하는지 export 관점으로 본다."""
-    await _run_session(client)
-    exported = await export_trajectory.collect(session, actor=ACTOR)
-    row = next(row for row in exported.trajectory if row["branch_index"] == 2)
-    assert row["user1_disposition"] == "no_reply"
-    assert row["ai2_present"] is False
-    assert row["downstream_action"] == ""
-    assert len([key for key in row if key.startswith("rating_")]) == 12
+async def test_no_identifiers_in_any_file(exported: AsyncSession) -> None:
+    """§2.9 — 접속 코드·user_agent·viewport는 어떤 파일에도 나가지 않는다."""
+    result = await export_trajectory.collect(exported, actor="tester", include_text=True)
+    text = _all_text(result, include_free_text=True)
+    for banned in ("user_agent", "access_code", "Mozilla", "viewport", "reason_encrypted"):
+        assert banned not in text
 
 
-async def test_ratings_long_file_keeps_block_and_display_order(
-    client: AsyncClient, session
-) -> None:
-    """§4.9·D-22 — 제시 순서와 블록이 분석에 남아야 한다(NT-18의 저장 층)."""
-    await _run_session(client)
-    exported = await export_trajectory.collect(session, actor=ACTOR)
-    branch1 = [row for row in exported.ratings if row["branch_index"] == 1]
-    assert len(branch1) == 12
-    assert {row["block"] for row in branch1} == {1, 2}
-    assert sorted(row["display_order"] for row in branch1) == list(range(1, 13))
-
-
-async def test_integrity_file_reconstructs_the_generation_path(
-    client: AsyncClient, session
-) -> None:
-    """§8.4·NT-15의 export판 — attempt·final·fallback·checker 판정이 함께 나간다."""
-    await _run_session(client)
-    exported = await export_trajectory.collect(session, actor=ACTOR)
-    rows = [row for row in exported.integrity if row["branch_index"] == 1]
-    assert rows and sum(1 for row in rows if row["final"]) == 1
-    assert set(rows[0]) >= {
-        "attempt",
-        "final",
-        "fallback_used",
-        "checker_skipped",
-        "rule_violations",
-        "checker_result",
-    }
-
-
-async def test_events_file_supports_latency_without_computing_it(
-    client: AsyncClient, session
-) -> None:
-    """§2.11·NT-29 — 파생 지표는 분석 시점 계산. export는 이벤트 쌍만 넘긴다."""
-    await _run_session(client)
-    exported = await export_trajectory.collect(session, actor=ACTOR)
-    columns = set(exported.events[0])
-    assert {"client_ts", "server_ts", "type"} <= columns
-    assert not any("latency" in column for column in columns)
-    # 브라우저 지문은 분석 파일로 나가지 않는다.
-    assert "user_agent" not in _all_text({"events": exported.events})
-
-
-async def test_export_records_audit_rows(client: AsyncClient, session) -> None:
-    """§2.9 — export는 복호화 지점 ②다. 실행 1회당 export·decrypt 각 1행."""
-    await _run_session(client)
-    await export_trajectory.collect(session, actor=ACTOR)
-    logs = list((await session.execute(select(tables.AuditLog))).scalars().all())
-    actions = [log.action for log in logs if log.actor == ACTOR]
+async def test_export_records_audit_regardless_of_flag(exported: AsyncSession) -> None:
+    """§2.9 — 실행 1회당 `export`·`decrypt` 각 1행. 열지 않은 척할 수 있으면 audit이 아니다."""
+    await export_trajectory.collect(exported, actor="tester")
+    rows = (await exported.execute(select(tables.AuditLog))).scalars().all()
+    actions = [row.action for row in rows if row.actor == "tester"]
     assert actions.count("export") == 1
     assert actions.count("decrypt") == 1
 
 
-async def test_write_csv_emits_headers_even_for_empty_tables(tmp_path: Path) -> None:
-    """빈 표도 파일로 남긴다 — 파일이 없는 것과 데이터가 없는 것은 다르다."""
-    path = tmp_path / "empty.csv"
-    export_trajectory.write_csv(path, [])
-    assert path.is_file() and path.read_text(encoding="utf-8-sig").strip() == ""
+# --------------------------------------------------------------------------- #
+# 파일 구성 (부록 H.2)
+# --------------------------------------------------------------------------- #
 
-    export_trajectory.write_csv(path, [{"a": 1, "b": "x"}])
-    with path.open(encoding="utf-8-sig", newline="") as handle:
-        assert list(csv.DictReader(handle)) == [{"a": "1", "b": "x"}]
+
+async def test_all_seven_default_files_exist(exported: AsyncSession) -> None:
+    """부록 H.2 — trajectory·checkpoint_edits·ratings·pairwise·alt_exposure·integrity·events."""
+    files = await export_trajectory.collect(exported, actor="tester")
+    names = set(files.as_files())
+    assert names == {
+        export_trajectory.TRAJECTORY_FILE,
+        export_trajectory.CHECKPOINT_EDITS_FILE,
+        export_trajectory.RATINGS_FILE,
+        export_trajectory.PAIRWISE_FILE,
+        export_trajectory.ALT_EXPOSURE_FILE,
+        export_trajectory.INTEGRITY_FILE,
+        export_trajectory.EVENTS_FILE,
+        export_trajectory.PROVENANCE_FILE,
+    }
+
+
+async def test_trajectory_is_one_row_per_participant(exported: AsyncSession) -> None:
+    """D-23 — focal between이므로 참가자 1행이다(v1.0.1의 participant × condition 4행이 아니다)."""
+    result = await export_trajectory.collect(exported, actor="tester")
+    assert len(result.trajectory) == 1
+    row = result.trajectory[0]
+    assert row["focal_condition"] in {"C1", "C2", "C3", "C4"}
+    assert row["downstream_disposition"] == "end"
+    assert row["downstream_end_type"] == "seek_human"
+
+
+async def test_pairwise_carries_focal_included(exported: AsyncSession) -> None:
+    """§7.5 · 초안 §7.12 — focal-status sensitivity의 입력이다."""
+    result = await export_trajectory.collect(exported, actor="tester")
+    assert len(result.pairwise) == 3
+    for row in result.pairwise:
+        assert row["contrast"] in {"sequence", "scope", "stopping"}
+        assert row["focal_included"] in {True, False}
+        assert row["left_condition"] != row["right_condition"]
+    # P00은 focal C1 — scope(C1 vs C3)에만 focal이 포함된다.
+    included = {row["contrast"] for row in result.pairwise if row["focal_included"]}
+    assert included == {"scope"}
+
+
+async def test_checkpoint_edits_carry_lengths_not_sentences(
+    exported: AsyncSession,
+) -> None:
+    """§7.7 — 수정의 성격은 사후 코딩이다. 기본 export는 **길이·segment**만 준다."""
+    result = await export_trajectory.collect(exported, actor="tester")
+    assert len(result.checkpoint_edits) == 1
+    row = result.checkpoint_edits[0]
+    assert row["segment"] == "problematic_ai_response"
+    # trouble_cue·problematic_ai_response는 자극 전제 segment다(§3.4).
+    assert row["alert_segment"] is True
+    assert row["edited_chars"] == len(EDIT_TEXT)
+    assert "original" not in row or not isinstance(row.get("original"), str)
+
+
+async def test_alt_exposure_records_the_assigned_order(exported: AsyncSession) -> None:
+    """§4.9 — 순서·조건·시각. 배정표대로다."""
+    result = await export_trajectory.collect(exported, actor="tester")
+    assert [row["position"] for row in result.alt_exposure] == [1, 2, 3]
+    assert len({row["condition"] for row in result.alt_exposure}) == 3
+
+
+async def test_generation_integrity_has_machine_columns(exported: AsyncSession) -> None:
+    """§7.7 — AI2 행동 코딩의 **기계 열**(길이·질문 수·fallback). 내용 코딩은 사람이 한다."""
+    result = await export_trajectory.collect(exported, actor="tester")
+    assert result.integrity
+    row = result.integrity[0]
+    for column in ("output_chars", "output_questions", "fallback_used", "alt_overlap"):
+        assert column in row
+
+
+async def test_provenance_table_reports_composition(exported: AsyncSession) -> None:
+    """§7.7 — provenance 구성비(초안 §7.3 hierarchy, 논문 보고용). 자산에서 산출한다."""
+    result = await export_trajectory.collect(exported, actor="tester")
+    assert result.provenance
+    row = next(entry for entry in result.provenance if entry["participant_no"] == "P00")
+    assert row["verbatim_log"] + row["participant_quote"] + row["researcher_paraphrase"] == 5
+    assert abs(sum(row[f"{key}_ratio"] for key in
+                   ("verbatim_log", "participant_quote", "researcher_paraphrase")) - 1.0) < 0.01
+
+
+# --------------------------------------------------------------------------- #
+# 부록 B — 삭제된 열이 돌아오지 않는다
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "removed",
+    [
+        "sequence_index",
+        "branch_index",
+        "normalization_applied",
+        "matched_pattern_id",
+        "referent_id",
+        "first_opportunity",
+        "carryover_sensitive",
+        "response_latency",
+    ],
+)
+async def test_removed_columns_are_gone(exported: AsyncSession, removed: str) -> None:
+    """부록 B 삭제 목록 — 4-branch·normalization·presurvey 계보의 열."""
+    result = await export_trajectory.collect(exported, actor="tester")
+    for rows in result.as_files().values():
+        for row in rows:
+            assert removed not in row, f"{removed}가 export에 남아 있다"
+
+
+async def test_no_aggregate_rating_column(exported: AsyncSession) -> None:
+    """§0.4 · §7.1 — 합산 열은 만들지 않는다."""
+    result = await export_trajectory.collect(exported, actor="tester")
+    row = result.trajectory[0]
+    for banned in ("rating_total", "rating_sum", "regrounding_score", "overall_preference"):
+        assert banned not in row
+
+
+async def test_latency_is_opt_in(exported: AsyncSession) -> None:
+    """§2.11 — `response_latency`는 기본 미산출. `--latency`를 준 실행만 열을 만든다."""
+    default = await export_trajectory.collect(exported, actor="tester")
+    assert not any(key.startswith("latency_") for key in default.trajectory[0])
+
+    with_latency = await export_trajectory.collect(exported, actor="tester", latency=True)
+    assert any(key.startswith("latency_") for key in with_latency.trajectory[0])
+
+
+# --------------------------------------------------------------------------- #
+# 파일 쓰기
+# --------------------------------------------------------------------------- #
+
+
+async def test_write_csv_creates_files_even_when_empty(tmp_path: Path) -> None:
+    """빈 표도 파일로 남긴다 — 파일이 없는 것과 데이터가 없는 것은 다르다."""
+    target = tmp_path / "empty.csv"
+    export_trajectory.write_csv(target, [])
+    assert target.is_file()
+    assert target.read_text(encoding="utf-8-sig").strip() == ""
+
+
+async def test_write_csv_unions_columns_across_rows(tmp_path: Path) -> None:
+    """열이 행마다 다른 표(`pairwise.csv`)를 온전히 쓴다.
+
+    문항은 contrast마다 다르므로 pairwise 행끼리 열이 다르다. 첫 행 기준으로 열을 잡으면
+    두 번째 contrast의 응답이 통째로 사라지거나 쓰기가 터진다 — 실제로 그렇게 터졌다.
+    """
+    import csv as csv_module
+
+    target = tmp_path / "pairwise.csv"
+    export_trajectory.write_csv(
+        target,
+        [
+            {"contrast": "sequence", "item_seq_1": 4},
+            {"contrast": "scope", "item_sco_1": 5, "item_sco_2": 6},
+        ],
+    )
+    with target.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv_module.DictReader(handle))
+    assert set(rows[0]) == {"contrast", "item_seq_1", "item_sco_1", "item_sco_2"}
+    assert rows[0]["item_seq_1"] == "4" and rows[0]["item_sco_1"] == ""
+    assert rows[1]["item_sco_2"] == "6"
+
+
+async def test_written_files_round_trip(exported: AsyncSession, tmp_path: Path) -> None:
+    """§7.7 — 실제로 파일까지 쓴다. `collect()`만 보면 쓰기 단계의 결함을 놓친다."""
+    import csv as csv_module
+
+    result = await export_trajectory.collect(exported, actor="tester")
+    for name, rows in result.as_files().items():
+        export_trajectory.write_csv(tmp_path / name, rows)
+        with (tmp_path / name).open(encoding="utf-8-sig", newline="") as handle:
+            written = list(csv_module.DictReader(handle))
+        assert len(written) == len(rows), f"{name}: {len(written)}행 vs {len(rows)}행"
+
+    # pairwise는 세 contrast의 문항 열이 모두 살아 있어야 한다.
+    with (tmp_path / export_trajectory.PAIRWISE_FILE).open(
+        encoding="utf-8-sig", newline=""
+    ) as handle:
+        header = next(csv_module.reader(handle))
+    assert any(name.startswith("item_seq_") for name in header)
+    assert any(name.startswith("item_sco_") for name in header)
+    assert any(name.startswith("item_sto_") for name in header)

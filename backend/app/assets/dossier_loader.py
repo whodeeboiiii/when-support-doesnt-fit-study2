@@ -1,16 +1,24 @@
-"""incident dossier 로더 — **ai_visible·derivation 층 전용** (구현명세서 §5.2 · §5.4 · §1.2).
+"""incident dossier 로더 — 스키마 v2 (구현명세서 §5.3 · §5.4 · §1.2).
 
 이 모듈이 돌려주는 어떤 값에도 `researcher_only` 층은 들어 있지 않다. 회고 stance·미전송
-생각·ideal response는 §1.2 표에서 AI2·checker·normalization 전부 **금지**이고, 그 경계를
-"조심해서 쓰기"가 아니라 **타입으로** 지킨다 — 이 로더는 researcher_only를 파싱조차 하지 않고,
-필요한 콘솔(R3·R4)은 `dossier_private.py`를 따로 부른다(NT-04).
+생각·ideal response는 §1.2 표에서 AI2·checker 전부 **금지**이고, 그 경계를 "조심해서 쓰기"가
+아니라 **타입으로** 지킨다 — 이 로더는 researcher_only를 파싱조차 하지 않고, 필요한
+콘솔(R3·R4)은 `dossier_private.py`를 따로 부른다(NT-04).
 
-층별 지위 (§1.2)
-- `ai_visible`  : AI2·checker·normalization·콘솔·export 전부 허용. checkpoint 정보 그 자체.
-- `derivation`  : **시스템 운영 자산**이다. AI1 표시·normalization·fallback에 쓰지만
-                  derivation 값이 AI2 프롬프트에 직접 삽입되는 경로는 없다
-                  (예외: normalized referent 치환문·fallback 문안 그 자체).
+층별 지위 (§1.2·§5.3)
+- `ai_visible`   : checkpoint packet 그 자체. AI2·checker·참가자 화면·콘솔·export 전부 허용.
+                   ⚠ AI2·checker에 가는 것은 **참가자 수정본(effective)**이다(D-25) —
+                   원문 그대로가 아니다. overlay는 `EffectiveAiVisible`이 만든다.
+- `stimulus`     : R/U/Q segment + 조립 계량 + neutral_fallback + QC. 참가자에게는 **조립된
+                   AI1 문자열만** 나가고 segment 구분·조건 라벨은 나가지 않는다(§1.2).
+- `evidence_code`: 연구자 코딩 층. 콘솔·export·배정표 생성에만 쓰이고, `llm/`에는
+                   `prohibited_inference` 하나만 전달된다(§5.3 layer 접근 규율).
 - `researcher_only` : 이 모듈의 관할이 아니다.
+
+**v1과 달라진 것**(§5.3 "삭제된 키"): `sampling` → `evidence_code`, `trouble_cue.form` 폐기
+(cue form 분류 삭제 — §1.5-2), `derivation.warranted_uptake` → `evidence_code.permitted_operation`,
+`focal_repair_relevant_content`·`referent_map` 삭제(normalization 폐기 — D-34),
+`stimuli.C1–C4` 전문 저장 → **`r`/`u`/`q` segment 조립**(D-35).
 
 기동 게이트 (§5.4): `validate_all()`이 dossier 전수를 검증하고, 필수 키 누락·질문 수 계약
 위반이면 **기동을 실패시킨다**. 자산이 깨진 채 세션을 받는 것보다 안 뜨는 편이 안전하다.
@@ -25,25 +33,30 @@ from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
-from app.assets.files import PARTICIPANT_NUMBERS, read_raw
-from app.core.text_metrics import TextMetrics, measure
+from app.assets.files import available_participant_numbers, is_participant_no, read_raw
+from app.core.text_metrics import TextMetrics, count_questions, measure
 
-#: §0.4 실험 조건. ID 예약 규칙(§1.5-8) — C1–C4는 실험 조건 전용이다.
+#: §0.4 실험 조건. ID 예약 규칙(§1.5) — C1–C4는 실험 조건 전용이다.
 CONDITIONS: tuple[str, ...] = ("C1", "C2", "C3", "C4")
 
-#: §5.3 — 질문을 담는 조건은 elicitation 조건(C2·C4)뿐이고 정확히 1개다.
+#: §5.4 조립 표 — 조건 → 이어 붙일 segment 키의 순서. **단일 공백 연결**(D-35).
+STIMULUS_RECIPE: Mapping[str, tuple[str, ...]] = MappingProxyType(
+    {"C1": ("r",), "C2": ("r", "q"), "C3": ("r", "u"), "C4": ("r", "u", "q")}
+)
+SEGMENT_KEYS: tuple[str, ...] = ("r", "u", "q")
+
+#: §5.4 — 조립 결과의 질문 수 계약. elicitation segment(q)를 가진 조건만 정확히 1개다.
 QUESTION_COUNT_BY_CONDITION: Mapping[str, int] = MappingProxyType(
     {"C1": 0, "C2": 1, "C3": 0, "C4": 1}
 )
 
-#: §1.5-2 AI-visible trouble cue의 cue form.
-CUE_FORMS: frozenset[str] = frozenset(
-    {"explicit", "mitigated", "ambiguous", "affiliative_plus_trouble"}
-)
+#: §5.3 — evidence-bounded actionability. **incident descriptor다**(§1.5-4).
+#: 조건·분기·검증의 입력으로 쓰면 결함이다. 배정표 제약과 export 열에만 쓴다.
+A_LEVELS: frozenset[str] = frozenset({"A0", "A1", "A2"})
 
-#: §5.1 목적표집 variation 축 ② primary mismatch locus.
+#: §5.3 `<TODO: PH-03b — broad locus 목록 확정>`. 초판 5종.
 MISMATCH_LOCI: frozenset[str] = frozenset(
     {
         "content_depth",
@@ -54,25 +67,97 @@ MISMATCH_LOCI: frozenset[str] = frozenset(
     }
 )
 
+#: §5.3 provenance hierarchy (초안 §7.3). export가 사건별 구성비를 산출한다(§7.7).
+PROVENANCE_VALUES: frozenset[str] = frozenset(
+    {"verbatim_log", "participant_quote", "researcher_paraphrase"}
+)
+
+#: §4.2 — 참가자가 P2에서 수정할 수 있는 segment. `prior_evidence`는 줄 단위 하나의 텍스트다.
+EDITABLE_SEGMENTS: tuple[str, ...] = (
+    "situation_summary",
+    "prior_evidence",
+    "original_request",
+    "problematic_ai_response",
+    "trouble_cue",
+)
+
+#: §3.4·§2.8 — 이 segment가 수정되면 자극의 전제가 흔들릴 수 있다. R2 경보 + notify.
+ALERT_SEGMENTS: frozenset[str] = frozenset({"trouble_cue", "problematic_ai_response"})
+
+#: §6.5·§5.4 — neutral_fallback 길이 상한. `llm/integrity_rules.MAX_OUTPUT_CHARS`와 같은 값.
+FALLBACK_MAX_CHARS = 1_200
+
+#: §5.4 — segment에 researcher_only 문자열이 섞였는지 보는 부분 일치 임계(승계).
+LEAK_MATCH_CHARS = 8
+
 _TOP_LEVEL_KEYS: frozenset[str] = frozenset(
-    {"participant_no", "version", "locked_at", "hash", "sampling", "ai_visible",
-     "researcher_only", "derivation"}
+    {
+        "participant_no",
+        "version",
+        "locked_at",
+        "hash",
+        "evidence_code",
+        "ai_visible",
+        "researcher_only",
+        "stimulus",
+    }
 )
-_SAMPLING_KEYS: frozenset[str] = frozenset({"actionability", "mismatch_locus", "notes_ref"})
+_EVIDENCE_CODE_KEYS: frozenset[str] = frozenset(
+    {
+        "a_level",
+        "mismatch_locus",
+        "mismatch_locus_text",
+        "directional_constraint",
+        "permitted_operation",
+        "residual_uncertainty",
+        "consequential_justification",
+        "prohibited_inference",
+        "coders",
+        "adjudicated_at",
+    }
+)
 _AI_VISIBLE_KEYS: frozenset[str] = frozenset(
-    {"situation_summary", "original_request", "problematic_ai_response", "trouble_cue",
-     "prior_evidence"}
+    {
+        "situation_summary",
+        "prior_evidence",
+        "original_request",
+        "problematic_ai_response",
+        "trouble_cue",
+        "provenance",
+        "excerpt_note",
+    }
 )
-_DERIVATION_KEYS: frozenset[str] = frozenset(
-    {"warranted_uptake", "prohibited_inference", "residual_uncertainty",
-     "focal_repair_relevant_content", "stimuli", "stimuli_meta", "neutral_fallback",
-     "referent_map"}
+_STIMULUS_KEYS: frozenset[str] = frozenset(
+    {"r", "u", "q", "stimuli_meta", "neutral_fallback", "qc"}
 )
-#: §5.2 researcher_only 필수 필드. 이 모듈은 **존재만** 확인하고 값은 읽지 않는다.
+#: §5.4 QC 필드 — 시스템은 절차를 강제하지 않고 **필드의 존재만** 검증한다.
+_QC_KEYS: frozenset[str] = frozenset(
+    {
+        "r_identity",
+        "u_identity",
+        "q_identity",
+        "permitted_boundary",
+        "leakage",
+        "minimum_q",
+        "reviewer",
+        "at",
+    }
+)
+#: §5.3 researcher_only 필수 필드. 이 모듈은 **존재만** 확인하고 값은 읽지 않는다.
 _RESEARCHER_ONLY_KEYS: frozenset[str] = frozenset(
-    {"retrospective_stance", "unsent_at_the_time", "mismatch_interpretation",
-     "original_trajectory", "ideal_response_reported", "correction_labor_notes"}
+    {
+        "retrospective_stance",
+        "unsent_at_the_time",
+        "mismatch_interpretation",
+        "original_trajectory",
+        "ideal_response_reported",
+        "correction_labor_notes",
+        "verification_notes",
+    }
 )
+
+#: §5.3 provenance는 ai_visible의 **텍스트 필드 전부**를 덮어야 한다(§5.4 기동 게이트).
+_PROVENANCE_REQUIRED: frozenset[str] = frozenset(EDITABLE_SEGMENTS)
 
 
 class DossierContractError(ValueError):
@@ -85,65 +170,158 @@ class DossierContractError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
-class TroubleCue:
-    text: str
-    form: str
-
-
-@dataclass(frozen=True, slots=True)
 class AiVisible:
-    """§1.2 표의 'dossier ai_visible layer' — AI2·checker가 볼 수 있는 유일한 사건 정보."""
+    """§1.2 표의 'dossier ai_visible layer' — checkpoint packet 원문.
+
+    ⚠ **이 값이 그대로 AI2에 가지 않는다**(D-25). LLM·P4 이후 화면이 보는 것은 참가자
+    수정본을 얹은 `EffectiveAiVisible`이다. 원문은 P2(수정 대상)와 콘솔·export에만 나간다.
+    `trouble_cue`가 dataclass가 아니라 **문자열 하나**인 것이 v2의 변화다(§1.5-2 — cue form
+    분류 폐기).
+    """
 
     situation_summary: str
+    prior_evidence: tuple[str, ...]
     original_request: str
     problematic_ai_response: str
-    trouble_cue: TroubleCue
-    prior_evidence: tuple[str, ...]
+    trouble_cue: str
+    provenance: Mapping[str, str]
+    excerpt_note: str
+
+    def segment(self, name: str) -> str:
+        """§4.2 편집 단위 1건의 현재 문자열. `prior_evidence`는 줄 단위 하나의 텍스트다."""
+        if name == "prior_evidence":
+            return "\n".join(self.prior_evidence)
+        if name not in EDITABLE_SEGMENTS:
+            raise KeyError(f"편집 가능 segment가 아니다: {name!r} (§4.2)")
+        return str(getattr(self, name))
+
+    def segments(self) -> dict[str, str]:
+        return {name: self.segment(name) for name in EDITABLE_SEGMENTS}
 
     def as_dict(self) -> dict[str, Any]:
-        """payload 조립·콘솔 표시용 평면 사본 (§6.2 ②)."""
+        """콘솔 표시용 평면 사본. LLM payload 조립은 `EffectiveAiVisible`이 한다."""
         return {
             "situation_summary": self.situation_summary,
+            "prior_evidence": list(self.prior_evidence),
             "original_request": self.original_request,
             "problematic_ai_response": self.problematic_ai_response,
-            "trouble_cue": {"text": self.trouble_cue.text, "form": self.trouble_cue.form},
-            "prior_evidence": list(self.prior_evidence),
+            "trouble_cue": self.trouble_cue,
+            "provenance": dict(self.provenance),
+            "excerpt_note": self.excerpt_note,
         }
 
 
 @dataclass(frozen=True, slots=True)
-class ResidualUncertainty:
-    """§5.3 — C2·C4가 공유하는 consequential residual uncertainty 1개와 그 질문문."""
+class EffectiveAiVisible:
+    """§3.4 — 참가자 수정본을 얹은 checkpoint (D-25의 "effective checkpoint").
 
-    text: str
-    question_stem: str
+    **§6.2 allowlist의 ②가 이 타입이다.** `llm/context.py`의 시그니처가 `AiVisible`이 아니라
+    이것을 받는 이유는 한 가지다: AI2가 원문을 보면 안 된다(§1.2 표 — "dossier ai_visible
+    원문(수정 전)"은 AI2 ❌). 타입을 갈라 두면 원문을 넘기는 호출이 컴파일 단계에서 눈에
+    띈다.
+
+    `edited_segments`는 **어느 segment가 바뀌었는가**의 목록이고 원문은 담지 않는다 —
+    수정 전 원문은 R-1의 금지 문자열이다(§6.4).
+    """
+
+    situation_summary: str
+    prior_evidence: tuple[str, ...]
+    original_request: str
+    problematic_ai_response: str
+    trouble_cue: str
+    edited_segments: tuple[str, ...] = ()
+
+    @property
+    def edited(self) -> bool:
+        return bool(self.edited_segments)
+
+    def as_dict(self) -> dict[str, Any]:
+        """§4.2·§4.4·§4.9·§4.10 화면 payload 조립용. 조건 라벨·provenance는 넣지 않는다."""
+        return {
+            "situation_summary": self.situation_summary,
+            "prior_evidence": list(self.prior_evidence),
+            "original_request": self.original_request,
+            "problematic_ai_response": self.problematic_ai_response,
+            "trouble_cue": self.trouble_cue,
+        }
+
+
+def build_effective(
+    ai_visible: AiVisible, edits: Mapping[str, str] | None = None
+) -> EffectiveAiVisible:
+    """§3.4 — 원문 + segment별 최종 수정본 → effective checkpoint.
+
+    `edits`는 `checkpoint_edits`에서 segment별 **마지막 행**만 추린 것이다(누적 저장, 최종본 =
+    마지막 행 — §3.4). 여기서 검증하지 않는 이유: 빈 문자열 거부(400)는 저장 시점의 규칙이고
+    (§4.2), 이미 저장된 값을 조립 시점에 다시 판정하면 두 규칙이 갈라진다.
+    """
+    applied = {
+        name: text
+        for name, text in (edits or {}).items()
+        if name in EDITABLE_SEGMENTS and text is not None
+    }
+    prior = applied.get("prior_evidence")
+    return EffectiveAiVisible(
+        situation_summary=applied.get("situation_summary", ai_visible.situation_summary),
+        prior_evidence=(
+            tuple(line for line in prior.split("\n") if line.strip())
+            if prior is not None
+            else ai_visible.prior_evidence
+        ),
+        original_request=applied.get("original_request", ai_visible.original_request),
+        problematic_ai_response=applied.get(
+            "problematic_ai_response", ai_visible.problematic_ai_response
+        ),
+        trouble_cue=applied.get("trouble_cue", ai_visible.trouble_cue),
+        edited_segments=tuple(name for name in EDITABLE_SEGMENTS if name in applied),
+    )
 
 
 @dataclass(frozen=True, slots=True)
-class ReferentEntry:
-    """§6.4 referent_map 1건 — 지시표현이 가리킬 수 있는 AI1 제안의 명시 명제문."""
+class EvidenceCode:
+    """§5.3 evidence_code 층 — 연구자 코딩. `llm/`에는 `prohibited_inference`만 나간다."""
 
-    patterns: tuple[str, ...]
-    proposition: str
-
-
-@dataclass(frozen=True, slots=True)
-class Derivation:
-    warranted_uptake: str
+    a_level: str
+    mismatch_locus: str
+    mismatch_locus_text: str
+    directional_constraint: str
+    permitted_operation: str
+    residual_uncertainty: str
+    consequential_justification: str
     prohibited_inference: tuple[str, ...]
-    residual_uncertainty: ResidualUncertainty
-    focal_repair_relevant_content: str
-    stimuli: Mapping[str, str]
+    coders: str
+    adjudicated_at: str | None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "a_level": self.a_level,
+            "mismatch_locus": self.mismatch_locus,
+            "mismatch_locus_text": self.mismatch_locus_text,
+            "directional_constraint": self.directional_constraint,
+            "permitted_operation": self.permitted_operation,
+            "residual_uncertainty": self.residual_uncertainty,
+            "consequential_justification": self.consequential_justification,
+            "prohibited_inference": list(self.prohibited_inference),
+            "coders": self.coders,
+            "adjudicated_at": self.adjudicated_at,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class Stimulus:
+    """§5.3 stimulus 층 — R/U/Q segment. **네 전문을 저장하지 않는다**(D-35)."""
+
+    r: str
+    u: str
+    q: str
     stimuli_meta: Mapping[str, TextMetrics]
     neutral_fallback: str
-    referent_map: tuple[ReferentEntry, ...]
+    qc: Mapping[str, Any]
 
-
-@dataclass(frozen=True, slots=True)
-class Sampling:
-    actionability: int
-    mismatch_locus: str
-    notes_ref: str
+    def segment(self, key: str) -> str:
+        if key not in SEGMENT_KEYS:
+            raise KeyError(f"알 수 없는 segment: {key!r} (r·u·q — §5.3)")
+        return str(getattr(self, key))
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,31 +329,40 @@ class Dossier:
     participant_no: str
     version: str
     locked_at: str | None
-    #: §5.2 lock 시점에 기입되는 전체 JSON sha256. lock 전에는 None이다.
+    #: §5.3 lock 시점에 기입되는 전체 JSON sha256. lock 전에는 None이다.
     locked_hash: str | None
     #: 지금 파일 내용으로 계산한 hash — §8.4 audit의 '자산 버전·hash' 자리.
     content_hash: str
-    #: 스키마 더미로 내려왔는가 (§2.9 — 실값 미반입 상태). 콘솔 R4·기동 로그가 이걸 표시한다.
+    #: 스키마 더미로 내려왔는가 (§2.9 — 실값 미반입 상태). R1·R4·기동 로그가 표시한다(NT-42).
     is_dummy: bool
     source_path: Path
-    sampling: Sampling
+    evidence_code: EvidenceCode
     ai_visible: AiVisible
-    derivation: Derivation
+    stimulus: Stimulus
 
     @property
     def is_locked(self) -> bool:
-        """§5.2 lock 절차 완료 여부. locked_at·hash가 있고 현재 내용과 일치해야 한다."""
+        """§5.3 lock 절차 완료 여부. locked_at·hash가 있고 현재 내용과 일치해야 한다."""
         return bool(self.locked_at) and self.locked_hash == self.content_hash
 
-    def stimulus(self, condition: str) -> str:
-        """§3.2 — branch 최초 표시 시 쓰는 AI1 원문."""
-        if condition not in CONDITIONS:
+    def assemble(self, condition: str) -> str:
+        """§5.4 AI1 자극 = R/U/Q segment의 **결정론 조립** (D-35).
+
+        AI1은 checkpoint 수정과 무관하게 locked 그대로다(§3.4) — 이 함수에 수정본이 들어올
+        자리가 없다는 것이 그 불변식의 구현이다.
+        """
+        recipe = STIMULUS_RECIPE.get(condition)
+        if recipe is None:
             raise KeyError(f"알 수 없는 조건: {condition!r}")
-        return self.derivation.stimuli[condition]
+        return " ".join(self.stimulus.segment(key) for key in recipe)
 
     def stimulus_hash(self, condition: str) -> str:
-        """§3.2 `branches.stimulus_hash` — 표시된 자극의 동일성 증거."""
-        return hashlib.sha256(self.stimulus(condition).encode("utf-8")).hexdigest()
+        """§8.1 `focal_runs.stimulus_hash`·`alt_exposures.stimulus_hash` — 조립 결과의 sha256."""
+        return hashlib.sha256(self.assemble(condition).encode("utf-8")).hexdigest()
+
+    def all_stimuli(self) -> dict[str, str]:
+        """네 조건의 조립 결과. **콘솔 R4 전용**이다 — 참가자 payload에 통째로 싣지 않는다(NT-31)."""
+        return {condition: self.assemble(condition) for condition in CONDITIONS}
 
 
 # --------------------------------------------------------------------------- #
@@ -184,11 +371,11 @@ class Dossier:
 
 
 def compute_document_hash(document: Mapping[str, Any]) -> str:
-    """§5.2 "전체 JSON sha256".
+    """§5.3 "hash 필드 제외 canonical JSON sha256"(승계).
 
     `hash` 필드 자신은 제외하고 계산한다 — 포함하면 값을 적는 순간 hash가 달라져 자기
     참조가 된다. 그 밖의 전 필드(researcher_only 포함)가 대상이므로 어느 층이 바뀌어도
-    lock 검증이 깨진다.
+    lock 검증이 깨진다. `locked_at`은 포함한다.
     """
     payload = {key: value for key, value in document.items() if key != "hash"}
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -227,41 +414,85 @@ def _require_text_list(section: str, value: Any, problems: list[str]) -> tuple[s
     if not isinstance(value, list):
         problems.append(f"{section}: 리스트여야 한다")
         return ()
-    items: list[str] = []
-    for index, entry in enumerate(value):
-        items.append(_require_text(f"{section}[{index}]", entry, problems))
-    return tuple(items)
+    return tuple(
+        _require_text(f"{section}[{index}]", entry, problems) for index, entry in enumerate(value)
+    )
 
 
-def _validate_sampling(raw: Any, problems: list[str]) -> Sampling:
-    section = _require_keys("sampling", raw, _SAMPLING_KEYS, problems)
-    actionability = section.get("actionability")
-    if actionability not in (0, 1, 2):
-        problems.append("sampling.actionability: 0·1·2 중 하나여야 한다 (§1.5-2)")
-        actionability = 0
+def _validate_evidence_code(raw: Any, problems: list[str]) -> EvidenceCode:
+    section = _require_keys("evidence_code", raw, _EVIDENCE_CODE_KEYS, problems)
+
+    a_level = section.get("a_level")
+    if a_level not in A_LEVELS:
+        problems.append(f"evidence_code.a_level: {sorted(A_LEVELS)} 중 하나여야 한다 (§1.5-4)")
+        a_level = "A0"
     locus = section.get("mismatch_locus")
     if locus not in MISMATCH_LOCI:
-        problems.append(f"sampling.mismatch_locus: {sorted(MISMATCH_LOCI)} 중 하나여야 한다")
+        problems.append(
+            f"evidence_code.mismatch_locus: {sorted(MISMATCH_LOCI)} 중 하나여야 한다 "
+            "(<TODO: PH-03b>)"
+        )
         locus = ""
-    return Sampling(
-        actionability=int(actionability),
+
+    adjudicated_at = section.get("adjudicated_at")
+    if adjudicated_at is not None and not isinstance(adjudicated_at, str):
+        problems.append("evidence_code.adjudicated_at: null 또는 ISO-8601 문자열이어야 한다")
+        adjudicated_at = None
+
+    return EvidenceCode(
+        a_level=str(a_level),
         mismatch_locus=str(locus),
-        notes_ref=str(section.get("notes_ref", "")),
+        mismatch_locus_text=_require_text(
+            "evidence_code.mismatch_locus_text", section.get("mismatch_locus_text"), problems
+        ),
+        directional_constraint=_require_text(
+            "evidence_code.directional_constraint", section.get("directional_constraint"), problems
+        ),
+        permitted_operation=_require_text(
+            "evidence_code.permitted_operation", section.get("permitted_operation"), problems
+        ),
+        residual_uncertainty=_require_text(
+            "evidence_code.residual_uncertainty", section.get("residual_uncertainty"), problems
+        ),
+        consequential_justification=_require_text(
+            "evidence_code.consequential_justification",
+            section.get("consequential_justification"),
+            problems,
+        ),
+        prohibited_inference=_require_text_list(
+            "evidence_code.prohibited_inference", section.get("prohibited_inference", []), problems
+        ),
+        coders=str(section.get("coders", "")),
+        adjudicated_at=adjudicated_at,
     )
+
+
+def _validate_provenance(raw: Any, problems: list[str]) -> Mapping[str, str]:
+    """§5.4 기동 게이트 — provenance 키가 ai_visible 텍스트 필드 **전부**를 덮어야 한다."""
+    if not isinstance(raw, dict):
+        problems.append("ai_visible.provenance: 객체여야 한다 (§5.3)")
+        return MappingProxyType({})
+    missing = sorted(_PROVENANCE_REQUIRED - set(raw))
+    if missing:
+        problems.append(f"ai_visible.provenance: 텍스트 필드 미커버 — {missing} (§5.4)")
+    values: dict[str, str] = {}
+    for field, value in raw.items():
+        if value not in PROVENANCE_VALUES:
+            problems.append(
+                f"ai_visible.provenance.{field}: {sorted(PROVENANCE_VALUES)} 중 하나여야 한다"
+            )
+        values[str(field)] = str(value)
+    return MappingProxyType(values)
 
 
 def _validate_ai_visible(raw: Any, problems: list[str]) -> AiVisible:
     section = _require_keys("ai_visible", raw, _AI_VISIBLE_KEYS, problems)
-    cue_raw = section.get("trouble_cue")
-    if not isinstance(cue_raw, dict) or set(cue_raw) != {"text", "form"}:
-        problems.append("ai_visible.trouble_cue: {text, form} 두 키를 가져야 한다")
-        cue_raw = {"text": "", "form": ""}
-    cue_form = cue_raw.get("form")
-    if cue_form not in CUE_FORMS:
-        problems.append(f"ai_visible.trouble_cue.form: {sorted(CUE_FORMS)} 중 하나여야 한다")
     return AiVisible(
         situation_summary=_require_text(
             "ai_visible.situation_summary", section.get("situation_summary"), problems
+        ),
+        prior_evidence=_require_text_list(
+            "ai_visible.prior_evidence", section.get("prior_evidence", []), problems
         ),
         original_request=_require_text(
             "ai_visible.original_request", section.get("original_request"), problems
@@ -269,140 +500,133 @@ def _validate_ai_visible(raw: Any, problems: list[str]) -> AiVisible:
         problematic_ai_response=_require_text(
             "ai_visible.problematic_ai_response", section.get("problematic_ai_response"), problems
         ),
-        trouble_cue=TroubleCue(
-            text=_require_text("ai_visible.trouble_cue.text", cue_raw.get("text"), problems),
-            form=str(cue_form or ""),
-        ),
-        prior_evidence=_require_text_list(
-            "ai_visible.prior_evidence", section.get("prior_evidence", []), problems
-        ),
+        # v2 — cue form 분류 폐기(§1.5-2). trouble_cue는 텍스트 하나다.
+        trouble_cue=_require_text("ai_visible.trouble_cue", section.get("trouble_cue"), problems),
+        provenance=_validate_provenance(section.get("provenance"), problems),
+        excerpt_note=str(section.get("excerpt_note", "")),
     )
 
 
-def _validate_stimuli(section: Mapping[str, Any], problems: list[str]) -> dict[str, str]:
-    raw = section.get("stimuli")
-    if not isinstance(raw, dict) or set(raw) != set(CONDITIONS):
-        problems.append("derivation.stimuli: C1·C2·C3·C4 네 키를 정확히 가져야 한다 (§5.3)")
-        return {condition: "" for condition in CONDITIONS}
-    return {
-        condition: _require_text(f"derivation.stimuli.{condition}", raw[condition], problems)
-        for condition in CONDITIONS
-    }
+def _assembled(segments: Mapping[str, str], condition: str) -> str:
+    return " ".join(segments.get(key, "") for key in STIMULUS_RECIPE[condition])
+
+
+def _validate_segment_contract(segments: Mapping[str, str], problems: list[str]) -> None:
+    """NT-22 — segment 질문 수 + 조립 결과 질문 수 + 조건 간 동일성 (§5.4 · §0.4).
+
+    조건 간 동일성(C2⊃q = C4⊃q, C3⊃u = C4⊃u, R 4조건 동일)은 **조립 방식에서 이미 따라
+    나온다** — 같은 segment를 이어 붙이기 때문이다. 그래도 검사하는 이유는 조립 레시피가
+    바뀌면 그 사실이 조용히 통과하지 않게 하기 위해서다(§0.4 동결 항목).
+    """
+    for key in SEGMENT_KEYS:
+        expected = 1 if key == "q" else 0
+        actual = count_questions(segments.get(key, ""))
+        if actual != expected:
+            problems.append(
+                f"stimulus.{key}: 질문 {actual}개 — 계약값 {expected}개 (§5.4 · NT-22)"
+            )
+
+    for condition, expected in QUESTION_COUNT_BY_CONDITION.items():
+        actual = count_questions(_assembled(segments, condition))
+        if actual != expected:
+            problems.append(
+                f"조립({condition}): 질문 {actual}개 — 계약값 {expected}개 (NT-22)"
+            )
+
+    r = segments.get("r", "")
+    for condition in CONDITIONS:
+        if not _assembled(segments, condition).startswith(r):
+            problems.append(f"조립({condition}): R prefix가 4조건 동일해야 한다 (§0.4 · NT-22)")
+    if segments.get("q", "") not in _assembled(segments, "C2"):
+        problems.append("조립(C2): q segment를 그대로 포함해야 한다 (C2=C4 Q 동결 — §0.4)")
+    if segments.get("q", "") not in _assembled(segments, "C4"):
+        problems.append("조립(C4): q segment를 그대로 포함해야 한다 (C2=C4 Q 동결 — §0.4)")
+    if segments.get("u", "") not in _assembled(segments, "C3"):
+        problems.append("조립(C3): u segment를 그대로 포함해야 한다 (C3=C4 U 동결 — §0.4)")
+    if segments.get("u", "") not in _assembled(segments, "C4"):
+        problems.append("조립(C4): u segment를 그대로 포함해야 한다 (C3=C4 U 동결 — §0.4)")
 
 
 def _validate_stimuli_meta(
-    section: Mapping[str, Any], stimuli: Mapping[str, str], problems: list[str]
+    raw: Any, segments: Mapping[str, str], problems: list[str]
 ) -> dict[str, TextMetrics]:
-    """NT-23 — `stimuli_meta`가 실제 원문의 계량과 일치해야 한다."""
-    raw = section.get("stimuli_meta")
+    """NT-23 — `stimuli_meta`가 **조립 결과**의 계량과 일치해야 한다."""
     if not isinstance(raw, dict) or set(raw) != set(CONDITIONS):
-        problems.append("derivation.stimuli_meta: C1·C2·C3·C4 네 키를 정확히 가져야 한다")
+        problems.append("stimulus.stimuli_meta: C1·C2·C3·C4 네 키를 정확히 가져야 한다")
         raw = {}
     meta: dict[str, TextMetrics] = {}
     for condition in CONDITIONS:
-        measured = measure(stimuli.get(condition, ""))
-        entry = raw.get(condition) if isinstance(raw, dict) else None
+        measured = measure(_assembled(segments, condition))
+        entry = raw.get(condition)
         if not isinstance(entry, dict) or set(entry) != {"chars", "sentences", "questions"}:
             problems.append(
-                f"derivation.stimuli_meta.{condition}: {{chars, sentences, questions}} 세 키가 필요하다"
+                f"stimulus.stimuli_meta.{condition}: {{chars, sentences, questions}} 세 키가 필요하다"
             )
         elif entry != measured.as_dict():
             problems.append(
-                f"derivation.stimuli_meta.{condition}: 원문 계량과 불일치 — "
+                f"stimulus.stimuli_meta.{condition}: 조립 결과 계량과 불일치 — "
                 f"기재 {entry} vs 실제 {measured.as_dict()} (NT-23)"
             )
         meta[condition] = measured
     return meta
 
 
-def _validate_question_contract(
-    stimuli: Mapping[str, str], residual: ResidualUncertainty, problems: list[str]
-) -> None:
-    """NT-22 — 자극 질문 수 계약과 C2·C4 question stem 동일성 (§0.4·§5.3).
-
-    이 검사가 §5.4의 기동 게이트가 말하는 "질문 수 불일치"다. C2·C4가 같은 stem을 쓰지
-    않으면 elicitation 효과와 질문 내용이 혼입된다(초안 §7.5).
-    """
-    from app.core.text_metrics import count_questions
-
-    for condition, expected in QUESTION_COUNT_BY_CONDITION.items():
-        actual = count_questions(stimuli.get(condition, ""))
-        if actual != expected:
-            problems.append(
-                f"derivation.stimuli.{condition}: 질문 수 {actual} — 계약값 {expected} (NT-22)"
-            )
-    stem = residual.question_stem
-    if stem:
-        for condition in ("C2", "C4"):
-            if stem not in stimuli.get(condition, ""):
-                problems.append(
-                    f"derivation.stimuli.{condition}: residual_uncertainty.question_stem을 "
-                    "그대로 포함해야 한다 (C2=C4 질문 동결 — §0.4)"
-                )
-
-
-def _validate_referent_map(section: Mapping[str, Any], problems: list[str]) -> tuple[ReferentEntry, ...]:
-    raw = section.get("referent_map")
-    if not isinstance(raw, list):
-        problems.append("derivation.referent_map: 리스트여야 한다 (§6.4)")
-        return ()
-    entries: list[ReferentEntry] = []
-    for index, item in enumerate(raw):
-        label = f"derivation.referent_map[{index}]"
-        if not isinstance(item, dict) or set(item) != {"patterns", "proposition"}:
-            problems.append(f"{label}: {{patterns, proposition}} 두 키를 가져야 한다")
-            continue
-        patterns = _require_text_list(f"{label}.patterns", item.get("patterns"), problems)
-        if not patterns:
-            problems.append(f"{label}.patterns: 최소 1개의 지시표현이 필요하다")
-        entries.append(
-            ReferentEntry(
-                patterns=patterns,
-                proposition=_require_text(f"{label}.proposition", item.get("proposition"), problems),
-            )
+def _validate_fallback(text: str, problems: list[str]) -> None:
+    """NT-21 — neutral_fallback은 질문 0·비확장·길이 상한 통과 (§6.5)."""
+    if not text:
+        return
+    questions = count_questions(text)
+    if questions:
+        problems.append(f"stimulus.neutral_fallback: 질문 {questions}개 — 0이어야 한다 (§6.5)")
+    if len(text.strip()) > FALLBACK_MAX_CHARS:
+        problems.append(
+            f"stimulus.neutral_fallback: {len(text.strip())}자 — 상한 {FALLBACK_MAX_CHARS}자 (R-4)"
         )
-    return tuple(entries)
 
 
-def _validate_derivation(raw: Any, problems: list[str]) -> Derivation:
-    section = _require_keys("derivation", raw, _DERIVATION_KEYS, problems)
-    residual_raw = section.get("residual_uncertainty")
-    if not isinstance(residual_raw, dict) or set(residual_raw) != {"text", "question_stem"}:
-        problems.append("derivation.residual_uncertainty: {text, question_stem} 두 키가 필요하다")
-        residual_raw = {"text": "", "question_stem": ""}
-    residual = ResidualUncertainty(
-        text=_require_text(
-            "derivation.residual_uncertainty.text", residual_raw.get("text"), problems
-        ),
-        question_stem=_require_text(
-            "derivation.residual_uncertainty.question_stem",
-            residual_raw.get("question_stem"),
-            problems,
-        ),
-    )
-    stimuli = _validate_stimuli(section, problems)
-    meta = _validate_stimuli_meta(section, stimuli, problems)
-    _validate_question_contract(stimuli, residual, problems)
-    return Derivation(
-        warranted_uptake=_require_text(
-            "derivation.warranted_uptake", section.get("warranted_uptake"), problems
-        ),
-        prohibited_inference=_require_text_list(
-            "derivation.prohibited_inference", section.get("prohibited_inference", []), problems
-        ),
-        residual_uncertainty=residual,
-        focal_repair_relevant_content=_require_text(
-            "derivation.focal_repair_relevant_content",
-            section.get("focal_repair_relevant_content"),
-            problems,
-        ),
-        stimuli=MappingProxyType(stimuli),
+def _validate_stimulus(raw: Any, problems: list[str]) -> Stimulus:
+    section = _require_keys("stimulus", raw, _STIMULUS_KEYS, problems)
+    segments = {
+        key: _require_text(f"stimulus.{key}", section.get(key), problems) for key in SEGMENT_KEYS
+    }
+    _validate_segment_contract(segments, problems)
+    meta = _validate_stimuli_meta(section.get("stimuli_meta"), segments, problems)
+    fallback = _require_text("stimulus.neutral_fallback", section.get("neutral_fallback"), problems)
+    _validate_fallback(fallback, problems)
+    qc = _require_keys("stimulus.qc", section.get("qc"), _QC_KEYS, problems)
+    return Stimulus(
+        r=segments["r"],
+        u=segments["u"],
+        q=segments["q"],
         stimuli_meta=MappingProxyType(meta),
-        neutral_fallback=_require_text(
-            "derivation.neutral_fallback", section.get("neutral_fallback"), problems
-        ),
-        referent_map=_validate_referent_map(section, problems),
+        neutral_fallback=fallback,
+        qc=MappingProxyType(dict(qc)),
     )
+
+
+def _validate_no_researcher_only_leak(
+    document: Mapping[str, Any], segments: Sequence[str], problems: list[str]
+) -> None:
+    """§5.4 — 세 segment 어디에도 researcher_only 문자열이 없어야 한다(8자 이상 부분 일치).
+
+    이 검사가 여기 있는 이유: 자산 작성자가 researcher_only의 문장을 자극에 옮겨 붙이면
+    §1.2의 방화벽이 **자산 수준에서** 이미 깨진 것이고, 런타임 R-1은 그때 정상 응답을
+    위반으로 잡게 된다. 자산 게이트에서 먼저 끊는 편이 낫다.
+    """
+    layer = document.get("researcher_only")
+    if not isinstance(layer, dict):
+        return
+    haystack = " ".join(segments)
+    if not haystack.strip():
+        return
+    for field, value in layer.items():
+        text = str(value or "").strip()
+        if len(text) < LEAK_MATCH_CHARS:
+            continue
+        if text in haystack:
+            problems.append(
+                f"stimulus: researcher_only.{field} 문자열이 segment에 등장한다 (§5.4 · §1.2)"
+            )
 
 
 def _validate_document(participant_no: str, document: Mapping[str, Any], problems: list[str]) -> None:
@@ -424,9 +648,7 @@ def _validate_document(participant_no: str, document: Mapping[str, Any], problem
                 problems.append(f"locked_at: ISO-8601로 읽을 수 없다 — {locked_at!r}")
 
     locked_hash = document.get("hash")
-    if locked_hash is not None and (
-        not isinstance(locked_hash, str) or len(locked_hash) != 64
-    ):
+    if locked_hash is not None and (not isinstance(locked_hash, str) or len(locked_hash) != 64):
         problems.append("hash: null 또는 64자리 sha256 hex여야 한다")
 
     # researcher_only는 **존재와 키만** 본다 — 값은 이 모듈이 읽지 않는다(§1.2, NT-04).
@@ -451,18 +673,19 @@ def load(participant_no: str) -> Dossier:
     반환값에는 `researcher_only`가 없다 — 이 함수를 지난 값은 LLM 경로에 닿아도 §1.2를
     깨지 않는다(단, payload allowlist는 §6.2가 따로 강제한다).
     """
-    if participant_no not in PARTICIPANT_NUMBERS:
-        raise KeyError(f"알 수 없는 참가자 번호: {participant_no!r} (허용: P00–P12)")
+    if not is_participant_no(participant_no):
+        raise KeyError(f"알 수 없는 참가자 번호: {participant_no!r} (허용: P00–P30)")
 
     document, path, is_dummy = read_raw(participant_no)
     problems: list[str] = []
     _validate_document(participant_no, document, problems)
-    sampling = _validate_sampling(document.get("sampling"), problems)
+    evidence_code = _validate_evidence_code(document.get("evidence_code"), problems)
     ai_visible = _validate_ai_visible(document.get("ai_visible"), problems)
-    derivation = _validate_derivation(document.get("derivation"), problems)
+    stimulus = _validate_stimulus(document.get("stimulus"), problems)
+    _validate_no_researcher_only_leak(document, (stimulus.r, stimulus.u, stimulus.q), problems)
     if problems:
         joined = "\n  - ".join(problems)
-        raise DossierContractError(f"{path} 자산 계약 위반 (§5.2·§5.4):\n  - {joined}")
+        raise DossierContractError(f"{path} 자산 계약 위반 (§5.3·§5.4):\n  - {joined}")
 
     return Dossier(
         participant_no=participant_no,
@@ -472,14 +695,18 @@ def load(participant_no: str) -> Dossier:
         content_hash=compute_document_hash(document),
         is_dummy=is_dummy,
         source_path=path,
-        sampling=sampling,
+        evidence_code=evidence_code,
         ai_visible=ai_visible,
-        derivation=derivation,
+        stimulus=stimulus,
     )
 
 
 def load_all() -> dict[str, Dossier]:
-    return {participant_no: load(participant_no) for participant_no in PARTICIPANT_NUMBERS}
+    """파일이 존재하는 참가자 전부. 없는 번호는 조용히 건너뛴다(§5.1 — 24명 + P00)."""
+    return {
+        participant_no: load(participant_no)
+        for participant_no in available_participant_numbers()
+    }
 
 
 def validate_all() -> dict[str, Dossier]:

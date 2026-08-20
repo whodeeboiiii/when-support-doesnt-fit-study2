@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <title>연구자 콘솔 — NOT QUITE YES Study 2</title>
 <!--
-  구현명세서 §4.12 R1–R4 · §2.7.
+  구현명세서 §4.13 R1–R4 · §2.7.
 
   이 페이지는 **빌드하지 않는다**. 참가자 SPA(frontend/src → dist)와 완전히 분리된 정적
   HTML 1장이고, FastAPI가 Basic auth 뒤에서 그대로 서빙한다(`api/console.py`).
@@ -47,6 +47,11 @@
   .row { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
   .stream { max-height:320px; overflow:auto; border:1px solid var(--line); background:#fff; }
   .empty { color:var(--muted); padding:8px 0; }
+  /* §2.7·§3.4 — trouble_cue·problematic_ai_response 수정 경보. 붉게 띄운다. */
+  tr.alert td, .card.alert { background:#fff4f4; }
+  .diff { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .diff div { padding:6px 8px; border:1px solid var(--line); background:#fff; white-space:pre-wrap; }
+  .diff .before { color:var(--muted); text-decoration:line-through; }
 </style>
 </head>
 <body>
@@ -56,8 +61,8 @@
   <nav>
     <a href="#/r1" data-view="r1">R1 세션</a>
     <a href="#/r2" data-view="r2">R2 모니터</a>
-    <a href="#/r3" data-view="r3">R3 review</a>
-    <a href="#/r4" data-view="r4">R4 dossier</a>
+    <a href="#/r3" data-view="r3">R3 인터뷰</a>
+    <a href="#/r4" data-view="r4">R4 dossier·배정</a>
   </nav>
 </header>
 <main id="app"><p class="muted">불러오는 중…</p></main>
@@ -95,43 +100,62 @@ async function viewR1() {
   const rows = data.participants.map((p) => {
     const sessions = p.sessions.map((s) => `
       <div class="row" style="margin:2px 0">
-        <span class="pill mono">${esc(s.ss_state)}</span>
+        <span class="pill mono">${esc(s.ss_state)}${s.f_state ? " · " + esc(s.f_state) : ""}</span>
         <span class="pill">${esc(s.status)}</span>
         <span class="mono muted">${esc(short(s.session_id))}</span>
         ${s.code_expired ? '<span class="warn">코드 만료</span>' : ""}
         <button data-act="code" data-id="${esc(s.session_id)}">코드 재발급</button>
         <button data-act="monitor" data-id="${esc(s.session_id)}">모니터</button>
-        <button data-act="review" data-id="${esc(s.session_id)}">review</button>
+        <button data-act="review" data-id="${esc(s.session_id)}">인터뷰 뷰</button>
         ${s.status === "active" ? `<button class="danger" data-act="dropout" data-id="${esc(s.session_id)}">SS91 처리</button>` : ""}
       </div>`).join("") || '<span class="muted">세션 없음</span>';
     const d = p.dossier;
+    const a = p.assignment;
+    // 배정 열 — **연구자 화면 전용**이다(§1.2 · 참가자에게는 비공개).
+    const assign = a
+      ? `<span class="pill mono">focal ${esc(a.focal_condition)}</span>
+         <div class="muted mono">대안 ${a.alt_order.map(esc).join(" → ")}</div>
+         <div class="muted mono">pair ${a.pair_order.map(esc).join(" → ")}</div>
+         <div class="muted mono">${Object.entries(a.pair_sides).map(([k, v]) => esc(k) + ":" + v.map(esc).join("/")).join(" · ")}</div>
+         <div class="muted mono">${esc(a.a_level)} · ${esc(a.mismatch_locus)}</div>`
+      : '<span class="muted">배정표에 없음 (QA 전용)</span>';
     return `<tr>
       <td class="mono">${esc(p.participant_no)}</td>
-      <td class="mono">${esc(p.sequence_index)} · ${p.sequence.map(esc).join(" → ")}</td>
-      <td>${d.locked ? '<span class="pill">lock</span>' : '<span class="warn">미lock</span>'}
-          ${d.dummy ? '<span class="warn"> 더미</span>' : ""}
-          <div class="muted mono">${esc(d.version)} · ${esc(short(d.hash))}</div></td>
+      <td>${assign}</td>
+      <td>${d.error
+            ? '<span class="bad">' + esc(d.error).slice(0, 120) + "</span>"
+            : `${d.locked ? '<span class="pill">lock</span>' : '<span class="warn">미lock</span>'}
+               ${d.dummy ? '<span class="warn"> 더미</span>' : ""}
+               <div class="muted mono">${esc(d.version)} · ${esc(short(d.hash))}</div>`}</td>
       <td>${sessions}</td>
       <td><button data-act="create" data-pno="${esc(p.participant_no)}">세션 생성</button></td>
     </tr>`;
   }).join("");
 
+  const t = data.assignment;
+  const table = `<div class="card" style="margin-bottom:12px">
+    <h3>배정표 ${t.is_dummy ? '<span class="warn">— dummy (PH-08 미착지)</span>' : ""}</h3>
+    <div class="muted mono">${esc(t.version)} · seed ${esc(t.seed)} · ${esc(t.n)}행 · ${esc(t.source)}</div>
+    <div class="muted">제약: ${Object.entries(t.constraints_checked).map(([k, v]) => esc(k) + "=" + esc(v)).join(" · ")}</div>
+  </div>`;
+
   const gate = data.launch_gate.length
     ? `<div class="card" style="margin-bottom:12px"><h3 class="warn">본 모집 게이트 — 미착지 ${data.launch_gate.length}건</h3>
        ${data.launch_gate.map((b) => `<div class="muted">· <b>${esc(b.tag)}</b> ${esc(b.detail)}</div>`).join("")}
-       <div class="muted">P00 리허설·QA는 진행할 수 있습니다. 본 모집 시작은 위 항목 착지 후입니다(§11.3).</div></div>`
+       <div class="muted">P00 리허설·QA는 진행할 수 있습니다. 본 모집 시작은 위 항목 착지 후입니다(§11.2).</div></div>`
     : '<div class="card" style="margin-bottom:12px"><h3>본 모집 게이트: 통과</h3></div>';
   const frozen = data.study_version_frozen_at
     ? `<span class="pill">설계 동결 ${esc(data.study_version_frozen_at)}</span>`
-    : '<span class="muted">설계 미동결 — soft launch 종료 시 `scripts/freeze_study_version.py` (§10.5)</span>';
+    : '<span class="muted">설계 미동결 — soft launch 종료 시 scripts/freeze_study_version.py (§10.5)</span>';
 
   app.innerHTML = `
     <section>
-      <h2>참가자 · 세션 (§4.12 R1)</h2>
+      <h2>참가자 · 배정 · 세션 (§4.13 R1)</h2>
       ${gate}
+      ${table}
       <div class="row">${frozen}</div>
       <div id="issued"></div>
-      <table><thead><tr><th>번호</th><th>sequence</th><th>dossier</th><th>세션</th><th></th></tr></thead>
+      <table><thead><tr><th>번호</th><th>배정 (§5.2)</th><th>dossier</th><th>세션</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table>
     </section>
     <section>
@@ -148,8 +172,7 @@ async function viewR1() {
     const { act, id, pno } = button.dataset;
     try {
       if (act === "create") {
-        const created = await post("/admin/sessions", { participant_no: pno });
-        showCode(created);
+        showCode(await post("/admin/sessions", { participant_no: pno }));
       } else if (act === "code") {
         showCode(await post(`/admin/sessions/${id}/code`));
       } else if (act === "dropout") {
@@ -173,8 +196,19 @@ function showCode(created) {
     <h3>${esc(created.participant_no)} 접속 코드</h3>
     <div class="code">${esc(created.access_code)}</div>
     <div class="muted">만료 ${esc(created.code_expires_at)} · 세션 ${esc(short(created.session_id))}
+    · focal ${esc(created.focal_condition)}
     <br />이 코드는 지금 화면에만 있습니다. 참가자에게 전달한 뒤 새로고침하면 사라집니다.</div>
   </div>`;
+}
+
+/** §2.7·§3.4 — checkpoint 수정 diff. 경보 segment는 붉게 띄운다. */
+function checkpointDiff(cp) {
+  if (!cp || !cp.edits.length) return '<p class="empty">수정 없음</p>';
+  return cp.edits.map((e) => `<div class="card ${e.alert ? "alert" : ""}" style="margin-bottom:8px">
+      <h3>${esc(e.segment)} ${e.alert ? '<span class="bad">— 자극 전제 segment · 구두 확인 필요</span>' : ""}
+        <span class="muted mono">${esc(time(e.edited_at))}</span></h3>
+      <div class="diff"><div class="before">${esc(e.original ?? "")}</div><div>${esc(e.edited ?? "")}</div></div>
+    </div>`).join("");
 }
 
 // --------------------------------------------------------------- R2 모니터
@@ -182,33 +216,55 @@ async function viewR2(sessionId) {
   if (!sessionId) return picker("r2", "모니터할 세션");
   const data = await api("/admin/monitor/" + sessionId);
   const s = data.session;
-  const branches = data.branches.map((b) => `<tr>
-      <td>${esc(b.index)}</td><td class="mono">${esc(b.condition ?? "—")}</td>
-      <td class="mono">${esc(b.b_state)}</td><td>${esc(b.disposition ?? "—")}</td>
-      <td>${b.ai2_state ? `<span class="pill ${b.ai2_state === "fallback" ? "bad" : ""}">${esc(b.ai2_state)}</span>` : "—"}
-          ${b.checker_skipped ? '<span class="warn"> checker 생략</span>' : ""}
-          ${b.rule_violations.length ? `<span class="warn"> 위반 ${esc(b.rule_violations.length)}</span>` : ""}</td>
-    </tr>`).join("");
+  const f = data.focal;
+  const focalRow = f
+    ? `<table><thead><tr><th>조건</th><th>AI2</th><th>시도</th><th>수정</th><th>overlap</th></tr></thead>
+       <tbody><tr>
+         <td class="mono">${esc(f.condition ?? "—")}</td>
+         <td>${f.ai2_state ? `<span class="pill ${f.ai2_state === "fallback" ? "bad" : ""}">${esc(f.ai2_state)}</span>` : "—"}
+             ${f.checker_skipped ? '<span class="warn"> checker 생략</span>' : ""}
+             ${f.rule_violations.length ? `<span class="warn"> 위반 ${esc(f.rule_violations.length)}</span>` : ""}</td>
+         <td>${esc(f.attempts)}</td>
+         <td>${f.checkpoint_edited ? esc((f.edited_segments || []).join(", ")) : "—"}</td>
+         <td class="muted mono">${f.alt_overlap.length ? f.alt_overlap.map((o) => esc(o.condition) + "." + esc(o.segment)).join(" ") + " (기록만 — 위반 아님)" : "—"}</td>
+       </tr></tbody></table>`
+    : '<p class="empty">focal run 없음</p>';
+
   const transcript = data.transcript.map((t) => `<div class="turn">
-      <b>b${esc(t.branch_index)} · ${esc(t.role)} · ${esc(time(t.at))}</b>${esc(t.text)}</div>`).join("")
+      <b>${esc(t.role)} · ${esc(time(t.at))}</b>${esc(t.text)}</div>`).join("")
       || '<p class="empty">발화 없음</p>';
   const events = data.events.map((e) => `<div class="turn mono"><b>${esc(time(e.server_ts))} · ${esc(e.type)}</b>${esc(JSON.stringify(e.payload ?? {}))}</div>`).join("")
       || '<p class="empty">이벤트 없음</p>';
+  const alts = data.alt_exposures.map((a) => `<tr><td>${esc(a.position)}</td><td class="mono">${esc(a.condition)}</td>
+      <td class="mono muted">${esc(time(a.rendered_at))} → ${esc(time(a.advanced_at))}</td></tr>`).join("");
+  const pairs = data.pairwise.map((v) => `<tr><td>${esc(v.position)}</td><td class="mono">${esc(v.contrast)}</td>
+      <td class="mono">${esc(v.left)} / ${esc(v.right)}</td>
+      <td>${v.focal_included ? "focal " + esc(v.focal_side) : "—"}</td>
+      <td class="mono muted">${esc(time(v.submitted_at))}</td></tr>`).join("");
 
   app.innerHTML = `
     <section>
       <div class="row">
         <span class="pill mono">${esc(s.participant_no)}</span>
-        <span class="pill mono">${esc(s.ss_state)}${s.b_state ? " · " + esc(s.b_state) : ""}</span>
+        <span class="pill mono">${esc(s.ss_state)}${s.f_state ? " · " + esc(s.f_state) : ""}</span>
         <span class="pill">화면 ${esc(s.screen)}</span>
+        ${s.alt_index ? `<span class="pill">대안 ${esc(s.alt_index)}/3</span>` : ""}
+        ${s.pair_index ? `<span class="pill">비교 ${esc(s.pair_index)}/3</span>` : ""}
         <span class="pill">${esc(s.status)}</span>
         <span class="muted mono">${esc(short(s.session_id))}</span>
         <button id="flag">flag (기록 전용)</button>
         <button id="abort" class="danger">세션 중단 (SS90)</button>
-        <a href="#/r3/${esc(s.session_id)}" style="margin-left:auto">review 보기 →</a>
+        <a href="#/r3/${esc(s.session_id)}" style="margin-left:auto">인터뷰 뷰 →</a>
       </div>
-      <table><thead><tr><th>b</th><th>조건</th><th>상태</th><th>종결</th><th>AI2</th></tr></thead>
-      <tbody>${branches || '<tr><td colspan="5" class="muted">branch 없음</td></tr>'}</tbody></table>
+      ${data.checkpoint.alert ? '<p class="bad">⚠ trouble_cue 또는 problematic_ai_response가 수정됐습니다 — 구두로 사실 확인 후 계속/abort를 판단하세요 (부록 D.3).</p>' : ""}
+      ${focalRow}
+    </section>
+    <section><h2>checkpoint 수정 diff (§4.2 · D-25)</h2>${checkpointDiff(data.checkpoint)}</section>
+    <section class="grid" style="grid-template-columns:1fr 1fr">
+      <div><h2>대안 노출</h2><table><thead><tr><th>#</th><th>조건</th><th>표시 → 진행</th></tr></thead>
+        <tbody>${alts || '<tr><td colspan="3" class="muted">아직 없음</td></tr>'}</tbody></table></div>
+      <div><h2>pairwise</h2><table><thead><tr><th>#</th><th>contrast</th><th>좌/우</th><th>focal</th><th>제출</th></tr></thead>
+        <tbody>${pairs || '<tr><td colspan="5" class="muted">아직 없음</td></tr>'}</tbody></table></div>
     </section>
     <section class="grid" style="grid-template-columns:1.4fr 1fr">
       <div><h2>transcript</h2><div class="stream" style="padding:0 12px">${transcript}</div></div>
@@ -231,23 +287,53 @@ async function viewR2(sessionId) {
   timer = setTimeout(() => viewR2(sessionId).catch(fail), POLL_MS);
 }
 
-// --------------------------------------------------------------- R3 review
+// --------------------------------------------------------------- R3 contrastive interview 뷰
 async function viewR3(sessionId) {
-  if (!sessionId) return picker("r3", "review할 세션");
+  if (!sessionId) return picker("r3", "인터뷰 뷰를 열 세션");
   const data = await api("/admin/review/" + sessionId);
-  const columns = data.branches.map((b) => `<div class="card">
-      <h3>${esc(b.index)}번째 대화 <span class="pill mono">${esc(b.condition ?? "—")}</span>
-        ${b.ai2_state ? `<span class="pill">${esc(b.ai2_state)}</span>` : ""}</h3>
-      <div class="turn"><b>AI1</b>${esc(b.ai1)}</div>
-      <div class="turn"><b>User1 · ${esc(b.disposition ?? "—")}</b>${esc(b.user1 ?? "(발화 없음)")}</div>
-      ${b.user1_normalized && b.user1_normalized !== b.user1 ? `<div class="turn muted"><b>정규화</b>${esc(b.user1_normalized)}</div>` : ""}
-      ${b.ai2 ? `<div class="turn"><b>AI2</b>${esc(b.ai2)}</div>` : ""}
-      ${b.downstream ? `<div class="turn"><b>downstream</b>${esc(b.downstream)}</div>` : ""}
-      ${b.sidecar ? `<div class="turn"><b>sidecar · ${esc(b.sidecar.choice)}${b.sidecar.relevance_1_7 ? " · 관련도 " + esc(b.sidecar.relevance_1_7) : ""}</b>${esc(b.sidecar.free_text ?? "")}${b.sidecar.reason_text ? "\n[미전송 사유] " + esc(b.sidecar.reason_text) : ""}</div>` : ""}
-      ${b.ratings.length ? `<div class="turn"><b>평정</b>${b.ratings.map((r) => `${esc(r.item_id)}=${esc(r.value)}`).join(" · ")}</div>` : ""}
-    </div>`).join("");
+  const t = data.trajectory;
+
+  const focal = t
+    ? `<div class="card">
+        <h3>focal <span class="pill mono">${esc(t.condition ?? "—")}</span>
+          ${t.ai2_state ? `<span class="pill">${esc(t.ai2_state)}</span>` : ""}</h3>
+        <div class="turn"><b>AI1 (locked 자극)</b>${esc(t.ai1 ?? "")}</div>
+        <div class="turn"><b>User1</b>${esc(t.user1 ?? "(없음)")}</div>
+        ${t.sidecar ? `<div class="turn"><b>sidecar · ${t.sidecar.has_more ? "있음" : "없음"}${t.sidecar.provenance ? " · " + esc(t.sidecar.provenance) : ""}</b>${esc(t.sidecar.free_text ?? "")}${t.sidecar.reason_text ? "\n[미포함 이유] " + esc(t.sidecar.reason_text) : ""}</div>` : ""}
+        ${t.ai2 ? `<div class="turn"><b>AI2</b>${esc(t.ai2)}</div>` : ""}
+        ${t.user2 ? `<div class="turn"><b>User2</b>${esc(t.user2)}</div>` : ""}
+        ${t.downstream ? `<div class="turn"><b>종결 · ${esc(t.downstream.disposition)}${t.downstream.end_label ? " · " + esc(t.downstream.end_label) : ""}</b>${esc(t.downstream.reason_text ?? "")}</div>` : ""}
+        <div class="turn muted mono"><b>generation 경로 (§8.4)</b>${t.generation_path.map((g) =>
+          `attempt ${esc(g.attempt)}${g.final ? " [final]" : ""}${g.fallback_used ? " fallback" : ""}` +
+          `${g.checker_skipped ? " checker_skipped" : ""}` +
+          `${(g.rule_violations || []).length ? " 위반=" + esc(JSON.stringify(g.rule_violations)) : ""}` +
+          `${(g.alt_overlap || []).length ? " overlap=" + esc(JSON.stringify(g.alt_overlap)) + " (기록만)" : ""}`
+        ).join("\n")}</div>
+      </div>`
+    : '<p class="empty">focal run 없음</p>';
+
+  const alts = data.alt_exposures.map((a) => `<div class="card">
+      <h3>대안 ${esc(a.position)} <span class="pill mono">${esc(a.condition)}</span></h3>
+      <div class="turn">${esc(a.ai1)}</div></div>`).join("") || '<p class="empty">없음</p>';
+
+  const pairs = data.pairs.map((p) => `<section>
+      <h2>${esc(p.position)}번째 비교 — ${esc(p.contrast)}
+        ${p.focal_included ? `<span class="pill">focal = ${esc(p.focal_side)}</span>` : '<span class="pill muted">focal 미포함</span>'}</h2>
+      <div class="grid" style="grid-template-columns:1fr 1fr">
+        <div class="card"><h3>응답 A <span class="pill mono">${esc(p.left.condition)}</span></h3><div class="turn">${esc(p.left.ai1)}</div></div>
+        <div class="card"><h3>응답 B <span class="pill mono">${esc(p.right.condition)}</span></h3><div class="turn">${esc(p.right.ai1)}</div></div>
+      </div>
+      <table style="margin-top:8px"><thead><tr><th>문항</th><th>문면</th><th>값</th></tr></thead><tbody>${
+        p.responses.map((r) => `<tr><td class="mono">${esc(r.item_id)}</td><td>${esc(r.text)}</td><td>${esc(r.value)}</td></tr>`).join("")
+        || '<tr><td colspan="3" class="muted">미제출</td></tr>'}</tbody></table>
+    </section>`).join("");
+
+  const ratings = data.ratings.map((r) => `<tr><td class="mono">${esc(r.scope)}</td><td class="mono">${esc(r.construct)}</td>
+      <td>${esc(r.text)}</td><td>${esc(r.value)}</td></tr>`).join("");
   const priv = Object.entries(data.researcher_only).map(([key, value]) =>
-    `<tr><td class="mono">${esc(key)}</td><td>${esc(value)}</td></tr>`).join("");
+    `<tr><td class="mono" style="width:220px">${esc(key)}</td><td>${esc(value)}</td></tr>`).join("");
+  const evidence = Object.entries(data.evidence_code).map(([key, value]) =>
+    `<tr><td class="mono" style="width:220px">${esc(key)}</td><td>${esc(Array.isArray(value) ? value.join(" / ") : value)}</td></tr>`).join("");
   const flags = data.flags.map((f) => `<tr><td class="mono">${esc(time(f.server_ts))}</td>
       <td class="mono">${esc(f.type)}</td><td>${esc((f.payload && f.payload.reason) || "")}</td></tr>`).join("");
 
@@ -255,22 +341,34 @@ async function viewR3(sessionId) {
     <section>
       <div class="row"><span class="pill mono">${esc(data.session.participant_no)}</span>
         <span class="pill mono">${esc(data.session.ss_state)}</span>
+        <span class="pill mono">focal ${esc(data.session.focal_condition ?? "—")}</span>
         <span class="muted mono">${esc(short(data.session.session_id))}</span>
         <a href="#/r2/${esc(data.session.session_id)}" style="margin-left:auto">← 모니터</a></div>
-      <div class="grid">${columns}</div>
+      <p class="muted">인터뷰 가이드(부록 D.3): 개방 비교 → Sequence(질문 전 system-side work) →
+        Scope(warranted vs overreach) → Stopping(U 이후 Q의 유용성) → downstream 선택 이유.
+        <b>"어느 쪽이 더 좋은가"를 직접 묻지 않는다.</b></p>
+      <h2>① focal trajectory</h2>${focal}
     </section>
-    <section><h2>flag · 중단 기록</h2>
+    <section><h2>checkpoint 수정 (§4.2)</h2>${checkpointDiff(data.checkpoint)}</section>
+    <section><h2>② focal 평정 · MC (합산하지 않음 — §7.1)</h2>
+      <table><thead><tr><th>블록</th><th>construct</th><th>문항</th><th>값</th></tr></thead>
+      <tbody>${ratings || '<tr><td colspan="4" class="muted">미제출</td></tr>'}</tbody></table></section>
+    <section><h2>③ 대안 노출 순서</h2><div class="grid" style="grid-template-columns:repeat(3,1fr)">${alts}</div></section>
+    <h2>④ 세 pair</h2>${pairs || '<p class="empty">미제출</p>'}
+    <section><h2>⑥ flag · 중단 기록</h2>
       <table><thead><tr><th>시각</th><th>유형</th><th>사유</th></tr></thead>
       <tbody>${flags || '<tr><td colspan="3" class="muted">없음</td></tr>'}</tbody></table></section>
-    <section><h2>researcher_only (인터뷰 참조 — 참가자 화면·AI 경로 어디에도 나가지 않음)</h2>
+    <section><h2>evidence_code (연구자 코딩 — 참가자 화면·AI 경로 어디에도 나가지 않음)</h2>
+      <table><tbody>${evidence}</tbody></table></section>
+    <section><h2>⑤ researcher_only (인터뷰 참조 전용)</h2>
       <table><tbody>${priv}</tbody></table></section>`;
 }
 
-// --------------------------------------------------------------- R4 dossier
+// --------------------------------------------------------------- R4 dossier·자극·배정
 async function viewR4(participantNo) {
   if (!participantNo) {
     const data = await api("/admin/participants");
-    app.innerHTML = '<section><h2>dossier 뷰어 (§4.12 R4)</h2><div class="row">' +
+    app.innerHTML = '<section><h2>dossier · 자극 · 배정 뷰어 (§4.13 R4)</h2><div class="row">' +
       data.participants.map((p) => `<button data-pno="${esc(p.participant_no)}">${esc(p.participant_no)}${p.dossier.dummy ? " (더미)" : ""}</button>`).join("") +
       "</div></section>";
     app.onclick = (event) => {
@@ -281,11 +379,15 @@ async function viewR4(participantNo) {
   }
   const d = await api("/admin/dossier/" + participantNo);
   const stimuli = d.stimuli.map((s) => `<div class="card"><h3>${esc(s.condition)}
-      <span class="muted mono">${esc(s.meta.chars)}자 · ${esc(s.meta.sentences)}문장 · 질문 ${esc(s.meta.questions)}</span></h3>
-      <div class="turn">${esc(s.text)}</div><div class="muted mono">${esc(short(s.hash))}</div></div>`).join("");
+      <span class="muted mono">= ${s.recipe.map(esc).join(" + ")}</span></h3>
+      <div class="turn">${esc(s.text)}</div>
+      <div class="muted mono">${esc(s.meta.chars)}자 · ${esc(s.meta.sentences)}문장 · 질문 ${esc(s.meta.questions)} · ${esc(short(s.hash))}</div></div>`).join("");
+  const segments = Object.entries(d.segments).map(([key, value]) =>
+    `<tr><td class="mono" style="width:60px">${esc(key)}</td><td>${esc(value)}</td></tr>`).join("");
   const layer = (title, entries) => `<section><h2>${title}</h2><table><tbody>` +
-    entries.map(([key, value]) => `<tr><td class="mono" style="width:220px">${esc(key)}</td><td>${esc(value)}</td></tr>`).join("") +
+    entries.map(([key, value]) => `<tr><td class="mono" style="width:220px">${esc(key)}</td><td>${esc(Array.isArray(value) ? value.join(" / ") : value)}</td></tr>`).join("") +
     "</tbody></table></section>";
+  const a = d.assignment;
 
   app.innerHTML = `
     <section><div class="row">
@@ -294,27 +396,31 @@ async function viewR4(participantNo) {
       ${d.locked ? '<span class="pill">lock ' + esc(d.locked_at) + "</span>" : '<span class="warn">미lock</span>'}
       ${d.dummy ? '<span class="warn">스키마 더미 — 실값 미반입 (PH-03)</span>' : ""}
       <span class="muted mono">hash ${esc(short(d.content_hash))}</span>
-      <span class="pill mono">${d.sequence.map(esc).join(" → ")}</span>
       <button data-back="1" style="margin-left:auto">← 목록</button>
     </div></section>
-    ${layer("sampling", Object.entries(d.sampling))}
-    ${layer("ai_visible (AI2·checker가 볼 수 있는 유일한 사건 정보)", [
+    ${a ? layer("배정표 행 (§5.2 — 읽기 전용)", [
+      ["focal_condition", a.focal_condition],
+      ["alt_order", a.alt_order.join(" → ")],
+      ["pair_order", a.pair_order.join(" → ")],
+      ["pair_sides", Object.entries(a.pair_sides).map(([k, v]) => k + ": " + v.join(" / ")).join("  ·  ")],
+      ["a_level · mismatch_locus", a.a_level + " · " + a.mismatch_locus],
+    ]) : '<section><p class="muted">배정표에 없는 참가자입니다 (P00 = QA 합성).</p></section>'}
+    ${layer("evidence_code (§5.3 — llm/에는 prohibited_inference만 전달)", Object.entries(d.evidence_code))}
+    ${layer("ai_visible (checkpoint packet — AI2에는 참가자 수정본이 간다)", [
       ["situation_summary", d.ai_visible.situation_summary],
+      ["prior_evidence", d.ai_visible.prior_evidence],
       ["original_request", d.ai_visible.original_request],
       ["problematic_ai_response", d.ai_visible.problematic_ai_response],
-      ["trouble_cue.text", d.ai_visible.trouble_cue.text],
-      ["trouble_cue.form", d.ai_visible.trouble_cue.form],
-      ["prior_evidence", d.ai_visible.prior_evidence.join(" / ")],
+      ["trouble_cue", d.ai_visible.trouble_cue],
+      ["provenance", Object.entries(d.ai_visible.provenance).map(([k, v]) => k + "=" + v).join(" · ")],
+      ["excerpt_note", d.ai_visible.excerpt_note],
     ])}
-    <section><h2>AI1 자극 4종 (§5.3)</h2><div class="grid">${stimuli}</div></section>
-    ${layer("derivation", [
-      ["warranted_uptake", d.derivation.warranted_uptake],
-      ["prohibited_inference", d.derivation.prohibited_inference.join(" / ")],
-      ["residual_uncertainty", d.derivation.residual_uncertainty.text],
-      ["question_stem (C2=C4)", d.derivation.residual_uncertainty.question_stem],
-      ["focal_repair_relevant_content", d.derivation.focal_repair_relevant_content],
-      ["neutral_fallback", d.derivation.neutral_fallback],
-      ["referent_map", d.derivation.referent_map.map((r) => r.patterns.join("|") + " → " + r.proposition).join("\n")],
+    <section><h2>R/U/Q segment (§5.3 — 네 전문은 저장하지 않는다, D-35)</h2>
+      <table><tbody>${segments}</tbody></table></section>
+    <section><h2>조립된 AI1 자극 4종 (§5.4)</h2><div class="grid">${stimuli}</div></section>
+    ${layer("neutral fallback · QC (§5.4·§6.5)", [
+      ["neutral_fallback", d.neutral_fallback],
+      ...Object.entries(d.qc),
     ])}
     ${layer("researcher_only (콘솔 전용)", Object.entries(d.researcher_only))}`;
   app.onclick = (event) => { if (event.target.closest("button[data-back]")) location.hash = "#/r4"; };

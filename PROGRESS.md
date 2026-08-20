@@ -1,457 +1,385 @@
 # PROGRESS — study2-enactment
 
-정본: `docs/구현명세서_v1.0.1.md`. 이 파일과 명세서가 충돌하면 명세서가 우선한다.
+정본: `docs/구현명세서_v2.0.md`. 이 파일과 명세서가 충돌하면 명세서가 우선한다.
+
+v1.0.1(within, 12명 × 4-branch) 이력은 git 태그 **`v1.0.1-within`**(커밋 `dc9a673`)에 보존돼
+있다. 이 문서는 §11.1의 **V2-0 → V2-4 전환**부터 기록한다.
 
 ---
 
-## NS1 — 이식·골격 (완료, 2026-08-16)
+## V2 전환 — 전 스프린트 완료 (2026-08-21)
 
-### 완료 기준 대비 결과
+### 한눈에
 
-| 기준 (§11.1 NS1 행 + 지시사항) | 결과 | 근거 |
+| Sprint | 완료 기준 (§11.1) | 결과 |
 |---|---|---|
-| §2.3 폴더 구조로 신 리포 스캐폴드 (pyproject·vite·pytest 설정) | ✅ | `pyproject.toml`, `frontend/{package.json,vite.config.ts,tsconfig.json,tailwind.config.js}`, `[tool.pytest.ini_options]` |
-| 구 리포 "이식 대상" 모듈만 이식 (llm_gateway·notify·fernet·audit·fake_llm·conftest·init_db·자산 로더 패턴·frontend 컴포넌트) | ✅ (2건 이월) | 아래 [이식 내역](#이식-내역) |
-| dossier 3층 스키마 로더 + P00 실값(부록 A.6) + P01–P12 스키마 더미 | ✅ | `backend/app/assets/dossier_loader.py`, `dossiers/P00.json`, `dossiers/schema_dummy/P01–P12.json` |
-| dossier_private 분리 + NT-04 정적 검사 | ✅ | `backend/app/assets/dossier_private.py`, `tests/unit/test_evidence_boundary_static.py` |
-| 자산 계약 테스트 (NT-20~23) 통과 | ✅ | `tests/assets/test_dossier_contract.py` — 13 dossier × 4계약 |
-| leakage 정적 검사(NT-04) 동작 | ✅ | 직접 import·전이 import·`importlib` 우회 3중 검사 + 검사기 자기검증 |
-| `DEV_MODE=true`로 서버 기동 + 자산 검증 통과 | ✅ | `uvicorn app.main:app` 기동 확인, `GET /api/health` 200 (dossier 13건 로드) |
-| 테스트 전체 green (기준선) | ✅ | **188 passed** (기준선 = 188. 이후 커밋에서 불감소) |
+| **V2-0 정리** | 부록 H.1 삭제 적용, 태그 `v1.0.1-within`, grep 0건 | ✅ |
+| **V2-1 자산·배정** | dossier 스키마 v2, P00 신 예시, dummy P01–P24, 배정표 로더·생성기 | ✅ NT-20·21·22·23·32 |
+| **V2-2 상태머신·화면** | SS00–SS10 · F0–F5 · P0–P12 · checkpoint 수정 · 대안 노출 · pairwise | ✅ NT-07·08·09·12·14·16·31·33–38 |
+| **V2-3 AI2** | 입력 3종, R-1 대상 갱신, R-2 플래그화, prompt_config_v2, fixture v2 | ✅ NT-01·02·04·10′·15·25 |
+| **V2-4 콘솔·export·마감** | R2 diff·경보, R3 개편, R4 배정·segment, export 개편, 리허설, freeze | ✅ NT-26·28·30·39 |
+
+**테스트 705 passed** (v1.0.1 기준선 508 → 705, 불감소). 부록 D.1 리허설 자동 34건 통과 ·
+수동 2건 · 실패 0건.
 
 ### 검증 명령
 
 ```bash
-# 백엔드 (venv: backend/.venv, Python 3.12)
-./backend/.venv/bin/python -m pytest -q                 # 188 passed
-DEV_MODE=true ./backend/.venv/bin/python scripts/init_db.py   # 14 tables (§8.1)
+./backend/.venv/bin/python -m pytest -q                      # 705 passed
 
-# 프론트엔드
-cd frontend && npm install && npm run build             # dist/ 생성
+export DEV_MODE=true DATABASE_URL="sqlite+aiosqlite:///./dev_local.db" \
+       DB_SCHEMA=proto_v2 ADMIN_USER=demo ADMIN_PASS=demo-pass FERNET_KEY=<키>
+./backend/.venv/bin/python scripts/init_db.py                # 16 tables (§8.1)
+./backend/.venv/bin/python scripts/run_fixtures.py --out reports/fixtures.md
+#   블록 R 12/12 · A 4/4 · C 4/4 = 100% → 게이트 통과
+./backend/.venv/bin/python scripts/run_qa_rehearsal.py --out reports/qa_rehearsal.md
+#   자동 34 · 수동 2 · 실패 0
+./backend/.venv/bin/python scripts/freeze_study_version.py --check
+#   모집 게이트 6건: PH-03 · PH-08 · PH-06 · PH-07 · PH-IRB-1 · PH-IRB-2
+./backend/.venv/bin/python scripts/make_assignment.py --self-test   # 20/20 (NT-32)
+./backend/.venv/bin/python analysis/export_trajectory.py --actor <이름> --out exports/
 
-# 시연 기동 (DEV_MODE — fake LLM + 로컬 SQLite, 실키 불요)
-DEV_MODE=true ./backend/.venv/bin/python -m uvicorn app.main:app --port 8000
-curl -s localhost:8000/api/health
+cd frontend && npm run build
+./backend/.venv/bin/python -m uvicorn app.main:app --port 8000 --app-dir backend
 ```
 
-### 구현물
-
-```
-backend/app/
-  main.py              기동 시 자산 게이트(§5.4) + LLM 클라이언트 주입(§2.0) + dist 정적 서빙
-  api/health.py        /api/health (자산 '내용'은 싣지 않는다 — §2.9·NT-13)
-  core/config.py       §2.4 환경변수 전 항목 + §0.5 확정 파라미터 기본값
-  core/text_metrics.py 문자·문장·질문 계량 (§5.2 stimuli_meta · §6.5 R-3 공용)
-  assets/files.py      dossier 파일 위치 해석 (실값 → 스키마 더미)
-  assets/dossier_loader.py   ai_visible·derivation 층 + 계약 검증 + 기동 게이트
-  assets/dossier_private.py  researcher_only 층 (콘솔 전용 — llm/ import 금지)
-  llm/prompts.py       prompt_config 정본 로더 + prompt_hash 정합
-  llm/integrity_rules.py     R-3·R-4 (R-1·R-2는 NS3)
-  llm/fake_llm.py      DEV_MODE·CI 공용 결정론 클라이언트
-  llm/gateway/{client,openrouter_client,calls}.py   호출 단일 관문(동시성·타임아웃·1회 재시도·llm_calls)
-  models/{base,tables,session}.py    §8.1 14테이블 + Postgres/SQLite 공통 엔진
-  notify/{discord,watch}.py          §2.8 트리거 5종
-  security/{fernet,audit}.py         §2.9 암호화 · §8.1 audit_logs
-dossiers/P00.json + dossiers/schema_dummy/P01–P12.json
-prompts/prompt_config_v1.json        부록 A.1·A.2 전문 + 파라미터 + hash
-frontend/src/{App.tsx,main.tsx,index.css,components/{Chat,Likert,Inputs,Loading}.tsx}
-scripts/init_db.py
-tests/{assets,unit,integration}/
-```
-
-### 이식 내역
-
-| 구 리포 | 신 위치 | 개조 |
-|---|---|---|
-| `llm_gateway/{client,openrouter_client,calls}.py` | `app/llm/gateway/` | 프롬프트 캐싱(`cache_control`) 제거(D-21). CALL_SPECS 10종 → prompt_config 2키(AI2·checker). audit 대상 `audit_logs` → **`llm_calls`**(§8.1). 타임아웃을 `AI2_TIMEOUT_MS`/`CHECKER_TIMEOUT_MS`로 분리 |
-| `llm_gateway/allowlist.py` | — | **이식 보류**: 신 allowlist는 §6.2의 3종 입력이라 NS3 `llm/context.py`와 함께 새로 쓴다. 구 프롬프트 키·private 테이블 유도 로직은 신 설계에 대응물이 없다 |
-| `notify/{discord,watch}.py` | `app/notify/` | 트리거 7종 → §2.8의 5종. 모집 종료·일일 지출 급증(DB 조회) 폐기, 5xx 누적 신설 |
-| `db/crypto.py` | `app/security/fernet.py` | 그대로 |
-| `db/audit.py` | `app/security/audit.py` | `audit_logs` 스키마가 §8.1(actor/action/target)로 바뀌어 재작성. 행위 6종 enum |
-| `db/{base,session}.py` | `app/models/{base,session}.py` | SQLite 분기 추가(DEV_MODE), JSONB→`JSON().with_variant`, UUID PK |
-| `tests/fake_llm.py` | `app/llm/fake_llm.py` | 명세 §2.3대로 앱 패키지로 이동(DEV_MODE 공용). 기본 응답을 AI2·checker 2종으로 교체 |
-| `tests/conftest.py` | `tests/conftest.py` | DB를 로컬 Postgres → DEV_MODE SQLite로. 사전 생성 잡 recorder 제거(§2.6 잡 소멸) |
-| `scripts/init_db.py` | `scripts/init_db.py` | schema 전환 규율 유지, SQLite 대응 |
-| `screens/items.py`·`test_battery_firewall.py` | (패턴만) | 자산 로더 + 자산 계약 테스트 **패턴**만 참고. 구 문항 내용은 반입하지 않음 |
-| `frontend/components/{Chat,Likert,Inputs}.tsx`, `screens/Loading.tsx` | `frontend/src/components/` | 데스크톱 전용 개조(D-12): visualViewport 키보드 회피·터치 타깃 44px·sticky 제출 막대 제거. 로딩 문구를 §4.7·§9.1 문안으로 |
-| `tests/helpers.py` | — | **NS2로 이월** (구 helpers는 S00–S20 흐름 전용. 신 SS·B 헬퍼는 상태머신과 함께 작성) |
-| `tests/alpha_runner.py` | — | **NS3으로 이월** (normalization·integrity fixture가 생기는 시점에 러너로 개조 — §10.1) |
-
-참조 금지 목록(상태머신 S00–S20·Stage 0·라우팅·`skeleton_templates/`·bridge·배정 서비스·모집 자동 종료·blind coding export·S19b·few-shot·알파 fixture 내용물·`prompt_config_v4.0.json`)은 **열지 않았다.**
-
-### 자산 현황
-
-- `dossiers/P00.json` — QA 전용 합성 실값. 부록 A.6의 [정본] 항목(trouble cue, residual uncertainty·question stem, 자극 C1–C4, referent_map)과 부록 A.4의 fallback 예시를 **글자 그대로** 반입. `ai_visible`의 서술문·`researcher_only`·`prohibited_inference` 등 A.6이 문장을 주지 않은 필드는 A.6 서술 범위 안에서 QA 합성으로 작성했다(분석 제외, `is_test=true`).
-- `dossiers/schema_dummy/P01–P12.json` — 스키마 준수 더미 12종. 전 필드가 `<TODO: PH-03>` placeholder이면서 NT-20~23을 통과한다(질문 수 계약·stem 동일성·meta 일치·fallback 규칙 통과).
-- 파일 배치: **실값은 `dossiers/Pnn.json`, 더미는 `dossiers/schema_dummy/Pnn.json`.** 로더는 실값 → 더미 순으로 찾고 더미로 내려가면 `is_dummy=True`로 표시한다. `.gitignore`가 `dossiers/P01–P12.json`(실값 자리)만 제외하므로 §2.9의 "P00·스키마 더미만 커밋"이 성립한다. 반입 절차는 여전히 `<TODO: PH-04>`.
-- `prompts/prompt_config_v1.json` — 부록 A.1·A.2 전문 + 파라미터(0.4/800, 0.0/json_object) + `prompt_hash`. 문안을 고치고 hash를 안 고치면 기동이 실패한다.
-
-### 테스트 ↔ 부록 C 매핑 (NS1 착지분)
-
-| NT | 위치 | 비고 |
-|---|---|---|
-| NT-04 | `tests/unit/test_evidence_boundary_static.py` | 직접·전이·`importlib` 우회 + 검사기 자기검증 |
-| NT-20 | `tests/assets/test_dossier_contract.py`, `tests/unit/test_dossier_gate.py` | 스키마 전수·layer 분리·referent_map 형식 + **기동 게이트가 실제로 끊는지** |
-| NT-21 | `tests/assets/test_dossier_contract.py` | 전 dossier fallback이 R-3·R-4 통과 |
-| NT-22 | 〃 | C1·C3 질문 0 / C2·C4 질문 1 + stem 동일 |
-| NT-23 | 〃 | stimuli_meta ↔ 원문 계량 일치 |
-| (부록 D.1 문안 대조) | `tests/assets/test_p00_canonical_text.py` | P00 [정본] 문안이 명세서 원문과 글자 단위 일치 (윤문 0건) |
-| (NT-28 전제) | `tests/integration/test_models_smoke.py` | 🔒 필드 평문 미저장 확인 |
-| (NT-15 전제) | `tests/integration/test_boot_and_gateway.py` | 호출 1건 = `llm_calls` 1행, 재시도 동일 request id |
-
-`tests/unit/test_dossier_layers.py`는 로더 출력에 researcher_only 문자열이 섞이지 않음을 런타임에서 확인한다(NT-04의 짝).
+콘솔은 `http://localhost:8000/admin/console` (Basic auth).
 
 ---
 
-## NS2 — 상태머신·화면 (완료, 2026-08-16)
+## V2-0 — 정리 (부록 H.1)
 
-### 완료 기준 대비 결과
+삭제 전 `git tag v1.0.1-within`을 찍었다. **NS4 작업물이 커밋되지 않은 상태였으므로 먼저
+커밋(`dc9a673`)하고 태그를 걸었다** — 태그가 코드를 실제로 보존해야 부록 H의 지시가 의미를
+갖는다.
 
-| 기준 (§11.1 NS2 행) | 결과 | 근거 |
-|---|---|---|
-| SS·B 상태머신 | ✅ | `core/state_machine.py` — SS00–SS07·SS90/91 × B0–B7, 전이표에 역방향 간선 0건 |
-| Williams 매핑 | ✅ | `core/williams.py` — §3.3 표 + `(P번호−1) mod 4 + 1`. 배정 로직은 이 파일이 유일 |
-| P0–P11 화면 + 저장 | ✅ | `frontend/src/screens/` 4파일 12화면 + `api/participant.py`·`api/branch.py` |
-| idempotency·복구 | ✅ | `core/idempotency.py` (별도 테이블 없이 상태 순위로 판정) — NT-08·09 |
-| 사전설문 로더 | ✅ | `assets/presurvey.py` + `fixtures/presurvey_items_v0.json`(placeholder, PH-01) |
-| **NT-06** Williams 표·순환 매핑 | ✅ | `tests/unit/test_williams.py` — 위치별 조건 1회 + adjacent pair 12종 각 1회 |
-| **NT-07** condition·stimulus_hash 불변 | ✅ | `tests/integration/test_session_flow.py` — 재진입·새로고침 반복 후 동일, ai1 turn 1건 |
-| **NT-08** 새로고침·재접속 복구 | ✅ | 자극 재추첨 0건·AI2 재생성 0건·문항 순서 동일, 쿠키 삭제 후 재접속 복원 |
-| **NT-09** 중복 제출 idempotency | ✅ | 세션 4단계·branch 5단계 전부 200 + 기존 레코드(행 증가 0) |
-| **NT-12** 참가자당 완료 세션 1개 | ✅ | `POST /admin/sessions` 409 (P00은 무제한) |
-| **NT-14** 비합법 전이 거부 | ✅ | 규칙 층 `tests/unit/test_state_machine.py` + API 층 409 8종 |
-| 문안 [정본] 초안 대조 | ✅ | `tests/assets/test_screen_copy_canonical.py` — sidecar 2변형·평정 12문항을 §7.3 표 행 단위로 대조 |
-| 테스트 전체 green | ✅ | **400 passed** (기준선 188 → 400. 불감소) |
+**전체 삭제**: `core/williams.py` · `llm/normalization.py` · `assets/presurvey.py` ·
+`fixtures/{presurvey_items_v0.json, normalization_patterns_v1.json, normalization_fixture_v1.jsonl,
+integrity_fixture_v1.jsonl}` · `analysis/tagging_flags.py` · 대응 테스트 4종 ·
+`dossiers/schema_dummy/P01–P12.json` · `prompts/prompt_config_v1.json`.
 
-**DEV_MODE DB 가드 (승인 2026-08-16)**: `DEV_MODE=true`인데 `DATABASE_URL`이 로컬 SQLite가 아니면 **기동을 차단**한다(`core/config.py` + `main.validate_runtime_config()`). 근거는 §0.5의 DEV_MODE 정의 자체다 — "fake LLM + 로컬 DB — 팀 시연 구성". 첫 요청까지 미루지 않고 기동 시점에 보는 이유는, 그때 실패해야 서버가 "정상"으로 보이지 않기 때문이다. 검사는 `tests/unit/test_config.py`(오류 문안에 자격증명 미포함 포함).
+**개명**: `api/branch.py` → `api/focal.py`, `screens/Branch.tsx` → `screens/Focal.tsx`.
 
-추가로 착지한 부록 C 항목: **NT-05**(사전설문 메타키 미노출), **NT-17**(no_reply/end에 AI2·downstream 부재), **NT-18**(2블록·블록 내 무작위·block/display_order 저장·합산 부재), **NT-27**(코드 TTL·재발급 동일 세션 바인딩), **NT-29**(렌더 beacon→제출 이벤트 쌍), **NT-19·NT-13 부분**(아래 한계 참조).
+`grep -rE "branch_index|williams|normaliz|presurvey"` — 런타임 코드(`backend/app`·
+`frontend/src`) **0건**. 남은 것은 ① 삭제 사실을 적은 주석 ② 부재를 확인하는 테스트
+③ npm의 `normalize-path` 패키지뿐이다.
 
-### 시연 확인 (DEV_MODE, 실제 서버)
-
-`uvicorn` + `curl`로 P00 세션을 SS00→SS07 완주했다(§11.3 Definition of Done 1행).
-
-- 종결 유형 조합: branch1 `reply` · branch2 `no_reply` · branch3 `reply` · branch4 `end`
-- 저장 결과: branches 4(조건 **C4·C1·C3·C2** = P00의 S4 행) · ratings 48 · sidecar 4 · generations 2 · downstream 2 · presurvey 12 · audit 2
-- no_reply branch에서 `POST /ai2`·`POST /downstream` → **409** (NT-17)
-- P10 payload에 조건 라벨(C1–C4·uptake·elicitation) 0건, sidecar 0건
-- SQLite 파일을 바이트로 뒤져 User1·sidecar·AI2 평문 **0건**(§2.9)
-
-```bash
-DEV_MODE=true DATABASE_URL="sqlite+aiosqlite:///./dev_local.db" \
-  ADMIN_USER=demo ADMIN_PASS=demo-pass FERNET_KEY=<키> \
-  ./backend/.venv/bin/python scripts/init_db.py
-DEV_MODE=true … ./backend/.venv/bin/python -m uvicorn app.main:app --port 8000 --app-dir backend
-curl -u demo:demo-pass -X POST localhost:8000/admin/sessions -H 'Content-Type: application/json' -d '{"participant_no":"P00"}'
-```
-
-### 구현물 (NS2 추가분)
-
-```
-backend/app/
-  core/williams.py           §3.3 결정론 배정 (이 파일이 배정의 전부)
-  core/state_machine.py      SS·B 전이표 + 화면 매핑 (§3.1·§3.2)
-  core/idempotency.py        제출 단위 재제출 판정 (§3.5 — 별도 테이블 없음)
-  core/randomization.py      시드 고정 순서 (§4.9 블록 내 무작위 + NT-08 불변)
-  core/access_code.py        6자리 코드·TTL 24h·실패 지연 (§2.5·§4.0)
-  security/tokens.py         세션 토큰 서명 (§2.5 httpOnly 쿠키)
-  assets/screen_copy.py      §4·§9.1 화면 문안 ([정본]·[제안] 구분 주석)
-  assets/rating_items.py     §7.3 평정 12문항 [정본] + 2블록 제시 순서
-  assets/presurvey.py        §4.2 자산 로더 + 참가자 payload allowlist (NT-05)
-  api/deps.py                세션 쿠키·Basic auth (§2.7)
-  api/store.py               저장 상태 조회 헬퍼
-  api/state_payload.py       GET /state 화면 payload 조립
-  api/participant.py         §8.2 세션 수준 + beacon
-  api/branch.py              §8.2 branch 수준 (§3.2 인과 창)
-  api/admin.py               세션 생성·코드 재발급 (NS4 콘솔의 최소 선행분)
-  llm/ai2_pipeline.py        **NS2 이음매** — §9.1 종착지(neutral_fallback)로 수렴
-fixtures/presurvey_items_v0.json   PH-01 placeholder (12문항·4섹션)
-frontend/src/{api.ts,copy.ts,App.tsx,screens/{common,Join,Intro,Branch,Wrap}.tsx}
-tests/{helpers.py,unit/{test_williams,test_state_machine,test_access_code}.py,
-       assets/{test_presurvey_contract,test_screen_copy_canonical,test_frontend_contract}.py,
-       integration/{test_session_flow,test_events}.py}
-```
-
-### 설계 메모 (읽는 사람이 헷갈릴 지점)
-
-- **AI2는 아직 없다.** `llm/ai2_pipeline.py`는 §6 파이프라인 대신 참가자별 `neutral_fallback`을 돌려준다. 빈 자리를 두지 않은 이유는 §9.1의 dead-end 금지이고, 그 결과 시연 중 P7에 뜨는 문안은 fallback이며 `generations.fallback_used=true`·§2.8 알림으로 **사실 그대로** 기록된다. NS3이 이 함수만 교체한다.
-- **화면 문안이 서버에 있다.** [정본] 대조를 기계가 하려면 한 곳에 있어야 한다(`assets/screen_copy.py`). 프런트엔드에는 세션 없이 필요한 문안(P0·데스크톱 가드)과 이동 버튼 라벨만 남겼다(`frontend/src/copy.ts`).
-- **문항 ID가 클라이언트로 가지 않는다.** 사전설문(§4.2 규칙)과 평정(변수명 = 구성개념 라벨) 모두 **위치**로만 오간다. 위치 → 문항 ID 매핑은 서버에만 있다.
-- **평정 순서는 저장하지 않고 시드로 재현한다.** §8.1에 순서 테이블이 없어서다. 시드는 세션 UUID + branch + block이고, 제출 시점에 `ratings.display_order`로 남는다.
+`CLAUDE.md`·`PLACEHOLDERS.md`는 이미 v2.0으로 교체돼 있었다(사용자 작업분).
 
 ---
 
-## NS3 — AI2 파이프라인 (완료, 2026-08-16)
+## V2-1 — 자산·배정
 
-### 완료 기준 대비 결과
+### dossier 스키마 v2 (§5.3)
 
-| 기준 (§11.1 NS3 행) | 결과 | 근거 |
-|---|---|---|
-| normalization | ✅ | `llm/normalization.py` + `fixtures/normalization_patterns_v1.json`(부록 A.3) |
-| 규칙 검사 | ✅ | `llm/integrity_rules.py` — R-1·R-2 추가(R-3·R-4는 NS1) |
-| checker | ✅ | `llm/checker.py` — 부록 A.2 3유형, 판정 불능은 `checker_skipped` |
-| 재생성·fallback | ✅ | `llm/ai2_pipeline.py` — 위반 → 재생성 1회 → `neutral_fallback` |
-| audit | ✅ | `generations` 행/시도 + `llm_calls` 1행/호출 (§8.4) |
-| DEV_MODE | ✅ | fake LLM에 fixture 트리거 추가(부록 A.5) — 위반 경로를 실호출 없이 재현 |
-| fixture 러너 | ✅ | `tests/fixture_runner.py`(구 alpha_runner 개조) + `scripts/run_fixtures.py` |
-| **NT-01** AI2 payload 불포함 | ✅ | `tests/integration/test_evidence_boundary.py` — sentinel 주입 후 전 호출 전문 검사 |
-| **NT-02** checker payload 허용 입력 외 불포함 | ✅ | 〃 (허용 4종은 **실제로 들어가는지**도 확인) |
-| **NT-03** normalization 입력 한정 | ✅ | `tests/unit/test_normalization.py` — 시그니처·import·조건 비의존 |
-| **NT-10** branch 격리 | ✅ | 4-branch 연속 fixture — 한 payload에 두 branch 발화 0회, payload 길이 비증가 |
-| **NT-11** 전 조건 동일 + 저장 | ✅ | 네 조건에서 동일 판정, raw/normalized/matched_pattern/referent 저장 |
-| **NT-15** audit 재구성 | ✅ | `reconstruct_path()`가 generations·llm_calls만으로 {정상\|재생성\|fallback} 복원 |
-| fixture 결정론부 100% | ✅ | NT-24 normalization 12건 100%, NT-25 규칙 계층 12건 100% |
-| 테스트 전체 green | ✅ | **444 passed** (기준선 188 → 400 → 444. 불감소) |
+`sampling` → `evidence_code`, `derivation` → `stimulus`. **네 조건 전문을 저장하지 않고
+R/U/Q segment를 조립한다**(D-35) — `Dossier.assemble(condition)`이 `r` / `r␣q` / `r␣u` /
+`r␣u␣q`를 만든다.
 
-추가로 착지: **NT-16**(sidecar 제출 전 AI2 호출 0건 — 상태·저장물 양쪽으로 확인), **NT-24·NT-25**, §9.1의 세 오류 경로(AI2 호출 실패 · checker 실패 · 재생성 후 위반) 전부 표시 가능한 텍스트로 수렴.
+기동 게이트가 보는 계약(§5.4): segment 질문 수(r·u = 0, q = 1) · 조립 결과 질문 수 ·
+`stimuli_meta` ↔ 조립 결과 계량 일치 · fallback 질문 0·1,200자 이하 · segment에
+researcher_only 문자열 미포함(8자) · `provenance`가 ai_visible 텍스트 필드 전부를 덮음 ·
+`qc` 키 존재.
 
-### 검증 명령
+- `dossiers/P00.json` — §5.5의 [정본] segment 3종·trouble cue를 **초안 신 §7.6에서 글자
+  그대로**. a_level A2 · locus `trajectory_timing` · permitted_operation·residual_uncertainty
+  명세 문면 그대로.
+- `dossiers/schema_dummy/P01–P24.json` — `scripts/make_schema_dummies.py`로 생성. 전 필드
+  `<TODO: PH-03>` placeholder이면서 NT-20~23 통과. a_level·locus를 세 값·다섯 값에 고르게
+  흩뿌려 배정표 self-test가 의미 있는 입력을 받는다.
 
-```bash
-./backend/.venv/bin/python -m pytest -q                    # 444 passed
-DEV_MODE=true ./backend/.venv/bin/python scripts/run_fixtures.py --out reports/fixtures.md
-#   normalization A/B/C = 100%, integrity R/C = 100% → 게이트 통과
-```
+### 배정표 (§5.2 — v2 신설)
 
-### 실서버 확인 (DEV_MODE)
+**시스템은 배정을 계산하지 않는다**(D-30). `core/assignment.py`가 읽고, 기동 시 §5.2 제약을
+전수 검증한다(NT-32): 24행 · focal 6/조건 · focal group 내 alt_order 6순열 각 1회 ·
+pair_order 6순열 각 4회 · 좌우 12/12 및 group 내 3/3 · **alt_order에 focal 미포함** ·
+strata 편중(경고).
 
-P00 세션에서 `응 그렇게 해줘` 제출 → 정규화 → AI2 → checker까지 실경로로 확인했다.
+`scripts/make_assignment.py`가 §5.2 ①–⑥ 절차를 그대로 구현한다. **생성기와 로더가 같은
+검증 함수(`check_constraints`)를 쓴다** — 갈라지면 어느 쪽이 정본인지 알 수 없어진다.
+`--self-test`가 A0=1인 극단 분포를 포함한 20종에서 전 제약을 통과한다.
 
-- `normalizations`: `applied=1, NP-01, R-01` — 지시 대상이 `두 선택지의 장단점을 더 정리해줘`로 복원
-- `generations`: 1행(`attempt=1, final=1, fallback_used=0, rule_violations=[]`, checker 판정 전문 저장)
-- `llm_calls`: `main ok` + `validator ok` 2행 (prompt_hash·파라미터·자산 버전 포함)
-- SQLite 파일 바이트 검사 — User1·sidecar·AI2 평문 **0건**
+`assignments/assignment_dummy.json`(P01–P24, seed 20260820)을 커밋했다. 실값
+`assignment_v1.json`은 미커밋(§2.9)이고, dummy로 내려가면 R1·기동 로그·`/api/health`가
+`is_dummy`를 표시한다(NT-42).
 
-### 구현물 (NS3 추가분)
+### 문항 자산
 
-```
-backend/app/llm/
-  normalization.py     §6.4 지시 복원 — 입력 {user1, referent_map, patterns}뿐 (NT-03)
-  context.py           §6.2 allowlist 강제 지점 — AiVisible + 문자열만 받는다 (NT-01·NT-02)
-  checker.py           §6.5 LLM checker — 판정 불능은 checker_skipped로 흡수 (§9.1)
-  integrity_rules.py   R-1·R-2 추가 (대조 문자열은 호출부가 넘긴다 — NT-04)
-  ai2_pipeline.py      §6.1 사다리 — 생성 → 규칙 → checker → 재생성 1회 → fallback
-  fake_llm.py          부록 A.5 fixture 트리거 + 규칙표 기반 결정론 checker
-backend/app/api/leakage_sources.py   R-1·R-2 대조 문자열 수집 (llm/ 밖에 두는 이유는 NT-04)
-fixtures/normalization_patterns_v1.json   부록 A.3 패턴 목록 (PH-05)
-fixtures/normalization_fixture_v1.jsonl   §10.1 케이스 12건 (치환·다의·무매칭·부분 인용)
-fixtures/integrity_fixture_v1.jsonl       §10.1 케이스 16건 (R-1–R-4 + checker 3유형 + 정상)
-tests/fixture_runner.py · scripts/run_fixtures.py
-tests/{unit/test_normalization.py, integration/{test_evidence_boundary,test_ai2_pipeline,test_fixture_runner}.py}
-```
+`fixtures/focal_items_v0.json`(부록 A.4 — focal 5 construct 7문항 + MC 2) ·
+`fixtures/pairwise_items_v0.json`(부록 A.5 — 3 contrast 8문항). 둘 다 `<TODO: PH-06/07>`
+placeholder이고 로더가 그 사실을 `is_placeholder`로 표시해 모집 게이트가 읽는다.
 
-### 설계 메모 (읽는 사람이 헷갈릴 지점)
+`assets/rating_items.py`가 코드 상수에서 **자산 로더**로 바뀌었다(부록 H.2). 블록 순서
+focal → mc 고정과 MC의 AI1 카드 앵커를 자산 계약으로 강제한다(D-37).
 
-- **R-2를 문자 그대로 적용하면 정상 세션이 깨진다.** 참가자가 두 branch에서 같은 말을 하면 이번 branch의 정상 응답이 "타 branch User1 문자열"로 걸리고, 재생성해도 같은 이유로 걸려 fallback으로 떨어진다. 그래서 두 가지를 좁혔다: ① 이번 호출의 payload에 이미 있는 문자열은 대조에서 뺀다 ② 타 branch **AI2**는 전문 일치로만 보고(같은 정책·같은 dossier에서 나온 문구 겹침은 격리 실패가 아니다), 그 branch의 User1이 이번과 같으면 대조에서 제외한다. 이 조정이 없으면 fallback이 예외 경로가 아니라 상시 경로가 된다.
-- **규칙 위반이 이미 있으면 checker를 부르지 않는다.** 판정 결과(재생성)가 같고 §6.1의 시간 예산을 아낀다. 기록에서는 `rule_violations`가 비어 있지 않고 `checker_result=null`인 상태로 구분된다.
-- **fallback은 별도 `generations` 행**이다(마지막 시도 번호 + `fallback_used=true`). 기각된 초안 원문을 fallback 문안으로 덮어쓰지 않기 위해서다 — 초안이 남아야 "무엇이 왜 기각됐는지"를 보고할 수 있다.
-- **프롬프트는 정책(system)과 자료(user)로 나눠 보낸다.** 이어 붙이면 부록 A.1 전문 그대로다 — 문안은 그대로 두고 채팅 API의 role 구분만 따른다.
-- **재생성 피드백에는 위반 유형만 싣는다.** span에는 sidecar·researcher_only 문자열이 들어 있을 수 있어서, 그대로 돌려보내면 그 자체가 §1.2 위반이다.
+`assets/pairwise_items.py`(신설)가 부록 A.5의 **A/B 치환**을 담당한다. 자산은 지칭 대상을
+조건이 아니라 **성질**(`with_u`/`without_u`/`with_q`/`without_q`)로 적고, 서버가 배정된
+좌우를 보고 "응답 A/B"로 치환한다 — 클라이언트는 조건을 모른다(NT-38).
 
 ---
 
-## NS4 — 콘솔·마감 (완료, 2026-08-16)
+## V2-2 — 상태머신·화면
 
-### 완료 기준 대비 결과
+### SS·F 재작성 (§3.1·§3.2)
 
-| 기준 (§11.1 NS4 행) | 결과 | 근거 |
-|---|---|---|
-| R1 세션 관리 | ✅ | `GET /admin/participants`(참가자·sequence·dossier lock·세션 일람·모집 게이트) + 세션 생성·코드 재발급·SS91 버튼 + `GET /admin/costs`(§2.8 usage 합산) |
-| R2 라이브 모니터 | ✅ | `GET /admin/monitor/{id}` — SS·B·화면, transcript(복호화), 이벤트 스트림, **AI2 파이프라인 상태**(generating/clean/regenerated/fallback), 3s 폴링 |
-| R3 review 뷰 | ✅ | `GET /admin/review/{id}` — P10과 같은 4열 + sidecar·평정·flag·researcher_only |
-| R4 dossier·자극 뷰어 | ✅ | `GET /admin/dossier/{pno}` — 3층·AI1 4종·fallback·referent_map·hash·lock (읽기 전용, 쓰기 경로 0건) |
-| notify | ✅ | §2.8 5종 전부 발화 경로 확보 — abort 트리거 신설 + 5xx 누적 미들웨어(`main.py`) 배선 |
-| export 스크립트 | ✅ | `analysis/export_trajectory.py`(participant × condition trajectory) + `analysis/tagging_flags.py`(first-opportunity·carryover) |
-| QA 워크스루 (부록 D.1 리허설) | ✅ | `tests/qa_rehearsal.py` + `scripts/run_qa_rehearsal.py` — 자동 22건 통과·수동 2건·실패 0건 |
-| soft launch 준비 | ✅ | `backend/app/core/freeze.py` + `scripts/freeze_study_version.py` — §11.3 모집 게이트 점검 + §10.5 `study_version` 1회 동결 |
-| **NT-26** flag non-blocking·abort만 SS90·전 콘솔 행위 audit | ✅ | `tests/integration/test_console.py` — flag 전후 상태 동일, abort→SS90+참가자 안내, 엔드포인트 9종 호출마다 audit 증가 |
-| **NT-28** 🔒 평문 저장 0건·복호화 audit | ✅ | `tests/integration/test_encryption_audit.py` — 전 테이블 덤프 훑기 + Fernet 토큰 검사 + 복호화 지점 **정적 열거**(4곳) |
-| **NT-30** export 비식별·자유 텍스트 opt-in 분리·태깅 플래그 열 | ✅ | `tests/integration/test_export.py` — 기본 실행 전 파일에 문장 0건, `--include-text`만 `free_text.csv` 생성 |
-| **NT-13** 번들 비밀 0건 실측 | ✅ | 빌드 산출물 대상 검사 + 콘솔 페이지 분리 검사 (`tests/assets/test_frontend_contract.py`) |
-| 부록 D.1 리허설 완료 | ✅ | 아래 [리허설 결과](#부록-d1-리허설-결과) |
-| Definition of Done 전 항목 (§11.3) | ✅ 10/11 | 마지막 줄(PH-IRB·PH-03 착지 전 모집 금지)은 **자산·IRB 착지 대기** — 게이트 점검은 구현됨 |
-| 테스트 전체 green | ✅ | **508 passed** (기준선 188 → 400 → 444 → 508. 불감소) |
+SS00–SS10 단선(역방향 간선 0건) + F0–F5. **F 전이에 갈래가 없다** — v1.0.1의 B3는
+disposition에 따라 둘로 갈렸지만, v2는 User1이 필수이고(D-32) F4의 reply/end가 둘 다 F5로
+간다. `Disposition`에 `no_reply`가 없고 `has_ai2`·`b_state_after_sidecar`도 없다.
 
-### 검증 명령
+`alt_exposure_allowed(ss_state)`가 NT-31의 **단일 판정 지점**이다 — SS05 자체는 포함하지
+않는다(평정 화면은 아직 제출 전이다).
 
-```bash
-./backend/.venv/bin/python -m pytest -q                          # 508 passed
-DEV_MODE=true ./backend/.venv/bin/python scripts/run_qa_rehearsal.py --out reports/qa_rehearsal.md
-DEV_MODE=true ./backend/.venv/bin/python scripts/freeze_study_version.py --check   # 모집 게이트
-DEV_MODE=true ./backend/.venv/bin/python analysis/export_trajectory.py --actor <이름> --out exports/
-#   자유 텍스트가 필요하면 --include-text (free_text.csv 분리 생성) · --coding <csv>로 carryover 플래그
-```
+`assert_position()`이 position 건너뛰기를 끊는다(NT-33).
 
-콘솔은 `http://localhost:8000/admin/console` (Basic auth — `ADMIN_USER`/`ADMIN_PASS`).
+### checkpoint 수정 (§4.2·§3.4 — D-25)
 
-### 부록 D.1 리허설 결과
+v1.0.1의 표시 전용 P3(D-08)가 **참가자 직접 수정**으로 바뀌었다.
 
-자동 22건 통과 · 수동 2건 · 실패 0건.
+- `checkpoint_edits`에 `(segment, original🔒, edited🔒, edited_at)`을 **누적**한다. `original`은
+  그 수정 시점의 직전 값이다(최초 수정이면 dossier 원문) — 각 행이 "무엇을 무엇으로
+  바꿨는가"의 한 걸음이어야 R2 diff와 사후 코딩(§7.7)이 과정을 읽는다.
+- `EffectiveAiVisible`이 원문 + 최종 수정본이고, **`llm/context.py`의 시그니처가 이 타입을
+  받는다** — 원문(`AiVisible`)을 넘기는 호출은 타입이 맞지 않는다.
+- **AI1은 수정과 무관하게 locked 그대로**다. `assemble()`에 수정본이 들어올 자리가 없다는
+  것이 NT-34의 구현이다. 실서버에서 `trouble_cue`를 고쳐도 `stimulus_hash`가 불변임을 확인했다.
+- `trouble_cue`·`problematic_ai_response` 수정 시 R2 붉은 경보 + Discord notify(§2.8 신설).
+  **시스템은 막지 않는다** — 계속/abort 판단은 사람이 한다(부록 D.3).
 
-| D.1 체크리스트 행 | 확인 방식 |
+### 화면 P0–P12
+
+| 화면 | 내용 |
 |---|---|
-| 4 branch × 종결 3종 | reply×2 · no_reply×1 · end×1, 조건 C1–C4 전수, SS00→SS07 완주 |
-| 새로고침·재접속·코드 재발급·중복 제출·flag·abort 각 1회 | 항목 D1-2a~2g (SS91 처리 포함) |
-| DEV_MODE·실모델 각 1회 | DEV_MODE ✅ / **실모델은 수동** — `scripts/run_fixtures.py --real` + [확인 4] 비용 기록 |
-| R1–R4 전 기능, notify 5종 발화 | 엔드포인트 6종 200 + 5종 발화 확인(2종은 감시 함수 직접 호출) |
-| 문안 [정본] 초안 대조 | [정본] 4항목·[제안] 20항목 명세서 원문 일치 (윤문 0건) |
+| P2 | checkpoint 확인·**수정**([정본] 안내 + segment별 편집창) |
+| P3 | 재진입 타이머(30초 후 활성, 60초 보조문) |
+| P4 | focal AI1 + User1 **필수**([정본] 지시문, 보내기 버튼 하나뿐) |
+| P5 | sidecar 3단 조건부([정본] 3문항, 3단은 `preexisting`에서만) |
+| P6 | AI2 (채팅 맥락 위에 표시) |
+| P7 | User2 이어쓰기 / 종료 6유형 + 이유 — **AI 응답 없음** |
+| P8 | focal 5 construct + MC 2 (블록 2에 AI1 카드 앵커) |
+| P9 ×3 | 대안 노출 — 입력창 없음, 라벨은 "다른 응답 1/2/3" |
+| P10 ×3 | pairwise — 「응답 A」/「응답 B」, contrast 내 문항 무작위 |
+| P11 | 인터뷰 대기 — 세 pair 읽기 전용, **문항·응답값 재표시 없음** |
 
-수동으로 남은 2건: **실모델 1회**(실키·비용), **렌더 수준 확인**(NT-19 — JS 러너 미도입).
+### §8.1 테이블
 
-### 실서버 확인 (DEV_MODE)
-
-P00 세션을 실서버(`localhost:8000`)에서 끝까지 돌려 콘솔 경로를 확인했다.
-
-- R2: `SS04/P7`, branch 1 = `C4 · clean`, transcript 3턴(ai1·user1·ai2) 복호화 표시
-- flag 후 참가자 화면 `P7` 그대로 — 상태 불변(D-07)
-- R3: sidecar·flag 사유 표시, abort 후 참가자 화면 = 중단 안내 문안
-- `GET /costs`: main 2건 / validator 2건 usage 합산
-- SQLite 파일 바이트 검사 — User1·sidecar·flag 사유·중단 사유 평문 **0건**, `audit_logs` view 9 · decrypt 4 · flag 1 · abort 1 · code_issue 4
-
-### 구현물 (NS4 추가분)
-
-```
-backend/app/api/
-  admin.py             R1 목록·비용 + flag(non-blocking)·abort(SS90)·dropout(SS91) + 모집 게이트 표시
-  admin_views.py       R2 모니터 · R3 review · R4 dossier (복호화 지점 ① — 요청 단위 audit)
-  console.py           `/admin/console` 정적 콘솔 서빙 (Basic auth)
-backend/app/core/freeze.py     §11.3 모집 게이트 점검 + §10.5 study_version 1회 동결
-backend/app/main.py            5xx 누적 알림 미들웨어(§2.8) + NS4 라우터 배선
-frontend/console/index.html    R1–R4 콘솔 1장 (빌드 없음 — 참가자 번들과 분리)
-analysis/export_trajectory.py  participant × condition trajectory + 4개 부속 표
-analysis/tagging_flags.py      first_opportunity(기계) · carryover_sensitive(코딩 입력)
-scripts/{run_qa_rehearsal,freeze_study_version}.py
-tests/qa_rehearsal.py
-tests/{integration/{test_console,test_export,test_encryption_audit,test_freeze,test_qa_rehearsal}.py,
-       unit/test_tagging_flags.py}
-```
-
-### 설계 메모 (읽는 사람이 헷갈릴 지점)
-
-- **콘솔은 참가자 SPA에 넣지 않았다.** 빌드 없는 정적 HTML 1장을 Basic auth 뒤에서 서빙한다. 한 번들이면 조건 라벨·researcher_only·sidecar를 다루는 코드가 참가자 번들에 실릴 수 있는 경로가 생기고(NT-13), 세션 중 콘솔 수정이 참가자 번들 재빌드를 요구한다.
-- **R3는 P10 조립기를 재사용하지 않는다.** 참가자 화면은 sidecar를 **빼야** 하고(PH-02) 연구자 화면은 **넣어야** 한다. 같은 함수에 플래그를 달면 언젠가 참가자 쪽에서 그 플래그가 켜진다.
-- **복호화 audit은 값 단위가 아니라 요청 단위**다. 한 화면이 40개 필드를 복호화한다고 40행을 남기면 접근 이력이 잡음이 된다. 남기는 것은 "누가 언제 무엇을 열었는가"뿐이고 값은 audit에 옮겨 적지 않는다.
-- **AI2 파이프라인 상태는 저장하지 않고 `generations`에서 읽는다.** 표시용 상태 컬럼을 만들면 그 값이 §8.4 audit과 어긋날 수 있다. 재구성의 정본은 언제나 generations다(NT-15).
-- **`carryover_sensitive`는 코딩 없이는 빈 칸이다.** "실질 동일 내용이 이전 branch에서 표현됐는가"는 사람의 판정이고(§7.6), 문자열 유사도로 대신하면 그 오차가 결과 변수(disposition·downstream)와 상관된다. 빈 칸은 "아니오"가 아니다.
-- **기본 export는 복호화하되 텍스트를 쓰지 않는다.** §7.4가 요구하는 텍스트 **길이**를 내려면 복호화가 필요하다. 그래서 `--include-text`는 "복호화 여부"가 아니라 "문장을 파일에 쓰는지"의 스위치이고, audit `decrypt`는 두 경우 모두 남는다.
-- **모집 게이트는 표시만 한다.** PH-03·PH-IRB 미착지 상태에서도 세션 생성은 된다(P00 리허설이 막히면 안 된다). 시작 여부는 연구자가 정한다 — 시스템이 판정하지 않는다는 D-10과 같은 태도다.
+삭제: `branches` · `normalizations` · `presurvey_responses`.
+신설: `checkpoint_edits` · `focal_runs` · `alt_exposures` · `pairwise_views` ·
+`pairwise_responses`. 개정: `participants`(배정표 열) · `sessions`(f_state·alt_index·
+pair_index) · `turns`(user2 role, `text_normalized` 삭제) · `sidecar_entries`(has_more·
+provenance) · `downstream_actions`(disposition·end_type) · `ratings`(scope·construct,
+세션 수준) · `generations`(`alt_overlap` 신설) · `events`(`branch_id` 삭제). **16 테이블.**
 
 ---
 
-## 확인 필요 (NS4) — 명세서에 없어 내가 정한 사항
+## V2-3 — AI2 파이프라인
+
+### 입력 계약이 뒤집힌 지점 둘 (D-34)
+
+1. **focal AI1 원문이 payload에 들어간다.** v1.0.1은 "AI1 원문 금지 + normalization으로 지시
+   복원"이었다. v2는 AI1을 직접 주므로 `normalization.py`가 삭제됐다 — 지시 대상이 payload
+   안에 있어 복원할 것이 없다.
+2. **checkpoint는 수정본이다.** 수정 **전** 원문은 오히려 R-1의 금지 문자열이다.
+
+`context.build_ai2_payload(effective, focal_ai1, user1, *, violation_types)` — 시그니처가
+allowlist다. NT-01은 **양방향**이다: 금지된 것이 없는지 + 허용된 셋이 실제로 들어가는지.
+
+### R-2가 위반에서 플래그로 (§6.4)
+
+v1.0.1의 "타 branch 문자열"은 4-branch 설계와 함께 폐기됐다. 대신 **대안 AI1의 u·q segment
+전문 일치**를 보되 **위반으로 세지 않고** `generations.alt_overlap`에 기록만 한다 — AI2는
+공통 정책상 스스로 비슷한 조정·질문을 할 수 있고, 그걸 위반으로 승격시키면 정상 생성물이
+fallback으로 떨어져 조작 자체가 바뀐다. `flag_alt_overlap()`이 `check_all()`과 **분리돼**
+있는 것이 그 구분이다.
+
+R-1의 대조 대상도 갱신했다: researcher_only · sidecar · **checkpoint 수정 전 원문** ·
+평정 문항 문면 · User2. `allowed`(payload 전문) 예외가 특히 중요해졌다 — 수정본과 원문은
+대부분의 문장이 겹치므로, 예외가 없으면 정상 응답이 R-1로 잡힌다.
+
+### 자산
+
+`prompts/prompt_config_v2.json` — 부록 A.1·A.2 v2 전문 + `prompt_hash`
+(`c3adbf9f…`). `normalization_patterns_version` 키 삭제.
+
+`fixtures/integrity_fixture_v2.jsonl` — 20 케이스, 3블록: **R**(규칙 12) · **A**(alt_overlap
+4 — 위반 아님) · **C**(checker 3유형 + 정상 4). 전 블록 100%.
+
+---
+
+## V2-4 — 콘솔·export·마감
+
+- **R1**: 배정표 행(focal·대안 순서·pair 순서·좌우·A-level) 열 신설 + `GET /admin/assignment`
+  (읽기 전용) + 모집 게이트 6항목 표시.
+- **R2**: **checkpoint 수정 diff + 경보**(자극 전제 segment는 붉게) · focal 상태 ·
+  `alt_overlap`(기록만이라고 화면에서도 그렇게 표시) · 대안/pairwise 진행표.
+- **R3**: contrastive interview 뷰로 개편 — focal trajectory(조건 라벨·sidecar·generation
+  경로) + 평정·MC + 대안 순서 + 세 pair(좌우·조건·`focal_included`·응답값) + evidence_code +
+  researcher_only + flag. 부록 D.3 가이드 문구를 화면에 실었다.
+- **R4**: R/U/Q segment + **조립 레시피** + 조립된 4자극 + QC + 배정표 행.
+- **export 8파일**: trajectory(참가자 1행 — D-23) · checkpoint_edits · ratings · pairwise ·
+  alt_exposure · generation_integrity · events · **dossier_provenance**(§7.7 구성비).
+  자유 텍스트는 `--include-text`의 `free_text.csv`에만. `--latency`가 §2.11의 유일한 파생
+  변수 산출 지점이다.
+- **freeze**: 모집 게이트가 PH-03 · PH-08 · PH-06 · PH-07 · PH-IRB-1 · PH-IRB-2를 본다
+  (부록 H.2 목록 그대로). `assets_hash` = dossier 25 + assignment + 문항 2종 + consent.
+
+### 실서버 확인 (DEV_MODE, `localhost:8011`)
+
+P00 세션을 SS00 → SS10 완주했다.
+
+- 배정: focal C1 · 대안 C2→C3→C4 · pair sequence→scope→stopping
+- P2에서 `trouble_cue` 수정 → **AI1은 locked 그대로**, checkpoint만 수정본 표시
+- sidecar 3단(있음 → preexisting → 이유) → AI2 `clean` → 종료 `seek_human`
+- 평정 블록: focal 7(카드 없음) → mc 2(**AI1 카드 있음**)
+- 대안 노출은 **평정 제출 후에야** 등장(NT-31), pairwise A/B 치환이 좌우와 정합
+- R2: 경보 True · transcript 3턴 복호화 · `focal_included`는 `scope`만 True
+- **SQLite 바이트 검사 — User1·sidecar·이유·수정본 평문 0건**
+- 기본 export 8파일에 참가자 문장 0건
+
+---
+
+## 이번 전환에서 잡은 결함 1건
+
+**`write_csv`가 첫 행 기준으로 열을 잡았다.** `pairwise.csv`는 contrast마다 문항이 다르므로
+(`item_seq_*` / `item_sco_*` / `item_sto_*`) 행끼리 열이 다르다. 테스트는 `collect()`만 봐서
+통과했고, 실서버 export에서 `ValueError: dict contains fields not in fieldnames`로 터졌다.
+전 행의 **합집합**(최초 등장 순)으로 고치고 회귀 테스트 2건을 추가했다
+(`test_write_csv_unions_columns_across_rows` · `test_written_files_round_trip`).
+
+교훈은 기록해 둔다: **`collect()`만 검사하면 쓰기 단계의 결함을 놓친다.** 이제
+`test_written_files_round_trip`이 8파일 전부를 파일까지 쓰고 되읽는다.
+
+---
+
+## 테스트 ↔ 부록 C 매핑
+
+| NT | 위치 |
+|---|---|
+| NT-01 (양방향) | `integration/test_evidence_boundary.py` — sentinel 주입 + 허용 3종 포함 확인 |
+| NT-02 | 〃 — checker 허용 5종 외 불포함 |
+| NT-04 | `unit/test_evidence_boundary_static.py` — `llm/`의 import 정적 검사 |
+| NT-07 | `integration/test_session_flow.py` — 조건·hash·배정 불변 |
+| NT-08 | 〃 — 재접속 복구, AI2 재생성 0건 |
+| NT-09 | 〃 — 세션·focal·위치 단계 재제출 |
+| NT-10′ | `test_evidence_boundary.py` — 대안 segment가 payload에 0회 |
+| NT-12 | `test_session_flow.py` — 실참가자 409, P00 무제한 |
+| NT-13 | `assets/test_frontend_contract.py` — 소스·번들·콘솔에 자산 원문·조건 라벨 0건 |
+| NT-14 | `unit/test_state_machine.py`(규칙) + `test_session_flow.py`(API 409) |
+| NT-15 | `integration/test_ai2_pipeline.py` — generations만으로 경로 복원 |
+| NT-16 | `test_session_flow.py` — sidecar 전 AI2 호출 0건 |
+| NT-20·21·22·23 | `assets/test_dossier_contract.py` — 25 dossier 전수 + 거부 8종 |
+| NT-25 | `test_ai2_pipeline.py` · `test_fixture_runner.py` — 블록 R·A·C 100% |
+| NT-26 | `integration/test_console.py` — flag 상태 불변, 전 엔드포인트 audit |
+| NT-28 | `integration/test_encryption_audit.py` — 전 테이블 덤프 + 복호화 지점 5곳 정적 열거 |
+| NT-29 | `integration/test_events.py` — beacon 쌍 |
+| NT-30 | `integration/test_export.py` — 비식별·opt-in·8파일·삭제 열 부재 |
+| NT-31 | `test_session_flow.py` — 평정 제출 전 대안 문자열 0회 |
+| NT-32 | `unit/test_assignment.py` — 제약 전수 + 거부 6종 + self-test 20종 |
+| NT-33 | `test_session_flow.py` — position 건너뛰기 409, 배정 순서 일치 |
+| NT-34·35 | `test_session_flow.py` · `test_ai2_pipeline.py` · `test_console.py` |
+| NT-36 | `test_session_flow.py` — sidecar 3단 분기 검증 |
+| NT-37 | `assets/test_item_assets.py` — 2블록·MC 마지막·합산 부재 |
+| NT-38 | `assets/test_item_assets.py` · `test_export.py` — A/B 치환·좌우 정합 |
+| NT-39 | `test_console.py` — R3 포함 / 참가자 P11 미포함 |
+| NT-40·41 | `test_session_flow.py` · `test_console.py` |
+| NT-42 | `test_assignment.py` · `test_freeze.py` · `test_boot_and_gateway.py` |
+| [정본] 7건 | `assets/test_screen_copy_canonical.py`(화면 5) · `test_p00_canonical_text.py`(자극 3) |
+
+---
+
+## 확인 필요 (V2) — 명세서에 없어 내가 정한 사항
+
+**연구 의미가 걸린 것은 ①–④**이고 나머지는 구현 관례다. 전부 되돌리기 쉬운 상태다.
 
 | # | 정한 것 | 명세서 상태 | 반려 시 비용 |
 |---|---|---|---|
-| ① | **연구자 콘솔을 빌드 없는 정적 HTML 1장으로** 분리(`frontend/console/index.html`) | §2.1은 Participant UI만 React로 지정, §2.0 다이어그램은 콘솔을 FastAPI 쪽에 그린다 | 낮음 (React로 옮기려면 두 번째 진입점 필요) |
-| ② | `GET /admin/participants`·`GET /admin/console` 신설 | §8.2 표에 없음. §4.12 R1 화면이 요구 | 낮음 |
-| ③ | 복호화 audit을 **요청 단위 1행**으로 | §2.9는 "복호화 조회는 audit 기록"만 | 낮음 (값 단위로 바꾸면 audit 폭증) |
-| ④ | R2 모니터가 매 폴링(3s)마다 audit 2행을 남긴다 | §2.7은 "모든 콘솔 조회" 기록만 | 중간 — 3s 폴링이면 세션 1건에 수백 행. 화면 열람 세션 단위로 묶는 대안 있음 |
-| ⑤ | AI2 상태 라벨 5종(`generating`/`pending`/`clean`/`regenerated`/`fallback`) | §4.12는 "생성 중/재생성/fallback" 3종 | 낮음 |
-| ⑥ | `events.type` 3종 신설(`researcher_flag`·`researcher_abort`·`researcher_dropout`) | §8.1은 "beacon·flag(사유🔒)·abort"라고만 | 낮음 |
-| ⑦ | dropout은 **알림 없음** | §2.8 표에 트리거가 없다(abort만 있음) | 낮음 |
-| ⑧ | dropout에는 사유를 받지 않는다 | §8.2 `POST /dropout`에 body 미지정 | 낮음 |
-| ⑨ | export 파일 5종 분할(trajectory·ratings·presurvey·generation_integrity·events) + opt-in `free_text` | §7.6은 "플래그 열로 제공"만 | 낮음 |
-| ⑩ | 기본 export도 복호화한다(텍스트 길이 — §7.4). opt-in은 **파일 기록** 스위치 | §2.9·NT-30은 열 분리만 요구 | 낮음 |
-| ⑪ | `first_opportunity = (branch_index == 1)` | §7.6은 "각 branch가 첫 표현 기회였는지 기록" | 낮음 — 같은 사건 4회 반복이므로 기계적으로 결정된다 |
-| ⑫ | `carryover_sensitive`는 코딩 CSV가 있을 때만 산출, 없으면 빈 칸 | §7.6은 산출 방법을 지정하지 않음 | 중간 — 자동 추정을 원하면 유사도 판정 규칙을 명세해야 한다 |
-| ⑬ | export에서 `events.payload.user_agent` 제거 | §4.0은 저장을 지시, §7.6은 비식별 요구 | 낮음 |
-| ⑭ | `study_version` 동결은 **스크립트 전용**(콘솔 버튼 없음) | §10.5는 주체·수단 미지정 | 낮음 |
-| ⑮ | 모집 게이트 판정 항목 4종(PH-03·PH-IRB-1·2·PH-01) | §11.3은 "PH-IRB 계열·PH-03"만 명시 (PH-01은 내가 추가) | 낮음 |
-| ⑯ | notify 5종 중 2종(provider 문자열 변경·5xx 누적)은 리허설에서 **감시 함수 직접 호출**로 확인 | 부록 D.1은 "notify 5종 발화 확인" | 낮음 — 세션 조작으로는 만들 수 없는 사건이다 |
-| ⑰ | 서버 5xx 알림을 **미들웨어**에서 센다 | §2.8은 트리거만 지정 | 낮음 |
+| ① | **P00의 배정을 QA 고정값(focal C1 · 대안 C2→C3→C4 · pair 표 순서 · 좌우 오름차순)으로** | §5.1은 "P00 = QA 합성"만. 배정표에는 없다 | 낮음 — 다만 P00으로 다른 focal 조건을 리허설하려면 값을 바꿔야 한다. **리허설이 C1만 밟는다는 한계**가 여기서 온다 |
+| ② | **`checkpoint_edits.original`을 dossier 원문이 아니라 "직전 값"으로** | §8.1은 `original🔒`만 | 중간 — 원문 고정으로 바꾸면 재수정 이력에서 중간 단계가 사라진다 |
+| ③ | **R-1 대조에 평정 문항 문면 추가**(전문 일치) | §6.4는 "평정 유래 문자열" | 낮음 |
+| ④ | **`END_REASON_REQUIRED = True`**(종료 이유 필수) | §4.7 `[파일럿 확정: 필수 여부]` | 낮음 — 상수 하나로 끈다 |
+| ⑤ | 배정표 검증을 생성기·로더가 **같은 함수**로 | §5.2는 절차와 로더를 따로 서술 | 낮음 |
+| ⑥ | `make_assignment.py`의 focal 배정을 **탐욕적 restricted randomization**으로 | §5.2 ①은 "가능한 한 균등, 동률이면 locus 편중 최소, seed 무작위" | 낮음 — 결과가 제약을 만족하고 self-test가 20종에서 통과한다 |
+| ⑦ | pairwise 문항 중 `sto_*`에 `target`을 두지 않음 | 부록 A.5는 sco_*에만 (A/B) 표기 | 낮음 — 문면이 서술로 한쪽을 지칭한다 |
+| ⑧ | `GET /admin/assignment` 신설 | §8.2는 명시(승계 + 이 항목) | 없음 |
+| ⑨ | `scripts/make_schema_dummies.py` 신설 | 부록 H.3에 없음 | 낮음 — 더미 24건을 손으로 쓰지 않기 위한 도구 |
+| ⑩ | `store.turns()` 정렬을 `coalesce(rendered_at, submitted_at)`으로 | §8.1은 컬럼만 | 낮음 — 안 하면 R2 transcript 순서가 뒤집힌다 |
+| ⑪ | export `write_csv` 열 = 전 행 합집합 | §7.7은 파일 목록만 | 없음 — 결함 수정이다 |
+| ⑫ | dossier 로더가 **파일이 있는 번호만** 로드(P00–P30 중) | §5.1은 24명 + P00 | 낮음 |
+| ⑬ | 세션 생성 시 **배정표 소속을 dossier보다 먼저** 검사 | §9.1은 사유 표시만 | 낮음 — 사유가 정확해진다 |
+| ⑭ | `events.payload`의 `viewport`도 export에서 제거 | §2.9는 비식별만 | 낮음 |
+| ⑮ | R2 폴링이 매 호출 audit 2행(승계 — NS4 ④) | §2.7은 "모든 콘솔 조회" | 중간 — 3s 폴링이면 세션당 수백 행 |
 
-**NS3 ⑬의 후속**: 복호화 지점이 실제로는 4곳이다(콘솔·export·R-1/R-2 대조·AI2 payload용 정규화본 읽기). `tests/integration/test_encryption_audit.py`가 이 넷을 **정적으로 열거**하므로, 다섯 번째가 생기면 테스트가 먼저 깨진다. §2.9 문면("복호화 지점 2곳")과의 정합은 PI 확인 사항으로 남긴다.
-
----
-
-## 확인 필요 (NS3) — 명세서에 없어 내가 정한 사항
-
-| # | 정한 것 | 명세서 상태 | 반려 시 비용 |
-|---|---|---|---|
-| ① | **R-2 대조 정밀화 2건**(위 설계 메모) | §6.5는 "타 branch User1/AI2 문자열의 등장"만 | 중간 — 되돌리면 정상 세션이 fallback으로 떨어진다 |
-| ② | 규칙 위반 시 checker 생략 | §6.1은 [4]→[5] 순서만 | 낮음 (항상 호출로 바꾸면 최악 경로 +45s) |
-| ③ | fallback을 별도 `generations` 행으로 | §8.1은 `attempt(1/2)`만 | 낮음 |
-| ④ | 누출 대조 최소 길이 8자 | §6.5는 "필드 값 문자열 대조" | 낮음 [파일럿 확정 태그] |
-| ⑤ | `{ai_visible_context}` 렌더 형식(항목별 라벨 5줄) | 부록 A.1은 자리만 지정 | 낮음 |
-| ⑥ | `trouble_cue.form`(explicit/mitigated/…)을 payload에서 제외 | §6.2는 "ai_visible layer(checkpoint 정보)" | 낮음 — 연구자 코딩 라벨이라 제외했다 |
-| ⑦ | 프롬프트를 system/user로 분할 | 부록 A.1은 한 덩어리 | 낮음 (이어 붙이면 원문 동일) |
-| ⑧ | `referent_id` 형식 `R-01` / `R-01+R-02`, 병기 연결자 `, ` | §5.2에 id 필드 없음, §8.1은 값을 요구 | 낮음 |
-| ⑨ | 재생성 안내 문안 [제안] | §6.5는 "위반 유형 피드백 포함"만 | 낮음 |
-| ⑩ | A.3 패턴의 정규식화(공백 유연) + 패턴 자산 버전 교차 검증 | 부록 A.3은 "정규식 취지" | 낮음 `<TODO: PH-05>` |
-| ⑪ | checker 판정에서 `violations`를 `pass`보다 권위로 | 부록 A.2는 둘 다 출력 | 낮음 |
-| ⑫ | checker 판정 불능을 **통과**로 취급 | §9.1은 "규칙 계층만으로 판정"이라고만 | 낮음 |
-| ⑬ | `leakage_sources`의 복호화 | §2.9는 복호화 지점 2곳(콘솔·export) | 중간 — R-1·R-2가 평문 대조를 요구하므로 규칙 자체가 세 번째 지점을 만든다 |
-| ⑭ | fake LLM fixture 트리거 토큰 `[[fixture:…]]` | 부록 A.5는 "트리거 문자열"만 | 낮음 |
+**승계된 미결 사항**: v1.0.1 PROGRESS의 NS1–NS4 목록 중 v2에서도 유효한 것 —
+복호화 audit 요청 단위(NS4 ③), dropout 알림 없음(⑦)·사유 없음(⑧), 콘솔 정적 HTML 분리(①),
+`[[fixture:…]]` 트리거(NS3 ⑭), 세션 토큰 HMAC(NS2 ④), 접속 코드 해시 방식(⑬).
 
 ---
 
-## 확인 필요 (NS2) — 명세서에 없어 내가 정한 사항
+## 한계로 남긴 것
 
-NS2에서 명세서가 값을 고정하지 않은 지점이다. **①–③이 연구 의미와 닿아 있고 나머지는 구현 관례**다. 전부 되돌리기 쉬운 상태다.
-
-| # | 정한 것 | 명세서 상태 | 반려 시 비용 |
-|---|---|---|---|
-| ① | **참가자 화면에 문항 ID 대신 위치를 내린다** — 평정 12문항에도 적용 | §4.2는 사전설문에만 명시(NT-05). 평정은 무언급 | 낮음 (payload 형태만 변경) |
-| ② | **평정 제시 순서를 저장하지 않고 시드로 재현** | §8.1에 순서 테이블 없음, §3.5는 "순서 재추첨 없음"만 요구 | 중간 (저장 방식으로 바꾸면 테이블 1개 추가) |
-| ③ | **NS2의 P7은 neutral_fallback을 표시**한다 | §11.1이 AI2를 NS3으로 배치 | 없음 (NS3에서 교체 예정) |
-| ④ | 세션 토큰 = HMAC 서명한 세션 id (비밀은 `FERNET_KEY` 파생) | §2.5는 "서버 세션 토큰(httpOnly cookie)"만 지정 | 낮음 |
-| ⑤ | `POST /api/events` beacon 엔드포인트 신설 | §8.2 표에 없음. §2.11·§7.5·NT-29가 요구 | 낮음 |
-| ⑥ | `POST /advance` body = `{from_screen}` | §8.2는 body 미지정 | 낮음 |
-| ⑦ | `checkpoint_viewed_at`·`debrief_confirmed_at`·`user_agent`·`viewport`를 `events` 행으로 저장 | §4.0·§4.3·§4.11이 저장을 지시하지만 §8.1 표에 열이 없음 | 낮음 (열 추가 시 마이그레이션) |
-| ⑧ | 동의 항목 키 5종(`participation`·`study1_data_use`·`recording`·`overseas_transfer`·`withdrawal_and_compensation`) | §4.1 필수 포함 항목 ①–⑤의 구조만 확정, 문안은 `<TODO: PH-IRB-1>` | 낮음 |
-| ⑨ | 사전설문 스키마 초판 — 12문항·4섹션·유형 3종(single/multi/likert_1_7) | §4.2 구성 ①–④만 서술, 원문은 `<TODO: PH-01>` | 낮음 |
-| ⑩ | 세션 생성 차단 조건 = 해당 참가자에 `active`·`done` 세션 존재 (P00 예외) | §2.5·NT-12는 "완료 세션 1개"만 | 낮음 (재시작하려면 NS4의 abort/dropout 필요) |
-| ⑪ | sidecar "있음"에서 free_text·relevance **필수**, reason 선택 | §4.6은 세 입력을 나열만 | 낮음 |
-| ⑫ | downstream 7선택은 **명세서 표 순서 고정**(무작위 아님) | §4.8은 "표시 순서" 저장만 지시. 무작위는 §7.3 평정의 규칙(D-13) | 낮음 |
-| ⑬ | 접속 코드 해시에 참가자 번호 결합, 실패 지연은 번호 단위 프로세스 메모리 | §2.5·§4.0은 해시 방식·카운터 위치 미지정 | 낮음 |
-| ⑭ | P10에서 **참가자 본인** 텍스트를 복호화해 표시 | §2.9는 "복호화 지점 2곳(콘솔·export)", §4.10은 4 trajectory 재표시 요구 — 문면상 긴장 | 중간 (금지하면 §4.10 재표시 불가) |
-| ⑮ | UI 이동 라벨(`계속하기`·`시작`·`제출하기`·`시작하기`·종료 안내) | §4에 라벨 없음 | 낮음 |
-
-**한계로 남긴 것**
-
-- **NT-19(데스크톱 가드)는 정적 검사만** 걸었다 — 임계값 1024·문안 일치·가드가 화면 선택보다 앞이라는 것까지 본다. 렌더 동작 검증에는 JS 테스트 러너가 필요한데 이 리포의 테스트는 pytest다(CLAUDE.md). **vitest 도입 여부는 결정 사항**이다. 현재는 §10.2 QA 워크스루에서 사람이 확인한다.
-- **NT-13도 정적 층**이다: 소스·빌드 산출물에 비밀·자산 원문이 없다는 것까지 확인한다(`tests/assets/test_frontend_contract.py`).
+- **NT-19(데스크톱 가드)는 정적 검사만**이다 — 임계값 1024·문안 일치·가드가 화면 선택보다
+  앞이라는 것까지 본다. 렌더 동작 검증에는 JS 러너가 필요한데 이 리포의 테스트는
+  pytest다(CLAUDE.md). **vitest 도입은 미결**이고, 지금은 §10.2 워크스루에서 사람이 확인한다
+  (리허설 수동 항목 D1-5c).
+- **실모델 1회 미실행** — `scripts/run_fixtures.py --real`이 준비돼 있고 실키·[확인 4] 비용
+  기록이 필요하다(리허설 수동 항목 D1-5b).
+- **§2.9 복호화 지점이 5곳**이다(콘솔·참가자 재표시·수정본 읽기·leakage 대조·AI2용 User1).
+  §2.9 v2가 이 다섯을 열거형으로 명시했으므로 v1의 "2곳" 긴장은 해소됐다.
+  `test_encryption_audit.py`가 다섯을 정적으로 세므로 여섯 번째가 생기면 먼저 깨진다.
+- **P00 리허설은 focal C1만 밟는다**(위 ① 참조). 네 focal 조건 전부를 리허설하려면 배정표
+  참가자로 세션을 열거나 P00 고정값을 바꿔야 한다.
 
 ---
-
-## 확인 필요 (NS1) — 명세서에 없어 내가 정한 사항
-
-NS1을 진행하기 위해 필요했지만 명세서가 값을 고정하지 않은 항목이다. **연구 의미가 걸린 것은 ①뿐이고 나머지는 구현 관례**다. 되돌리기 쉬운 상태로 두었으니 반려하면 그대로 바꾼다.
-
-1. ~~**P00 `sampling.mismatch_locus`**~~ → **해소 (PI 확정 2026-08-16): `trajectory_timing` 유지.** 근거 ① 원 요청(장단점)은 이행되었으므로 content 층의 불일치가 아니다 ② C3 [정본]의 uptake가 내용 대체가 아니라 확장분 회수·범위 복귀다 ③ residual uncertainty가 대화의 다음 단계에 걸려 있다. 근거는 `dossiers/P00.json`의 `sampling.notes_ref`에 기록했다.
-2. **dossier 더미 배치** — 위 [자산 현황](#자산-현황)의 2단 배치. CLAUDE.md("P01–P12는 커밋하지 않는다, 스키마 더미만 커밋")를 만족시키려면 실값과 더미의 경로가 갈려야 했다.
-3. **`backend/app/notify/` 패키지 위치** — §2.3 폴더 목록에는 notify가 없지만 §2.1이 "`notify` 이식"을 지정한다. 구 리포와 같은 이름의 top-level 패키지로 두었다(`core/`에 넣는 대안도 있었음).
-4. **서버 5xx 누적 알림 임계 = 3회 연속** — §2.8은 트리거만 있고 임계가 없다. `[파일럿 확정]` 태그를 달아 두었다(`notify/watch.py`).
-5. **질문 검출 휴리스틱 초판** — §6.5가 "의문부호·의문형 종결 휴리스틱 [파일럿 확정: 검출 규칙 1회 조정 가능]"이라 한 그 규칙의 1판. 의문부호 우선 + 보수적 의문형 종결 어미 목록. 자산 계약(NT-22·23)과 런타임 R-3이 같은 함수를 쓴다.
-6. **`downstream_actions.display_order`를 JSON 배열로** — §4.8은 "표시 순서", §8.1은 컬럼명만 준다. 제시된 7코드의 순서를 그대로 저장하도록 했다(선택 위치는 파생 가능).
-7. **`presurvey_responses.value`를 JSON으로** — 사전설문 자산이 `<TODO: PH-01>`이라 응답 형식(정수 척도/범주 코드)이 미확정이다.
-8. **flag 사유 암호화 위치** — §8.1 `events` 컬럼 목록을 유지하고, 🔒 사유는 `payload` 안의 암호문 필드로 넣도록 주석에 고정했다(컬럼 추가 없음).
-9. **dossier hash 정규화** — §5.2의 "전체 JSON sha256"을 `hash` 필드 자신만 제외한 canonical JSON으로 계산한다(자기참조 회피). `locked_at`은 포함.
-10. **§8.1 전 테이블을 NS1에 정의** — `init_db.py` 이식과 DEV_MODE 기동이 모델을 요구한다. 컬럼은 §8.1 표대로이고 **동작 로직은 넣지 않았다**(상태 전이 NS2, 생성 기록 NS3).
 
 ## 미해결 (명세서 TODO)
 
-- `PH-03` dossier P01–P12 실값 작성·2인 판정·lock — **본 모집 전 필수**. 현재는 스키마 더미로 CI·시연이 돈다.
-- `PH-04` 실값 배포 반입 절차(Railway volume/환경 주입) — 로더는 이미 실값 우선으로 찾는다.
-- `PH-01` 사전설문 **문항 원문·번역** — 구조·로더·계약 테스트는 NS2에서 착지했다. 원문만 넣으면 된다.
-- `PH-02` P10에서 sidecar 비표시 — 현재 비표시로 구현(PI 승인 대상).
-- `PH-05` normalization 패턴 **보강 확정** — 부록 A.3의 NP-01~03 초판이 NS3에서 자산으로 들어갔다. 파일럿에서 1회 보강한다.
-- `PH-IRB-1~7` 문안 — IRB 제출 시 착지. `screen_copy.CONSENT_TODO`·`DEBRIEF_TODO`가 자리를 잡고 있고, 모집 게이트(`core/freeze.py`)가 미착지 상태를 R1에 표시한다.
-- 부록 A.1·A.2 프롬프트 문안의 **PI 승인·lock** — 현재 `prompts/prompt_config_v1.json`은 [제안] 상태다(§1.4).
-- `[확인 4]` integrity checker 실모델 실행 시점·비용 — `scripts/run_fixtures.py --real`이 준비됐다(§10.1 "QA 직전 1회"). 부록 D.1 리허설의 수동 항목 D1-3b가 이것이다.
-- `[확인 1·2]` 모델 슬러그(`anthropic/claude-opus-4.8`·`openai/gpt-5.4`) 가용성과 provider 고정 문법 — 실호출 전 확인. DEV_MODE에서는 불요.
-- P00b(낮은 actionability 리허설 변형, 부록 A.6 "선택") 미작성.
-- **NT-19 렌더 검증** — 정적 검사만 걸려 있다. JS 러너(vitest) 도입 여부가 미결이고, 현재는 §10.2 워크스루에서 사람이 확인한다(리허설 수동 항목 D1-4b).
+- `PH-03` dossier P01–P24 **실값 작성·2인 판정·lock** — 본 모집 전 필수. 현재는 스키마 더미.
+- `PH-03b` `mismatch_locus` 목록 확정 — 초판 5종이 로더 상수로 들어가 있다.
+- `PH-04` 실값 배포 반입 절차 — `DOSSIER_DIR` 환경변수가 자리를 잡았다.
+- `PH-06` focal 문항 원문 — 구조·로더·계약 테스트 완료. `focal_items_v1.json`으로 올리면 된다.
+- `PH-07` pairwise 문항 원문 — 〃 (`pairwise_items_v1.json`).
+- `PH-08` **배정표 생성·동결** — 생성기·검증·self-test 완료. `--from-dossiers`로 실값 생성.
+- `PH-09` 이탈 유형 라벨·이유 필수 여부 PI 승인.
+- `PH-10` P9·P10 안내 문안 PI 승인 / `PH-11` 개방 비교 문항(기본값: 구술) /
+  `PH-13` 수정 UI 문안 / `PH-14` sidecar "건너뛰기"(기본값: 두지 않는다).
+- `PH-12` 부록 A.1·A.2 v2 프롬프트 **PI 승인·lock** — 현재 `prompt_config_v2.json`은 [제안].
+- `PH-IRB-1~7` — 동의 항목 6종(⑥ 대안 노출 신설) 구조는 섰고 문안만 남았다.
+- `[확인 1·2]` 모델 슬러그·provider 고정 문법 / `[확인 3]` OpenRouter 보존 정책(전송 항목이
+  effective checkpoint·focal AI1·User1로 바뀌었다 — 동의서 문안 갱신) / `[확인 4]` checker
+  실모델 비용 / `[확인 5]` Zoom.
+
+---
 
 ## 다음 단계 — 구현 완료 이후 (운영·자산 착지)
 
-NS1–NS4 구현은 끝났다. 남은 것은 **코드가 아니라 자산·승인·운영**이다.
+V2-0–V2-4 구현은 끝났다. 남은 것은 **코드가 아니라 자산·승인·운영**이다.
 
-1. **본 모집 게이트 해소** — `DEV_MODE=true python scripts/freeze_study_version.py --check`가 현재 4건(PH-03 · PH-IRB-1 · PH-IRB-2 · PH-01)을 보고한다. 착지 순서: PH-IRB(제출·승인) → PH-01(사전설문 원문) → PH-03(dossier 실값·2인 판정·lock) → PH-04(배포 반입).
-2. **프롬프트 lock** — 부록 A.1·A.2 PI 승인 후 `prompt_config_v1.json` 동결, 그 뒤 실모델 fixture 1회(`--real`)와 [확인 4] 비용 기록.
-3. **QA 워크스루(§10.2)** — `scripts/run_qa_rehearsal.py`로 자동분을 돌리고, 수동 2건(실모델·렌더)을 사람이 채운다.
-4. **soft launch(§10.3)** — P01 세션 태깅 → 리뷰 회의 → [파일럿 확정] 파라미터 조정 → P02 전 동결(§1.4).
-5. **설계 동결(§10.5)** — soft launch 종료 시 `scripts/freeze_study_version.py --actor <이름>` 1회.
-6. **배포** — Railway 단일 서비스, `proto_v1` → `main_v1` schema 전환(§2.4), 환경변수 전 항목 설정, dossier 실값 반입(PH-04).
+1. **PH-IRB 제출·승인** → 동의서·디브리핑 문안 착지.
+2. **PH-06·PH-07** 문항 문면 PI 승인 → `*_v1.json`으로 교체(코드 변경 0).
+3. **PH-03** dossier 24건 실값 작성 → 2인 독립 판정·adjudication → `scripts/lock_dossier.py`.
+4. **PH-08** `make_assignment.py --from-dossiers --seed <n>` → 생성 로그와 함께 동결.
+   ⚠ **배정표는 생성 후 금지**다(§1.4) — 재생성 = 새 seed·새 버전·전원 재배정, 모집 전에만.
+5. **PH-04** 배포 반입(`DOSSIER_DIR`·`ASSIGNMENT_PATH`).
+6. **PH-12** 프롬프트 lock → 실모델 fixture 1회(`--real`) + [확인 4] 비용 기록.
+7. **QA 워크스루(§10.2)** — `run_qa_rehearsal.py` + 수동 2건.
+8. **soft launch(§10.3)** — 첫 실참가자 1명 → 리뷰 회의 → [파일럿 확정] 1회 조정 → 두 번째
+   참가자 전 동결.
+9. **설계 동결(§10.5)** — `scripts/freeze_study_version.py --actor <이름>` 1회.
+10. **배포** — Railway 단일 서비스, `proto_v2` → `main_v2` 전환(§2.4).
 
-미결 결정 대기: 위 [확인 필요 (NS4)](#확인-필요-ns4--명세서에-없어-내가-정한-사항) ①–⑰ 및 NS1–NS3의 목록. 연구 의미가 걸린 것은 NS4 ④·⑫, NS3 ①·⑬, NS2 ②·⑭ 여섯 건이다.
+---
+
+<details>
+<summary>v1.0.1 (within, 12명 × 4-branch) 이력 — 태그 <code>v1.0.1-within</code></summary>
+
+NS1 이식·골격(188 tests) → NS2 상태머신·화면(400) → NS3 AI2 파이프라인(444) →
+NS4 콘솔·마감(508). 상세 기록은 태그 `v1.0.1-within`의 `PROGRESS.md`에 있다:
+
+```bash
+git show v1.0.1-within:PROGRESS.md
+```
+
+v2.0에서 폐기된 것: Williams 4-branch 배정 · referential normalization · 사전 설문 ·
+no_reply/end 3분기 · 12문항 2블록 · downstream 7메뉴 · cue form 분류 · carryover 태깅 ·
+P10 cross-branch review. 처분 근거는 명세 부록 G, 파일 단위 지시는 부록 H.
+
+</details>

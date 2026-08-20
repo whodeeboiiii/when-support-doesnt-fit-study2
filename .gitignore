@@ -25,10 +25,13 @@ frontend/tsconfig.tsbuildinfo
 # macOS
 .DS_Store
 
-# --- dossier 실값 (§2.9 · CLAUDE.md 자산 원칙) -------------------------------
-# P01–P12의 **실값**은 리포에 커밋하지 않는다. 배포 환경에만 반입한다
+# --- dossier·배정표 실값 (§2.9 · CLAUDE.md 자산 원칙) -----------------------
+# **실값**은 리포에 커밋하지 않는다. 배포 환경에만 반입한다
 # `<TODO: PH-04 — 반입 절차: Railway volume 또는 환경 주입 방식 확정>`.
 # 커밋 대상은 `dossiers/P00.json`(QA 합성 실값)과 `dossiers/schema_dummy/`뿐이다.
+#
+# §5.1 — 참가자 번호는 Study 1의 P번호(P01–P30)를 그대로 쓴다. 그 중 24명이 배정표의
+# 행이 되므로, 어느 번호가 쓰일지 모르는 채로 범위 전체를 막는다.
 dossiers/P01.json
 dossiers/P02.json
 dossiers/P03.json
@@ -41,3 +44,30 @@ dossiers/P09.json
 dossiers/P10.json
 dossiers/P11.json
 dossiers/P12.json
+dossiers/P13.json
+dossiers/P14.json
+dossiers/P15.json
+dossiers/P16.json
+dossiers/P17.json
+dossiers/P18.json
+dossiers/P19.json
+dossiers/P20.json
+dossiers/P21.json
+dossiers/P22.json
+dossiers/P23.json
+dossiers/P24.json
+dossiers/P25.json
+dossiers/P26.json
+dossiers/P27.json
+dossiers/P28.json
+dossiers/P29.json
+dossiers/P30.json
+
+# §5.2 배정표 실값 — 생성 후 금지(§1.4)이고 커밋 대상이 아니다.
+# `assignments/assignment_dummy.json`(+ .log)만 커밋한다.
+assignments/assignment_v*.json
+assignments/assignment_v*.log
+
+# 실행 산출물
+exports/
+reports/

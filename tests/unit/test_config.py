@@ -65,7 +65,9 @@ def test_boot_gate_calls_the_same_rule() -> None:
 
 
 def test_schema_defaults_are_the_new_lineage() -> None:
-    """§2.4 — 신 계보는 `proto_v1`(시연·QA) → `main_v1`(본실험). 구 `pilot_*`는 재사용 금지."""
+    """§2.4 — v2 계보는 `proto_v2`(시연·QA) → `main_v2`(본실험). **v1 schema는 읽기 전용 동결**이다."""
     settings = Settings()
-    assert settings.db_schema in {"proto_v1", "main_v1", "proto_v1_test"}
+    assert settings.db_schema in {"proto_v2", "main_v2", "proto_v2_test"}
+    # v1 schema에 쓰기가 열리면 수집 데이터가 구 설계의 테이블로 들어간다.
+    assert not settings.db_schema.endswith("_v1")
     assert not settings.db_schema.startswith("pilot")

@@ -1,17 +1,18 @@
-"""FastAPI 단일 서비스 진입점 (구현명세서 §2.0 · §5.4 · §6.7).
+"""FastAPI 단일 서비스 진입점 (구현명세서 §2.0 · §5.4 · §6.6).
 
 배포 단위 1개다: React(Vite) 빌드 정적 서빙 + `/api` + (NS4) `/admin` 콘솔.
 
 기동 시 두 가지를 한다.
 
-1. **자산 게이트(§5.4)**: dossier 전수를 스키마 검증한다. 필수 키 누락·질문 수 계약 위반이면
-   **기동을 실패시킨다** — 자산이 깨진 채 세션을 받는 것보다 안 뜨는 편이 안전하다.
-   prompt_config의 `prompt_hash` 정합도 같은 자리에서 본다(§6.7 재현성).
+1. **자산 게이트(§5.4)**: dossier·배정표·문항 자산 전수를 검증한다. 필수 키 누락·질문 수
+   계약 위반·배정표 제약 위반(NT-32)이면 **기동을 실패시킨다** — 자산이 깨진 채 세션을 받는
+   것보다 안 뜨는 편이 안전하다. prompt_config의 `prompt_hash` 정합도 같은 자리에서 본다
+   (§6.6 재현성).
 2. **LLM 클라이언트 주입(§2.0)**: DEV_MODE면 fake LLM, 아니면 OpenRouter. 배포 구성과 동일
    코드 경로이고 분기는 이 지점과 DB URL 두 곳뿐이다.
 
-라우터: `/api/health`, 참가자 API(§8.2 — `api/participant.py`·`api/branch.py`), 연구자 API
-(`api/admin.py`·`api/admin_views.py`)와 콘솔 화면(`api/console.py`). DEV_MODE + 로컬 DB일 때만
+라우터: `/api/health`, 참가자 API(§8.2 — `api/participant.py`·`api/focal.py`·`api/exposure.py`),
+연구자 API(`api/admin.py`·`api/admin_views.py`)와 콘솔 화면(`api/console.py`). DEV_MODE + 로컬 DB일 때만
 개발용 초기화 API(`api/dev.py`)가 추가로 붙는다 — 배포 구성에는 그 경로가 존재하지 않는다.
 
 미들웨어가 하나 걸려 있다: §2.8의 "서버 오류(5xx) 누적" 알림. 5xx는 개별 라우터가 아니라
@@ -27,10 +28,11 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 
-from app.api import admin, admin_views, branch, console, health, participant
-from app.assets import dossier_loader, presurvey
+from app.api import admin, admin_views, console, exposure, focal, health, participant
+from app.assets import dossier_loader, pairwise_items, rating_items
+from app.core import assignment
 from app.core.config import get_settings, is_local_db
-from app.llm import normalization, prompts
+from app.llm import prompts
 from app.llm.fake_llm import FakeLLM
 from app.llm.gateway.client import NoClientConfigured, set_client
 from app.llm.gateway.openrouter_client import OpenRouterClient
@@ -59,22 +61,42 @@ def validate_runtime_config() -> None:
 def validate_assets() -> None:
     """§5.4 기동 게이트. 예외를 삼키지 않는다 — 실패는 기동 실패다."""
     prompts.verify()
-    presurvey.validate()
-    normalization.validate_patterns()
+    rating_items.validate()
+    pairwise_items.validate()
     dossiers = dossier_loader.validate_all()
+    # §5.2 로더 — 24행·제약 전수. 위반이면 여기서 기동이 끊긴다(NT-32).
+    table = assignment.validate()
+
+    # 배정표에 있는데 dossier가 없으면 그 참가자는 세션을 만들 수 없다(§9.1 마지막 행).
+    # 기동을 막지는 않는다 — 나머지 참가자의 세션은 정상이어야 한다.
+    missing = sorted(set(table.participant_numbers) - set(dossiers))
+    if missing:
+        logger.warning("배정표 참가자의 dossier 없음: %s (세션 생성 시 409 — §9.1)", missing)
+
     dummies = sorted(no for no, dossier in dossiers.items() if dossier.is_dummy)
-    if dummies:
+    if dummies or table.is_dummy:
         # 더미로 뜨는 것 자체는 개발·시연의 정상 상태다(§11.1 더미 자산 원칙).
-        # 다만 조용히 넘어가지 않는다 — 본 모집 게이트는 PH-03 착지다(§11.3).
-        logger.warning("dossier 스키마 더미로 기동: %s (<TODO: PH-03 실값 lock>)", dummies)
-    logger.info("자산 검증 통과 — dossier %d건, prompt_config %s", len(dossiers), prompts.config_hash()[:12])
+        # 다만 조용히 넘어가지 않는다 — 본 모집 게이트는 PH-03·PH-08 착지다(NT-42).
+        logger.warning(
+            "더미 자산으로 기동 — dossier %s / 배정표 %s (<TODO: PH-03 · PH-08>)",
+            dummies or "없음",
+            "dummy" if table.is_dummy else "실값",
+        )
+    logger.info(
+        "자산 검증 통과 — dossier %d건, 배정 %d행, 문항 %d+%d, prompt_config %s",
+        len(dossiers),
+        len(table.rows),
+        rating_items.load().item_count,
+        sum(len(entry.items) for entry in pairwise_items.load().sets.values()),
+        prompts.config_hash()[:12],
+    )
 
 
 def _install_llm_client() -> None:
     settings = get_settings()
     if settings.dev_mode:
         set_client(FakeLLM())
-        logger.info("DEV_MODE — fake LLM 주입 (§6.7)")
+        logger.info("DEV_MODE — fake LLM 주입 (§6.6)")
         return
     try:
         set_client(OpenRouterClient.from_settings(settings))
@@ -127,7 +149,8 @@ def create_app() -> FastAPI:
     app.middleware("http")(_watch_server_errors)
     app.include_router(health.router)
     app.include_router(participant.router)
-    app.include_router(branch.router)
+    app.include_router(focal.router)
+    app.include_router(exposure.router)
     app.include_router(admin.router)
     app.include_router(admin_views.router)
     app.include_router(console.router)

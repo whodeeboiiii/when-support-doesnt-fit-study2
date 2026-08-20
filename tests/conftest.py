@@ -34,8 +34,8 @@ def _test_env() -> None:
     """설정을 테스트 값으로 고정한다. 비밀정보는 테스트 전용 임시값."""
     os.environ["DEV_MODE"] = "true"
     os.environ["DATABASE_URL"] = TEST_DATABASE_URL
-    os.environ["DB_SCHEMA"] = "proto_v1"
-    os.environ["STUDY_VERSION"] = "proto_v1_test"
+    os.environ["DB_SCHEMA"] = "proto_v2"
+    os.environ["STUDY_VERSION"] = "proto_v2_test"
     os.environ["FERNET_KEY"] = Fernet.generate_key().decode()
     os.environ["ADMIN_USER"] = ADMIN_USER
     os.environ["ADMIN_PASS"] = ADMIN_PASS
@@ -53,7 +53,7 @@ async def engine(_test_env: None) -> AsyncIterator:
     from app.models import tables  # noqa: F401  (모델 등록)
     from app.models.session import create_engine
 
-    eng = create_engine(TEST_DATABASE_URL, "proto_v1")
+    eng = create_engine(TEST_DATABASE_URL, "proto_v2")
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield eng

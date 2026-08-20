@@ -5,18 +5,19 @@
  * 클라이언트는 응답으로 받은 상태를 그대로 그린다(§1.3 · §3.5). 그래서 여기 함수들은 전부
  * `AppState`를 돌려주고, 그 값을 상위 컴포넌트가 통째로 교체한다.
  *
- * 자산·문안도 서버가 내려준다 — 번들에 자극·문항을 넣지 않는다(NT-13).
+ * 자산·문안도 서버가 내려준다 — 번들에 자극·문항·조건 라벨을 넣지 않는다(NT-13).
  */
 
 export interface AppState {
+  /** P0–P12 · DONE · ABORTED */
   screen: string
   ss_state: string
-  b_state: string | null
-  /** 제출 경로용 값이다 — **화면에 표시하지 않는다**(§4.4). */
-  branch_index: number | null
+  f_state: string | null
+  /** §3.3 진행 위치 — 제출 경로용이다. 화면에 숫자로 표시하지 않는다. */
+  alt_index: number | null
+  pair_index: number | null
   participant_no: string
   status: string
-  has_ai2: boolean | null
   data: Record<string, any>
   /** `POST /join` 응답에만 있다 — 저장 지점 복원 여부(§3.5). */
   restored?: boolean
@@ -67,40 +68,53 @@ export const api = {
 
   consent: (items: Record<string, boolean>) => post<AppState>('/api/consent', { items }),
 
-  presurvey: (responses: { position: number; value: unknown }[]) =>
-    post<AppState>('/api/presurvey', { responses }),
+  /** §4.2 · D-25 — segment 단위 수정. 누적 저장되고 확인 후에는 409다. */
+  checkpointEdit: (segment: string, text: string) =>
+    post<AppState>('/api/checkpoint/edit', { segment, text }),
 
   checkpointConfirm: () => post<AppState>('/api/checkpoint/confirm'),
 
-  /** 자체 제출물이 없는 전이 — P4·P7·P10 (§8.2 `POST /advance`). */
+  /** 자체 제출물이 없는 전이 — P3·P6·P7·P9·P11 (§8.2 `POST /advance`). */
   advance: (fromScreen: string) => post<AppState>('/api/advance', { from_screen: fromScreen }),
 
-  user1: (branch: number, disposition: string, text?: string) =>
-    post<AppState>(`/api/branch/${branch}/user1`, { disposition, text }),
+  /** §4.4 · D-32 — User1은 **필수**다. disposition 인자가 없다. */
+  user1: (text: string) => post<AppState>('/api/focal/user1', { text }),
 
-  sidecar: (
-    branch: number,
-    body: { choice: string; free_text?: string; relevance?: number; reason?: string },
-  ) => post<AppState>(`/api/branch/${branch}/sidecar`, body),
+  /** §4.5 · D-28 — 3단 조건부. 분기 규칙은 서버가 검증한다(NT-36). */
+  sidecar: (body: {
+    has_more: boolean
+    free_text?: string
+    provenance?: string
+    reason?: string
+  }) => post<AppState>('/api/focal/sidecar', body),
 
-  ai2: (branch: number) => post<AppState>(`/api/branch/${branch}/ai2`),
+  ai2: () => post<AppState>('/api/focal/ai2'),
 
-  downstream: (branch: number, code: string) =>
-    post<AppState>(`/api/branch/${branch}/downstream`, { code }),
+  /** §4.7 · D-26 — reply(User2) 또는 end(이탈 유형 + 이유). */
+  downstream: (body: {
+    disposition: 'reply' | 'end'
+    text?: string
+    end_type?: string
+    reason?: string
+  }) => post<AppState>('/api/focal/downstream', body),
 
-  ratings: (branch: number, items: { position: number; value: number }[]) =>
-    post<AppState>(`/api/branch/${branch}/ratings`, { items }),
+  /** §4.8 — focal 5 construct + MC 2. 위치로만 오간다(문항 ID 미노출). */
+  ratings: (items: { position: number; value: number }[]) =>
+    post<AppState>('/api/ratings', { items }),
+
+  /** §4.10 — position = `pair_index`. */
+  pairwise: (position: number, items: { position: number; value: number }[]) =>
+    post<AppState>(`/api/pairwise/${position}`, { items }),
 
   debriefConfirm: () => post<AppState>('/api/debrief/confirm'),
 
   /**
    * beacon (§2.11 · NT-29). 실패해도 무시한다 — 이벤트 유실이 참가자 진행을 막지 않는다.
-   * ⚠ keystroke·삭제 이력·수정 과정은 보내지 않는다(§4.6 금지).
+   * ⚠ keystroke·삭제 이력·수정 과정은 보내지 않는다(§4.5 금지).
    */
-  event: (type: string, branchIndex?: number | null, payload?: Record<string, unknown>) =>
+  event: (type: string, payload?: Record<string, unknown>) =>
     post('/api/events', {
       type,
-      branch_index: branchIndex ?? null,
       client_ts: new Date().toISOString(),
       payload,
     }).catch(() => undefined),
@@ -116,7 +130,7 @@ export const api = {
 export interface DevSessionRow {
   participant_no: string
   ss_state: string
-  branch_index: number | null
+  f_state: string | null
   status: string
 }
 

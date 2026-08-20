@@ -1,0 +1,78 @@
+{
+  "version": "pairwise_items_v0",
+  "_note": "구현명세서 부록 A.5 초판 placeholder <TODO: PH-07>. 문면은 초안 §7.11 서술에서 유도한 임시안이며 PI 승인 대상이다. 실값 착지 시 pairwise_items_v1.json으로 올린다(모집 게이트 PH-07 — core/freeze.py).",
+  "scale": {
+    "min": 1,
+    "max": 7
+  },
+  "_target_note": "target이 있는 문항은 서버가 좌우 배정에 맞춰 {side}를 '응답 A'/'응답 B'로 치환한다(부록 A.5 말미). 클라이언트는 조건을 모른다 — 치환된 문면만 받는다(NT-38).",
+  "contrasts": [
+    {
+      "contrast": "sequence",
+      "pair": [
+        "C2",
+        "C4"
+      ],
+      "items": [
+        {
+          "item_id": "seq_1",
+          "target": null,
+          "text": "질문을 하기 전에, AI가 이미 할 수 있었던 조정을 먼저 했어야 했다."
+        },
+        {
+          "item_id": "seq_2",
+          "target": null,
+          "text": "이 질문은 AI의 다음 응답을 실제로 더 나아지게 할 것 같다."
+        }
+      ]
+    },
+    {
+      "contrast": "scope",
+      "pair": [
+        "C1",
+        "C3"
+      ],
+      "items": [
+        {
+          "item_id": "sco_1",
+          "target": "with_u",
+          "text": "{side}의 조정은 지금까지의 대화 내용만으로 충분히 정당했다."
+        },
+        {
+          "item_id": "sco_2",
+          "target": "with_u",
+          "text": "{side}는 내가 표현하지 않은 것을 지나치게 추론했다."
+        },
+        {
+          "item_id": "sco_3",
+          "target": "without_u",
+          "text": "{side}는 이미 할 수 있는 조정을 하지 않은 채 남겨두었다."
+        }
+      ]
+    },
+    {
+      "contrast": "stopping",
+      "pair": [
+        "C3",
+        "C4"
+      ],
+      "items": [
+        {
+          "item_id": "sto_1",
+          "target": null,
+          "text": "조정을 한 뒤에도 이 질문은 여전히 필요했다."
+        },
+        {
+          "item_id": "sto_2",
+          "target": null,
+          "text": "질문 없이 끝난 응답은 도움을 너무 일찍 거둔 것처럼 느껴졌다."
+        },
+        {
+          "item_id": "sto_3",
+          "target": null,
+          "text": "조정 이후의 질문은 이미 말한 것을 다시 설명하게 만드는 것처럼 느껴졌다."
+        }
+      ]
+    }
+  ]
+}

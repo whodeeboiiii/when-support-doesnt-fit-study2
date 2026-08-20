@@ -1,129 +1,167 @@
-"""세션 전 경로와 상태 불변식 (구현명세서 §3 · §4 · §8.2 · §9.1).
+"""세션 완주와 그 불변식 (구현명세서 §3 · §8.2 · NT-07·08·09·12·14·16·31·33).
 
-부록 C 대응: **NT-07 · NT-08 · NT-09 · NT-12 · NT-14 · NT-17 · NT-18 · NT-27**.
+한 참가자의 경로는 **SS00 → SS10**이고 그 안에 focal 1회 + 대안 3 + pairwise 3이 있다.
+이 파일은 그 경로를 실제 HTTP로 밟으며 §3의 불변식을 확인한다.
 
-§11.3 Definition of Done의 첫 줄 — "P00 세션이 한 URL에서 SS00→SS07 전 경로(3종 종결 유형
-포함)를 완료할 수 있다" — 이 파일의 첫 테스트다. 나머지는 그 경로 위에서 불변식을 흔든다.
+여기서 보는 것과 보지 않는 것을 갈라 둔다.
+- **본다**: 상태 전이, 배정 불변성, 복구, 중복 제출, 비합법 전이 거부, 대안 노출 시점.
+- **보지 않는다**: AI2 payload 내용(→ `test_evidence_boundary.py`), 콘솔(→ `test_console.py`).
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.assets import dossier_loader, rating_items
-from app.core.williams import condition as williams_condition
+from app.assets import dossier_loader, screen_copy
+from app.core import assignment
 from app.models import tables
 from tests import helpers
 
 
-async def _session_row(db: AsyncSession, participant_no: str = "P00") -> tables.Session:
-    result = await db.execute(
-        select(tables.Session).where(tables.Session.participant_no == participant_no)
-    )
-    return result.scalars().one()
-
-
 async def _count(db: AsyncSession, model) -> int:  # noqa: ANN001
-    return (await db.execute(select(func.count()).select_from(model))).scalar_one()
+    return int((await db.execute(select(func.count()).select_from(model))).scalar_one())
 
 
 # --------------------------------------------------------------------------- #
-# 전 경로 (§11.3)
+# 완주 (§11.2 Definition of Done 1행)
 # --------------------------------------------------------------------------- #
 
 
-async def test_full_walkthrough_ss00_to_ss07(client: AsyncClient, session: AsyncSession) -> None:
-    """SS00 → SS07. 종결 유형 3종을 부록 D.1 조합(reply×2·no_reply×1·end×1)으로 섞는다."""
-    state = await helpers.reach_branch_block(client, "P00")
-    assert state["screen"] == "P4"
-    assert state["ss_state"] == "SS04"
+async def test_full_session_reaches_ss10(client: AsyncClient, session: AsyncSession) -> None:
+    """SS00 → SS10 전 경로 — checkpoint 수정 포함, User2 reply."""
+    await helpers.open_and_join(client)
+    await helpers.consent(client)
+    # 수정은 SS02에서만 가능하다 — confirm 전에 한다(§4.2 · NT-35).
+    await helpers.edit_checkpoint(client, "situation_summary", "수정된 상황 요약입니다.")
+    await helpers.confirm_checkpoint(client)
+    await helpers.advance(client, "P3")
 
-    dispositions = ["reply", "reply", "no_reply", "end"]
-    for branch_index, disposition in enumerate(dispositions, start=1):
-        state = await helpers.complete_branch(client, branch_index, disposition)
-
-    assert state["screen"] == "P10", "네 branch가 끝나면 cross-branch review다 (§3.1 SS05)"
-    trajectories = state["data"]["branches"]
-    assert len(trajectories) == 4
-    assert [row["disposition"] for row in trajectories] == dispositions
-
-    state = await helpers.advance(client, "P10")
-    assert state["screen"] == "P11"
-
+    await helpers.complete_focal(client)
+    await helpers.advance(client, "P7")
+    await helpers.submit_ratings(client)
+    await helpers.complete_alt_exposures(client)
+    await helpers.complete_pairwise(client)
+    await helpers.advance(client, "P11")
     response = await client.post("/api/debrief/confirm")
     assert response.status_code == 200
-    final = response.json()
-    assert final["screen"] == "DONE"
-    assert final["ss_state"] == "SS07"
-    assert final["status"] == "done"
+    state = response.json()
+    assert state["screen"] == "DONE"
+    assert state["ss_state"] == "SS10"
+    assert state["status"] == "done"
 
-    # 저장물 — branch 4개, 평정 48행, AI2·downstream은 reply branch만(§3.2 · NT-17).
-    assert await _count(session, tables.Branch) == 4
-    assert await _count(session, tables.Rating) == 4 * rating_items.ITEM_COUNT
-    assert await _count(session, tables.SidecarEntry) == 4
-    assert await _count(session, tables.Generation) == 2
-    assert await _count(session, tables.DownstreamAction) == 2
+    assert await _count(session, tables.FocalRun) == 1, "focal run은 참가자당 1행이다 (D-23)"
+    assert await _count(session, tables.AltExposure) == 3
+    assert await _count(session, tables.PairwiseView) == 3
+    # 평정은 세션 수준 1세트다(branch당이 아니라).
+    from app.assets import rating_items
+
+    assert await _count(session, tables.Rating) == rating_items.load().item_count
 
 
-async def test_cross_review_never_names_conditions(client: AsyncClient) -> None:
-    """§4.10 — branch 번호로만 라벨링, construct label 비공개."""
-    await helpers.reach_branch_block(client, "P00")
-    for branch_index in range(1, 5):
-        state = await helpers.complete_branch(client, branch_index, "end")
-    serialized = str(state["data"])
-    for banned in ("C1", "C2", "C3", "C4", "uptake", "elicitation"):
-        assert banned not in serialized
+async def test_screens_visited_in_order(client: AsyncClient) -> None:
+    """§0.2 — P0 → … → P12. 화면이 건너뛰이지 않는다."""
+    seen: list[str] = []
+
+    async def note() -> str:
+        state = await helpers.state(client)
+        seen.append(state["screen"])
+        return state["screen"]
+
+    await helpers.open_and_join(client)
+    await note()  # P1
+    await helpers.consent(client)
+    await note()  # P2
+    await helpers.confirm_checkpoint(client)
+    await note()  # P3
+    await helpers.advance(client, "P3")
+    await note()  # P4
+    await helpers.complete_focal(client)
+    await note()  # P7 (F5 종료 안내)
+    await helpers.advance(client, "P7")
+    await note()  # P8
+    await helpers.submit_ratings(client)
+    await note()  # P9
+    await helpers.complete_alt_exposures(client)
+    await note()  # P10
+    await helpers.complete_pairwise(client)
+    await note()  # P11
+    await helpers.advance(client, "P11")
+    await note()  # P12
+
+    assert seen == ["P1", "P2", "P3", "P4", "P7", "P8", "P9", "P10", "P11", "P12"]
+
+
+async def test_end_disposition_completes_too(client: AsyncClient, session: AsyncSession) -> None:
+    """§4.7 · D-26 — `end`도 유효한 종결이다. 이후 경로가 같다(판정 없음 — §0.3)."""
+    state = await helpers.complete_session(client, disposition="end", end_type="switch_ai")
+    assert state["ss_state"] == "SS10"
+
+    action = (await session.execute(select(tables.DownstreamAction))).scalars().one()
+    assert action.disposition == "end"
+    assert action.end_type == "switch_ai"
+    # `reply`가 아니므로 User2 turn이 없다.
+    roles = {row.role for row in (await session.execute(select(tables.Turn))).scalars().all()}
+    assert roles == {"ai1", "user1", "ai2"}
 
 
 # --------------------------------------------------------------------------- #
-# NT-07 — condition·stimulus_hash 최초 저장 후 불변
+# NT-07 — 배정은 최초 저장 후 불변, 조건 확정은 F0 진입 1회
 # --------------------------------------------------------------------------- #
 
 
-async def test_nt07_condition_and_stimulus_are_fixed_at_first_entry(
+async def test_condition_comes_from_assignment_not_computed(
     client: AsyncClient, session: AsyncSession
 ) -> None:
-    await helpers.reach_branch_block(client, "P00")
-    state = await helpers.advance(client, "P4")
-    first_ai1 = state["data"]["ai1"]
+    """D-30 — 시스템은 배정을 **계산하지 않는다**. P00은 QA 고정값(C1)을 쓴다."""
+    await helpers.reach_focal(client)
+    run = (await session.execute(select(tables.FocalRun))).scalars().one()
+    participant = await session.get(tables.Participant, "P00")
+    assert run.condition == participant.focal_condition
+    assert participant.alt_order == ["C2", "C3", "C4"]
+    assert run.condition not in participant.alt_order, "alt_order에 focal이 있다"
 
-    branch = (
-        await session.execute(select(tables.Branch).where(tables.Branch.branch_index == 1))
-    ).scalars().one()
-    assert branch.condition == williams_condition("P00", 1), "§3.3 결정론 매핑과 다르다"
-    condition, stimulus_hash = branch.condition, branch.stimulus_hash
-    assert stimulus_hash == dossier_loader.load("P00").stimulus_hash(condition)
 
-    # 새로고침·중복 진행 요청을 반복해도 재추첨·재생성이 없다.
+async def test_condition_and_hash_are_immutable_across_refresh(
+    client: AsyncClient, session: AsyncSession
+) -> None:
+    """NT-07 — 재진입·새로고침을 반복해도 조건·자극 hash가 바뀌지 않고, ai1 turn은 1건이다."""
+    await helpers.reach_focal(client)
+    run = (await session.execute(select(tables.FocalRun))).scalars().one()
+    condition, stimulus_hash = run.condition, run.stimulus_hash
+
     for _ in range(3):
         await helpers.state(client)
-        await client.post("/api/advance", json={"from_screen": "P4"})
-    await session.refresh(branch)
-    assert (branch.condition, branch.stimulus_hash) == (condition, stimulus_hash)
-    assert (await helpers.state(client))["data"]["ai1"] == first_ai1
+        # 이미 지나간 화면에서 온 advance는 현재 상태를 그대로 돌려준다(§9.1).
+        await helpers.advance(client, "P3")
 
-    # AI1 turn은 1건뿐이다 — 재진입이 자극을 다시 렌더하지 않는다.
-    ai1_turns = (
-        await session.execute(select(tables.Turn).where(tables.Turn.role == "ai1"))
-    ).scalars().all()
-    assert len(ai1_turns) == 1
+    await session.refresh(run)
+    assert (run.condition, run.stimulus_hash) == (condition, stimulus_hash)
+
+    ai1_count = int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(tables.Turn)
+                .where(tables.Turn.role == "ai1")
+            )
+        ).scalar_one()
+    )
+    assert ai1_count == 1, "AI1 turn이 재생성됐다 (NT-07)"
 
 
-async def test_nt07_four_branches_follow_the_williams_row(
+async def test_stimulus_hash_matches_assembled_stimulus(
     client: AsyncClient, session: AsyncSession
 ) -> None:
-    await helpers.reach_branch_block(client, "P00")
-    for branch_index in range(1, 5):
-        await helpers.complete_branch(client, branch_index, "no_reply")
-    branches = (
-        await session.execute(select(tables.Branch).order_by(tables.Branch.branch_index))
-    ).scalars().all()
-    assert [b.condition for b in branches] == [williams_condition("P00", i) for i in range(1, 5)]
+    """§5.4 — 저장된 hash가 조립 결과의 sha256이다(사후 대조의 근거)."""
+    await helpers.reach_focal(client)
+    run = (await session.execute(select(tables.FocalRun))).scalars().one()
+    dossier = dossier_loader.load("P00")
+    assert run.stimulus_hash == dossier.stimulus_hash(run.condition)
 
 
 # --------------------------------------------------------------------------- #
@@ -131,67 +169,54 @@ async def test_nt07_four_branches_follow_the_williams_row(
 # --------------------------------------------------------------------------- #
 
 
-async def test_nt08_refresh_restores_the_same_screen_and_stimulus(client: AsyncClient) -> None:
-    await helpers.reach_branch_block(client, "P00")
-    await helpers.advance(client, "P4")
-    before = await helpers.state(client)
-    for _ in range(3):
-        after = await helpers.state(client)
-        assert after == before, "새로고침이 화면·자극을 바꾼다"
-
-
-async def test_nt08_rejoin_restores_the_saved_point(client: AsyncClient) -> None:
-    """§3.5 재접속 — 동일 번호+코드 재입력 → 저장 지점 복원(새 세션 생성 아님)."""
-    created, _ = await helpers.open_and_join(client, "P00")
-    await helpers.consent(client)
-    await helpers.presurvey(client)
-    before = await helpers.state(client)
-    assert before["screen"] == "P3"
-
-    client.cookies.clear()  # 브라우저를 닫았다 다시 연 상황
-    restored = await helpers.join(client, "P00", created["access_code"])
-    assert restored["restored"] is True
-    assert restored["screen"] == "P3"
-    assert restored["ss_state"] == before["ss_state"]
-
-
-async def test_nt08_ai2_is_never_regenerated(
+async def test_reconnect_restores_saved_position(
     client: AsyncClient, session: AsyncSession
 ) -> None:
-    """§8.3-4 — 새로고침 시 저장된 최종 텍스트를 재서빙한다(재생성 0건)."""
-    await helpers.reach_branch_block(client, "P00")
-    await helpers.advance(client, "P4")
-    await client.post("/api/branch/1/user1", json={"disposition": "reply", "text": "장단점만"})
-    await client.post("/api/branch/1/sidecar", json={"choice": "none"})
+    """§3.5 — 쿠키를 지우고 다시 접속해도 저장 지점에서 복원된다. 재생성 0건."""
+    created, _ = await helpers.open_and_join(client)
+    await helpers.consent(client)
+    await helpers.confirm_checkpoint(client)
+    await helpers.advance(client, "P3")
+    await client.post("/api/focal/user1", json={"text": "장기 계획 말고 비교만 해줘"})
 
-    first = await client.post("/api/branch/1/ai2")
+    before = await helpers.state(client)
+    client.cookies.clear()
+    restored = await helpers.join(client, "P00", created["access_code"])
+
+    assert restored["restored"] is True
+    assert restored["screen"] == before["screen"] == "P5"
+    assert restored["f_state"] == "F2"
+    # User1 turn이 하나뿐 — 재접속이 재제출이 되지 않는다.
+    assert await _count(session, tables.Turn) == 2  # ai1 + user1
+
+
+async def test_ai2_is_not_regenerated_on_refresh(
+    client: AsyncClient, session: AsyncSession, llm
+) -> None:
+    """NT-08 — 저장된 산출물이 있으면 그대로 재서빙한다(재생성 0건)."""
+    await helpers.reach_focal(client)
+    await client.post("/api/focal/user1", json={"text": "비교만 해줘"})
+    await client.post("/api/focal/sidecar", json={"has_more": False})
+    first = await client.post("/api/focal/ai2")
     assert first.status_code == 200
-    text = first.json()["data"]["ai2"]
-    assert text
 
+    calls_before = llm.call_count("ai2_generation")
     for _ in range(3):
-        again = await client.post("/api/branch/1/ai2")
-        assert again.status_code == 200
-        assert again.json()["replayed"] is True
-        assert again.json()["data"]["ai2"] == text
-        assert (await helpers.state(client))["data"]["ai2"] == text
+        replay = await client.post("/api/focal/ai2")
+        assert replay.status_code == 200
+        assert replay.json()["replayed"] is True
+    assert llm.call_count("ai2_generation") == calls_before
 
-    assert await _count(session, tables.Generation) == 1
-    ai2_turns = (
-        await session.execute(select(tables.Turn).where(tables.Turn.role == "ai2"))
-    ).scalars().all()
-    assert len(ai2_turns) == 1
-
-
-async def test_nt08_rating_order_survives_refresh(client: AsyncClient) -> None:
-    """문항 순서도 저장 상태다 — 새로고침이 다시 뽑지 않는다(§3.5)."""
-    await helpers.reach_branch_block(client, "P00")
-    await helpers.advance(client, "P4")
-    await client.post("/api/branch/1/user1", json={"disposition": "end"})
-    await client.post("/api/branch/1/sidecar", json={"choice": "skip"})
-    first = (await helpers.state(client))["data"]["blocks"]
-    for _ in range(3):
-        assert (await helpers.state(client))["data"]["blocks"] == first
+    finals = int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(tables.Generation)
+                .where(tables.Generation.final.is_(True))
+            )
+        ).scalar_one()
+    )
+    assert finals == 1, "final 생성물은 세션당 1행이다"
 
 
 # --------------------------------------------------------------------------- #
@@ -199,352 +224,252 @@ async def test_nt08_rating_order_survives_refresh(client: AsyncClient) -> None:
 # --------------------------------------------------------------------------- #
 
 
-async def test_nt09_duplicate_session_level_submissions(
+async def test_duplicate_submissions_are_idempotent(
     client: AsyncClient, session: AsyncSession
 ) -> None:
-    await helpers.open_and_join(client, "P00")
-    from app.assets.screen_copy import CONSENT_ITEMS
+    """§9.1 — 재제출은 200 + 기존 레코드. 행이 늘지 않는다."""
+    await helpers.reach_focal(client)
 
-    body = {"items": {item.field: True for item in CONSENT_ITEMS}}
-    first = await client.post("/api/consent", json=body)
-    second = await client.post("/api/consent", json=body)
-    assert first.status_code == second.status_code == 200
-    assert second.json()["screen"] == "P2"
+    # 세션 수준 — 동의·checkpoint 확인
+    assert (await client.post("/api/consent", json={"items": {}})).status_code == 200
 
-    await helpers.presurvey(client)
-    count_after_first = await _count(session, tables.PresurveyResponse)
-    # 같은 payload로 재제출 — 200 + 기존 레코드, 행은 늘지 않는다.
-    replay = await client.post(
-        "/api/presurvey", json={"responses": [{"position": 1, "value": "ph_1"}]}
-    )
-    assert replay.status_code == 200
-    assert await _count(session, tables.PresurveyResponse) == count_after_first
+    await client.post("/api/focal/user1", json={"text": "비교만 해줘"})
+    for _ in range(2):
+        response = await client.post("/api/focal/user1", json={"text": "다른 내용"})
+        assert response.status_code == 200
+        assert response.json()["replayed"] is True
+    assert await _count(session, tables.Turn) == 2  # ai1 + user1 — 두 번째 user1이 없다
 
-
-async def test_nt09_duplicate_branch_level_submissions(
-    client: AsyncClient, session: AsyncSession
-) -> None:
-    await helpers.reach_branch_block(client, "P00")
-    await helpers.advance(client, "P4")
-
-    body = {"disposition": "reply", "text": "장기 계획 말고 장단점만"}
-    first = await client.post("/api/branch/1/user1", json=body)
-    second = await client.post("/api/branch/1/user1", json=body)
-    assert first.status_code == second.status_code == 200
-    assert second.json()["replayed"] is True
-    user1_turns = (
-        await session.execute(select(tables.Turn).where(tables.Turn.role == "user1"))
-    ).scalars().all()
-    assert len(user1_turns) == 1
-
-    sidecar_body = {"choice": "has", "free_text": "말 안 한 사정", "relevance": 5}
-    assert (await client.post("/api/branch/1/sidecar", json=sidecar_body)).status_code == 200
-    assert (await client.post("/api/branch/1/sidecar", json=sidecar_body)).status_code == 200
+    await client.post("/api/focal/sidecar", json={"has_more": False})
+    for _ in range(2):
+        response = await client.post("/api/focal/sidecar", json={"has_more": True})
+        assert response.status_code == 200
+        assert response.json()["replayed"] is True
     assert await _count(session, tables.SidecarEntry) == 1
 
-    await client.post("/api/branch/1/ai2")
+
+async def test_duplicate_pairwise_submission_is_idempotent(
+    client: AsyncClient, session: AsyncSession
+) -> None:
+    """NT-09 — 위치 단계도 재제출을 흡수한다(§8.2 idempotency key의 index 성분)."""
+    await helpers.reach_focal(client)
+    await helpers.complete_focal(client)
     await helpers.advance(client, "P7")
-    assert (
-        await client.post("/api/branch/1/downstream", json={"code": "pause"})
-    ).status_code == 200
-    assert (
-        await client.post("/api/branch/1/downstream", json={"code": "end"})
-    ).status_code == 200
-    assert await _count(session, tables.DownstreamAction) == 1
+    await helpers.submit_ratings(client)
+    await helpers.complete_alt_exposures(client)
 
-    assert (
-        await client.post("/api/branch/1/ratings", json=helpers.ratings_payload())
-    ).status_code == 200
-    assert (
-        await client.post("/api/branch/1/ratings", json=helpers.ratings_payload(7))
-    ).status_code == 200
-    assert await _count(session, tables.Rating) == rating_items.ITEM_COUNT
+    state = await helpers.state(client)
+    count = len(state["data"]["items"])
+    payload = {"items": [{"position": index, "value": 4} for index in range(1, count + 1)]}
+    assert (await client.post("/api/pairwise/1", json=payload)).status_code == 200
 
-
-async def test_nt09_duplicate_advance_does_not_skip_a_screen(client: AsyncClient) -> None:
-    """§3.5 — 중복 클릭이 한 단계 더 밀지 않는다."""
-    await helpers.reach_branch_block(client, "P00")
-    first = await helpers.advance(client, "P4")
-    assert first["screen"] == "P5"
-    again = await helpers.advance(client, "P4")  # 이미 P5인데 P4에서 다시 눌림
-    assert again["screen"] == "P5"
+    replay = await client.post("/api/pairwise/1", json=payload)
+    assert replay.status_code == 200
+    assert replay.json()["replayed"] is True
+    assert await _count(session, tables.PairwiseResponse) == count
 
 
 # --------------------------------------------------------------------------- #
-# NT-14 — 비합법 전이 요청 거부
+# NT-14 — 비합법 전이는 409
 # --------------------------------------------------------------------------- #
 
 
-async def test_nt14_branch_steps_cannot_be_skipped(client: AsyncClient) -> None:
-    await helpers.reach_branch_block(client, "P00")
-
-    # B0에서 곧장 User1 (AI1 표시 없이)
-    assert (
-        await client.post("/api/branch/1/user1", json={"disposition": "end"})
-    ).status_code == 409
-
-    await helpers.advance(client, "P4")
-    # sidecar 없이 AI2 (§0.4 sidecar 배치 동결)
-    assert (await client.post("/api/branch/1/ai2")).status_code == 409
-    # AI2 없이 downstream (NT-14의 예시 그대로)
-    assert (
-        await client.post("/api/branch/1/downstream", json={"code": "pause"})
-    ).status_code == 409
-    # downstream 없이 평정
-    assert (
-        await client.post("/api/branch/1/ratings", json=helpers.ratings_payload())
-    ).status_code == 409
-
-    # 아직 열리지 않은 branch
-    assert (
-        await client.post("/api/branch/3/user1", json={"disposition": "end"})
-    ).status_code == 409
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("post", "/api/focal/user1", {"text": "아직 focal이 아니다"}),
+        ("post", "/api/focal/sidecar", {"has_more": False}),
+        ("post", "/api/focal/ai2", None),
+        ("post", "/api/focal/downstream", {"disposition": "reply", "text": "x"}),
+        ("post", "/api/ratings", {"items": []}),
+        ("post", "/api/pairwise/1", {"items": []}),
+    ],
+)
+async def test_submitting_out_of_order_is_rejected(
+    client: AsyncClient, method: str, path: str, body: dict[str, Any] | None
+) -> None:
+    """§3 — 앞 단계를 건너뛴 제출은 전부 409다."""
+    await helpers.open_and_join(client)  # SS01에 머문다
+    response = await getattr(client, method)(path, json=body)
+    assert response.status_code == 409, f"{path}: {response.status_code}"
 
 
-async def test_nt14_session_steps_cannot_be_skipped(client: AsyncClient) -> None:
-    await helpers.open_and_join(client, "P00")
-    assert (await client.post("/api/checkpoint/confirm")).status_code == 409
-    assert (
-        await client.post("/api/presurvey", json={"responses": []})
-    ).status_code == 409
+async def test_ai2_before_sidecar_is_rejected(client: AsyncClient, llm) -> None:
+    """NT-16 — sidecar 제출 전 AI2 호출 0건. 상태로 강제된다(§3.2 · §8.3)."""
+    await helpers.reach_focal(client)
+    await client.post("/api/focal/user1", json={"text": "비교만 해줘"})
+
+    response = await client.post("/api/focal/ai2")
+    assert response.status_code == 409
+    assert llm.call_count("ai2_generation") == 0, "sidecar 전에 모델을 불렀다 (NT-16)"
+
+
+async def test_user1_requires_text(client: AsyncClient) -> None:
+    """NT-40 — 빈 텍스트 400. **no_reply/end 경로가 없다**(D-32)."""
+    await helpers.reach_focal(client)
+    for body in ({"text": ""}, {"text": "   "}):
+        response = await client.post("/api/focal/user1", json=body)
+        assert response.status_code == 400
+        assert screen_copy.USER1_EMPTY in response.text
+
+
+async def test_no_reply_endpoint_does_not_exist(client: AsyncClient) -> None:
+    """NT-40 — 엔드포인트·상태 어디에도 no_reply가 없다.
+
+    "disposition" 인자를 User1에 실어 보내도 무시된다(모델이 그 필드를 모른다).
+    """
+    from app.main import create_app
+
+    paths = {path for path, _ in helpers.route_table(create_app())}
+    assert not any("no_reply" in path for path in paths)
+    assert "/api/focal/user1" in paths
+    # 구 4-branch 경로가 남아 있지 않다.
+    assert not any("/branch/" in path for path in paths)
+
+
+# --------------------------------------------------------------------------- #
+# NT-33 — position 건너뛰기 불가
+# --------------------------------------------------------------------------- #
+
+
+async def test_pairwise_position_cannot_be_skipped(client: AsyncClient) -> None:
+    """§3.3 — 서버가 `pair_index`를 소유한다. 3번을 먼저 제출할 수 없다."""
+    await helpers.reach_focal(client)
+    await helpers.complete_focal(client)
+    await helpers.advance(client, "P7")
+    await helpers.submit_ratings(client)
+    await helpers.complete_alt_exposures(client)
+
+    state = await helpers.state(client)
+    assert state["pair_index"] == 1
+    count = len(state["data"]["items"])
+    payload = {"items": [{"position": index, "value": 4} for index in range(1, count + 1)]}
+    response = await client.post("/api/pairwise/3", json=payload)
+    assert response.status_code == 409
+
+
+async def test_alt_and_pair_order_follow_the_assignment(
+    client: AsyncClient, session: AsyncSession
+) -> None:
+    """NT-33 — 대안 노출·pair 제시가 배정표 순서와 일치한다."""
+    await helpers.complete_session(client)
+    participant = await session.get(tables.Participant, "P00")
+
+    exposures = (
+        (await session.execute(select(tables.AltExposure).order_by(tables.AltExposure.position)))
+        .scalars()
+        .all()
+    )
+    assert [row.condition for row in exposures] == list(participant.alt_order)
+    assert [row.position for row in exposures] == [1, 2, 3]
+
+    views = (
+        (await session.execute(select(tables.PairwiseView).order_by(tables.PairwiseView.position)))
+        .scalars()
+        .all()
+    )
+    assert [row.contrast for row in views] == list(participant.pair_order)
+    for view in views:
+        expected = participant.pair_sides[view.contrast]
+        assert [view.left_condition, view.right_condition] == list(expected)
+
+
+# --------------------------------------------------------------------------- #
+# NT-31 — focal 측정 전 대안 자극 0회
+# --------------------------------------------------------------------------- #
+
+
+async def test_no_alternative_stimulus_before_focal_measures(client: AsyncClient) -> None:
+    """§1.2 — focal 측정(SS05) 완료 전 `GET /state`에 non-focal 자극 문자열이 0회.
+
+    P00은 focal이 C1(= `r`)이므로 대안은 `u`·`q`를 포함한다. 그 두 segment가 payload
+    어디에도 없으면 대안 자극이 실릴 방법이 없다.
+    """
+    import json
+
+    dossier = dossier_loader.load("P00")
+    await helpers.open_and_join(client)
+
+    async def payload_text() -> str:
+        return json.dumps(await helpers.state(client), ensure_ascii=False)
+
+    checkpoints = []
+    checkpoints.append(await payload_text())  # P1
     await helpers.consent(client)
-    assert (await client.post("/api/checkpoint/confirm")).status_code == 409
+    checkpoints.append(await payload_text())  # P2
+    await helpers.confirm_checkpoint(client)
+    checkpoints.append(await payload_text())  # P3
+    await helpers.advance(client, "P3")
+    checkpoints.append(await payload_text())  # P4
+    await helpers.complete_focal(client)
+    checkpoints.append(await payload_text())  # P7
+    await helpers.advance(client, "P7")
+    checkpoints.append(await payload_text())  # P8 — 평정. 아직 제출 전이다.
+
+    non_focal = [dossier.stimulus.u, dossier.stimulus.q]
+    for index, text in enumerate(checkpoints):
+        for segment in non_focal:
+            assert segment not in text, f"checkpoint {index}: 대안 segment가 payload에 있다 (NT-31)"
+        for condition in ("C2", "C3", "C4"):
+            assert dossier.assemble(condition) not in text
+
+    # 평정 제출 후에야 대안이 나온다.
+    await helpers.submit_ratings(client)
+    after = await payload_text()
+    assert any(segment in after for segment in non_focal), "대안 노출이 시작되지 않았다"
 
 
-async def test_nt14_submissions_after_completion_are_refused(client: AsyncClient) -> None:
-    await helpers.reach_branch_block(client, "P00")
-    for branch_index in range(1, 5):
-        await helpers.complete_branch(client, branch_index, "no_reply")
-    await helpers.advance(client, "P10")
-    await client.post("/api/debrief/confirm")
-    assert (await client.post("/api/checkpoint/confirm")).status_code == 409
-    assert (
-        await client.post("/api/branch/4/ratings", json=helpers.ratings_payload())
-    ).status_code == 409
+async def test_state_payload_never_carries_condition_labels(client: AsyncClient) -> None:
+    """§1.2 — 조건 라벨(C1–C4)·배정표가 참가자 payload에 실리지 않는다."""
+    import json
 
+    await helpers.reach_focal(client)
+    states = [await helpers.state(client)]
+    await helpers.complete_focal(client)
+    states.append(await helpers.state(client))
+    await helpers.advance(client, "P7")
+    await helpers.submit_ratings(client)
+    states.append(await helpers.state(client))
+    await helpers.complete_alt_exposures(client)
+    states.append(await helpers.state(client))
 
-async def test_no_session_cookie_is_401(client: AsyncClient) -> None:
-    client.cookies.clear()
-    assert (await client.get("/api/state")).status_code == 401
-
-
-# --------------------------------------------------------------------------- #
-# NT-17 — no_reply/end branch에 AI2·downstream 부재
-# --------------------------------------------------------------------------- #
-
-
-@pytest.mark.parametrize("disposition", ["no_reply", "end"])
-async def test_nt17_no_ai2_or_downstream_for_non_reply(
-    client: AsyncClient, session: AsyncSession, disposition: str
-) -> None:
-    await helpers.reach_branch_block(client, "P00")
-    await helpers.advance(client, "P4")
-    await client.post("/api/branch/1/user1", json={"disposition": disposition})
-    state = (await client.post("/api/branch/1/sidecar", json={"choice": "none"})).json()
-
-    # sidecar 다음이 곧 평정이다 — P7·P8을 지나지 않는다.
-    assert state["screen"] == "P9"
-    assert state["b_state"] == "B6"
-    assert state["has_ai2"] is False
-
-    assert (await client.post("/api/branch/1/ai2")).status_code == 409
-    assert (
-        await client.post("/api/branch/1/downstream", json={"code": "pause"})
-    ).status_code == 409
-    assert await _count(session, tables.Generation) == 0
-    assert await _count(session, tables.LlmCall) == 0
-
-    # 그래도 12문항 2블록은 동일하게 제시된다(D-22).
-    blocks = state["data"]["blocks"]
-    assert sum(len(block["items"]) for block in blocks) == rating_items.ITEM_COUNT
-
-
-async def test_reply_branch_requires_text(client: AsyncClient) -> None:
-    await helpers.reach_branch_block(client, "P00")
-    await helpers.advance(client, "P4")
-    assert (
-        await client.post("/api/branch/1/user1", json={"disposition": "reply", "text": "   "})
-    ).status_code == 400
-    assert (
-        await client.post(
-            "/api/branch/1/user1", json={"disposition": "no_reply", "text": "본문"}
-        )
-    ).status_code == 400
+    for state in states:
+        text = json.dumps(state, ensure_ascii=False)
+        for label in ("C1", "C2", "C3", "C4"):
+            assert f'"{label}"' not in text
+        for banned in ("focal_condition", "alt_order", "pair_sides", "a_level"):
+            assert banned not in text
 
 
 # --------------------------------------------------------------------------- #
-# NT-18 — 평정 2블록 제시·저장
+# NT-12 — 참가자당 완료 세션 1개
 # --------------------------------------------------------------------------- #
 
 
-async def test_nt18_two_blocks_with_ai1_anchor_and_within_block_randomization(
-    client: AsyncClient, session: AsyncSession
-) -> None:
-    await helpers.reach_branch_block(client, "P00")
-    await helpers.advance(client, "P4")
-    ai1 = (await helpers.state(client))["data"]["ai1"]
-    await client.post("/api/branch/1/user1", json={"disposition": "no_reply"})
-    await client.post("/api/branch/1/sidecar", json={"choice": "none"})
+async def test_second_session_is_blocked_for_real_participants(client: AsyncClient) -> None:
+    """§2.5 — 진행 중이거나 완료된 세션이 있으면 새 세션을 만들지 않는다. P00은 예외."""
+    table = assignment.load()
+    participant_no = table.participant_numbers[0]
 
-    data = (await helpers.state(client))["data"]
-    blocks = data["blocks"]
-    assert [block["block"] for block in blocks] == [1, 2], "블록 순서는 1→2 고정(§4.9)"
-    assert blocks[0]["ai1_card"] == ai1, "블록 1은 해당 branch AI1 카드를 앵커로 단다"
-    assert blocks[1]["ai1_card"] is None, "블록 2에는 카드가 없다"
-    assert len(blocks[0]["items"]) == 2
-    assert len(blocks[1]["items"]) == 10
-    assert data["scale"] == {
-        "min": 1,
-        "max": 7,
-        "min_label": "전혀 그렇지 않다",
-        "max_label": "매우 그렇다",
-    }
-
-    # 화면에는 위치와 문항 원문만 — 변수명(구성개념 라벨)은 내려가지 않는다.
-    for block in blocks:
-        for item in block["items"]:
-            assert set(item) == {"position", "text"}
-    positions = [item["position"] for block in blocks for item in block["items"]]
-    assert sorted(positions) == list(range(1, 13))
-
-    await client.post("/api/branch/1/ratings", json=helpers.ratings_payload(6))
-    rows = (
-        await session.execute(select(tables.Rating).order_by(tables.Rating.display_order))
-    ).scalars().all()
-    assert len(rows) == 12
-    assert {row.block for row in rows} == {1, 2}
-    assert sorted(row.display_order for row in rows) == list(range(1, 13))
-    assert {row.item_id for row in rows} == set(rating_items.ITEMS_BY_ID)
-    # 블록 1은 문항 1·2, 블록 2는 나머지 — 종결 유형과 무관하다(D-22).
-    block1 = {row.item_id for row in rows if row.block == 1}
-    assert block1 == {"recognition", "substantive_uptake"}
-    assert all(1 <= row.value <= 7 for row in rows)
-
-
-async def test_nt18_partial_ratings_are_refused(client: AsyncClient) -> None:
-    await helpers.reach_branch_block(client, "P00")
-    await helpers.advance(client, "P4")
-    await client.post("/api/branch/1/user1", json={"disposition": "end"})
-    await client.post("/api/branch/1/sidecar", json={"choice": "none"})
-    partial = {"items": [{"position": 1, "value": 4}]}
-    assert (await client.post("/api/branch/1/ratings", json=partial)).status_code == 400
-    out_of_range = {"items": [{"position": p, "value": 9} for p in range(1, 13)]}
-    assert (await client.post("/api/branch/1/ratings", json=out_of_range)).status_code == 422
-
-
-async def test_rating_order_differs_across_branches(client: AsyncClient) -> None:
-    """블록 내 무작위가 실제로 섞이는지 — 네 branch의 순서가 전부 같으면 무작위가 아니다."""
-    orders = set()
-    for seed in range(8):
-        presented = rating_items.presentation_order("seed", seed)
-        orders.add(tuple(entry.item.item_id for entry in presented))
-    assert len(orders) > 1
-
-
-# --------------------------------------------------------------------------- #
-# NT-12 · NT-27 — 세션 1개 불변식, 코드 TTL·재발급
-# --------------------------------------------------------------------------- #
-
-
-async def test_nt12_one_session_per_participant(client: AsyncClient) -> None:
-    await helpers.create_session(client, "P01")
-    duplicate = await client.post(
-        "/admin/sessions", json={"participant_no": "P01"}, auth=helpers.ADMIN_AUTH
+    await helpers.create_session(client, participant_no)
+    response = await client.post(
+        "/admin/sessions", json={"participant_no": participant_no}, auth=helpers.ADMIN_AUTH
     )
-    assert duplicate.status_code == 409
+    assert response.status_code == 409
 
-
-async def test_nt12_p00_is_unlimited(client: AsyncClient) -> None:
-    """§2.5 — P00은 QA 전용이므로 세션 수 제한이 없다."""
-    first = await helpers.create_session(client, "P00")
-    second = await helpers.create_session(client, "P00")
-    assert first["session_id"] != second["session_id"]
-
-
-async def test_participant_row_stores_sequence_index(
-    client: AsyncClient, session: AsyncSession
-) -> None:
-    """§8.1 — sequence_index는 생성 시 결정론 산출·저장(§3.3)."""
-    created = await helpers.create_session(client, "P03")
-    participant = await session.get(tables.Participant, "P03")
-    assert participant is not None
-    assert participant.sequence_index == 3 == created["sequence_index"]
-    assert participant.is_test is False
-    assert (await session.get(tables.Participant, "P03")).dossier_version
-
-
-async def test_nt27_expired_code_is_refused_then_reissued(
-    client: AsyncClient, session: AsyncSession
-) -> None:
-    created = await helpers.create_session(client, "P00")
-    row = await _session_row(session, "P00")
-    row.code_expires_at = datetime.now(UTC) - timedelta(seconds=1)
-    await session.flush()
-
-    expired = await client.post(
-        "/api/join", json={"participant_no": "P00", "access_code": created["access_code"]}
-    )
-    assert expired.status_code == 401
-    assert "연구자에게 문의" in expired.json()["detail"]
-
-    reissued = await client.post(
-        f"/admin/sessions/{created['session_id']}/code", auth=helpers.ADMIN_AUTH
-    )
-    assert reissued.status_code == 200
-    assert reissued.json()["session_id"] == created["session_id"], "재발급은 동일 세션 바인딩"
-    assert reissued.json()["access_code"] != created["access_code"]
-
-    state = await helpers.join(client, "P00", reissued.json()["access_code"])
-    assert state["screen"] == "P1"
-    # 새 세션이 생기지 않았다.
-    assert (
-        await session.execute(
-            select(func.count()).select_from(tables.Session).where(
-                tables.Session.participant_no == "P00"
-            )
-        )
-    ).scalar_one() == 1
-
-    # 옛 코드는 더 이상 통하지 않는다.
-    client.cookies.clear()
-    stale = await client.post(
-        "/api/join", json={"participant_no": "P00", "access_code": created["access_code"]}
-    )
-    assert stale.status_code == 401
-
-
-async def test_wrong_code_is_refused_and_throttled(client: AsyncClient) -> None:
-    """§4.0 — 실패 5회 시 30초 지연."""
+    # P00은 QA 전용이라 무제한이다(§2.5).
     await helpers.create_session(client, "P00")
-    for _ in range(4):
-        response = await client.post(
-            "/api/join", json={"participant_no": "P00", "access_code": "ZZZZZZ"}
-        )
-        assert response.status_code == 401
-    blocked = await client.post(
-        "/api/join", json={"participant_no": "P00", "access_code": "ZZZZZZ"}
-    )
-    assert blocked.status_code == 401
-    after_limit = await client.post(
-        "/api/join", json={"participant_no": "P00", "access_code": "ZZZZZZ"}
-    )
-    assert after_limit.status_code == 429
-    assert 0 < int(after_limit.headers["retry-after"]) <= 30
-
-
-async def test_admin_requires_credentials(client: AsyncClient) -> None:
-    """§2.7 — 콘솔은 Basic auth 뒤에 있다."""
-    assert (await client.post("/admin/sessions", json={"participant_no": "P00"})).status_code == 401
-    assert (
-        await client.post(
-            "/admin/sessions", json={"participant_no": "P00"}, auth=("wrong", "wrong")
-        )
-    ).status_code == 401
-
-
-async def test_code_issue_is_audited(client: AsyncClient, session: AsyncSession) -> None:
-    """§2.7 — 전 콘솔 행위가 audit에 남는다."""
     await helpers.create_session(client, "P00")
-    rows = (await session.execute(select(tables.AuditLog))).scalars().all()
-    assert [row.action for row in rows] == ["code_issue"]
-    assert rows[0].actor == helpers.ADMIN_USER
+
+
+async def test_participant_outside_the_assignment_cannot_start(client: AsyncClient) -> None:
+    """§5.1 — 배정표의 행이 곧 참가자 목록이다. 없는 번호로 세션을 열지 않는다."""
+    table = assignment.load()
+    outside = next(
+        no for no in (f"P{n:02d}" for n in range(25, 31)) if not table.has(no)
+    )
+    response = await client.post(
+        "/admin/sessions", json={"participant_no": outside}, auth=helpers.ADMIN_AUTH
+    )
+    assert response.status_code == 409
+    assert "배정표" in response.text

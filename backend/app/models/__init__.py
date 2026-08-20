@@ -2,15 +2,17 @@
 
 from app.models.base import Base
 from app.models.tables import (
+    AltExposure,
     AuditLog,
-    Branch,
+    CheckpointEdit,
     DownstreamAction,
     Event,
+    FocalRun,
     Generation,
     LlmCall,
-    Normalization,
+    PairwiseResponse,
+    PairwiseView,
     Participant,
-    PresurveyResponse,
     Rating,
     Session,
     SidecarEntry,
@@ -19,16 +21,18 @@ from app.models.tables import (
 )
 
 __all__ = [
+    "AltExposure",
     "AuditLog",
     "Base",
-    "Branch",
+    "CheckpointEdit",
     "DownstreamAction",
     "Event",
+    "FocalRun",
     "Generation",
     "LlmCall",
-    "Normalization",
+    "PairwiseResponse",
+    "PairwiseView",
     "Participant",
-    "PresurveyResponse",
     "Rating",
     "Session",
     "SidecarEntry",

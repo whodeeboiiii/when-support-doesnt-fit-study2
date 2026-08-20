@@ -31,7 +31,7 @@ from tests import fixture_runner  # noqa: E402
 
 
 async def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="normalization·integrity fixture 실행 (§10.1)")
+    parser = argparse.ArgumentParser(description="integrity fixture v2 실행 (§10.1)")
     parser.add_argument("--out", type=Path, help="마크다운 보고서 경로")
     parser.add_argument(
         "--real",
@@ -52,14 +52,12 @@ async def main(argv: list[str] | None = None) -> int:
         await conn.run_sync(Base.metadata.create_all)
     maker = async_sessionmaker(engine, expire_on_commit=False)
 
-    normalization_report = fixture_runner.run_normalization_fixture()
     async with maker() as session:
         integrity_report = await fixture_runner.run_integrity_fixture(session)
         await session.commit()
     await engine.dispose()
 
     reports = [
-        (normalization_report, fixture_runner.NORMALIZATION_THRESHOLDS),
         (
             integrity_report,
             # 실모델에서는 checker 블록에 게이트를 걸지 않는다 [파일럿 확정 — §10.1].

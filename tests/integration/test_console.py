@@ -1,4 +1,4 @@
-"""연구자 콘솔 R1–R4 (구현명세서 §4.12 · §2.7 · §9.1 — NT-26).
+"""연구자 콘솔 R1–R4 (구현명세서 §4.13 · §2.7 · §9.1 — NT-26 · NT-39).
 
     NT-26 flag non-blocking(상태 불변)·abort만 SS90, 전 콘솔 행위 audit
 
@@ -9,6 +9,8 @@
 2. **콘솔은 인증 뒤에 있다**(§2.7). 자격 없는 요청이 뷰 하나라도 통과하면 researcher_only가
    열린다.
 3. **조회도 audit이다**(§2.7 "모든 콘솔 조회"). 복호화 뷰는 `decrypt` 행까지 남는다(§2.9).
+4. **연구자만 보는 것이 실제로 연구자에게만 간다**(NT-39). R3에는 조건 라벨·sidecar·
+   researcher_only가 있고, 참가자 P11에는 **없다**.
 """
 
 from __future__ import annotations
@@ -70,17 +72,44 @@ async def test_console_page_is_served_behind_auth(client: AsyncClient) -> None:
 # --------------------------------------------------------------------------- #
 
 
-async def test_r1_lists_participants_with_sequence_and_dossier_lock(
+async def test_r1_lists_participants_with_assignment_and_dossier_lock(
     client: AsyncClient, session
 ) -> None:
+    """§4.13 R1 — 배정표 행(focal·대안 순서·pair 순서·좌우·A-level) + dossier lock."""
+    from app.core import assignment
+
+    table = assignment.load()
     body = (await client.get("/admin/participants", auth=ADMIN_AUTH)).json()
     rows = {row["participant_no"]: row for row in body["participants"]}
-    assert set(rows) >= {f"P{n:02d}" for n in range(0, 13)}
-    # §3.3 표 — P01은 S1(C1 C2 C4 C3).
-    assert rows["P01"]["sequence"] == ["C1", "C2", "C4", "C3"]
-    assert rows["P01"]["sequence_index"] == 1
-    assert set(rows["P00"]["dossier"]) == {"version", "locked", "locked_at", "hash", "dummy"}
+    assert set(rows) >= set(table.participant_numbers) | {"P00"}
+
+    sample = rows[table.participant_numbers[0]]
+    entry = sample["assignment"]
+    assert entry["focal_condition"] in {"C1", "C2", "C3", "C4"}
+    assert entry["focal_condition"] not in entry["alt_order"]
+    assert sorted(entry["pair_order"]) == ["scope", "sequence", "stopping"]
+    assert set(entry["pair_sides"]) == {"sequence", "scope", "stopping"}
+    assert entry["a_level"] in {"A0", "A1", "A2"}
+
+    # NT-42 — dummy 상태를 감추지 않는다.
+    assert body["assignment"]["is_dummy"] is True
+    assert body["assignment"]["n"] == 24
+    assert rows["P00"]["dossier"]["dummy"] is False
+
     assert [log.target for log in await _audit(session, "view")] == ["console:R1"]
+
+
+async def test_r1_assignment_view_is_read_only(client: AsyncClient) -> None:
+    """§8.2 · §1.4 — 배정표는 읽기만. 쓰기 경로가 없다(D-30)."""
+    body = (await client.get("/admin/assignment", auth=ADMIN_AUTH)).json()
+    assert len(body["rows"]) == 24
+    assert body["is_dummy"] is True
+    assert "strata" in body
+
+    from app.main import create_app
+
+    routes = [row for row in helpers.route_table(create_app()) if row[0] == "/admin/assignment"]
+    assert routes == [("/admin/assignment", ("GET",))]
 
 
 async def test_r1_shows_created_sessions(client: AsyncClient) -> None:
@@ -93,8 +122,8 @@ async def test_r1_shows_created_sessions(client: AsyncClient) -> None:
 
 async def test_costs_sums_llm_calls(client: AsyncClient) -> None:
     """§2.8 — 대시보드 없이 R1에 합산만 띄운다."""
-    await helpers.reach_branch_block(client, "P00")
-    await helpers.complete_branch(client, 1, "reply")
+    await helpers.reach_focal(client, "P00")
+    await helpers.complete_focal(client)
     body = (await client.get("/admin/costs", auth=ADMIN_AUTH)).json()
     roles = {row["role"]: row for row in body["by_role"]}
     assert roles["main"]["calls"] >= 1
@@ -215,11 +244,14 @@ async def test_abort_is_refused_after_the_session_is_done(client: AsyncClient) -
     created = await helpers.create_session(client, "P00")
     await helpers.join(client, "P00", created["access_code"])
     await helpers.consent(client)
-    await helpers.presurvey(client)
-    await client.post("/api/checkpoint/confirm")
-    for index in range(1, 5):
-        await helpers.complete_branch(client, index, "no_reply")
-    await helpers.advance(client, "P10")
+    await helpers.confirm_checkpoint(client)
+    await helpers.advance(client, "P3")
+    await helpers.complete_focal(client)
+    await helpers.advance(client, "P7")
+    await helpers.submit_ratings(client)
+    await helpers.complete_alt_exposures(client)
+    await helpers.complete_pairwise(client)
+    await helpers.advance(client, "P11")
     await client.post("/api/debrief/confirm")
 
     response = await client.post(
@@ -259,21 +291,31 @@ async def test_r2_monitor_shows_state_transcript_and_pipeline_state(
 ) -> None:
     created, _ = await helpers.open_and_join(client, "P00")
     await helpers.consent(client)
-    await helpers.presurvey(client)
-    await client.post("/api/checkpoint/confirm")
-    await helpers.complete_branch(client, 1, "reply")
+    # §2.7 v2 — checkpoint 수정 diff + 경보를 R2가 보여야 한다.
+    await helpers.edit_checkpoint(client, "trouble_cue", "그렇게까지는 아니었어")
+    await helpers.confirm_checkpoint(client)
+    await helpers.advance(client, "P3")
+    await helpers.complete_focal(client)
 
     body = await _monitor(client, created["session_id"])
-    assert body["session"]["ss_state"] == SsState.BRANCH_BLOCK.value
-    assert body["session"]["screen"] == "P4"
+    assert body["session"]["ss_state"] == SsState.FOCAL.value
+    assert body["session"]["screen"] == "P7"
 
-    first = body["branches"][0]
-    assert first["condition"] == "C4"  # P00 → S4의 branch 1 (§3.3)
-    assert first["disposition"] == "reply"
-    assert first["ai2_state"] == "clean"
+    focal = body["focal"]
+    assert focal["condition"] == "C1"  # P00 QA 고정값
+    assert focal["ai2_state"] == "clean"
+    assert focal["checkpoint_edited"] is True
+    # §6.4 R-2 — overlap은 위반 목록이 아니라 별도 열이다.
+    assert focal["alt_overlap"] == []
 
-    roles = [(turn["branch_index"], turn["role"]) for turn in body["transcript"]]
-    assert roles == [(1, "ai1"), (1, "user1"), (1, "ai2")]
+    # §2.7·§3.4 — 수정 diff + **경보**(trouble_cue는 자극 전제 segment다).
+    assert body["checkpoint"]["alert"] is True
+    edit = body["checkpoint"]["edits"][0]
+    assert edit["segment"] == "trouble_cue" and edit["alert"] is True
+    assert edit["original"] and edit["edited"], "diff가 복호화되지 않았다"
+
+    roles = [turn["role"] for turn in body["transcript"]]
+    assert roles == ["ai1", "user1", "ai2", "user2"]
     assert all(turn["text"] for turn in body["transcript"]), "복호화된 transcript가 비어 있다"
 
     # §2.7·§2.9 — 조회 1회 = view + decrypt.
@@ -284,28 +326,23 @@ async def test_r2_monitor_shows_state_transcript_and_pipeline_state(
 
 
 async def test_r2_monitor_reports_fallback_as_pipeline_state(client: AsyncClient, llm) -> None:
-    """§4.12 — 생성 중/재생성/fallback 표시. fallback은 눈에 띄어야 한다(§2.8 알림과 같은 사건)."""
-    from app.llm.fake_llm import FIXTURE_TOKEN
+    """§4.13 — 생성 중/재생성/fallback 표시. fallback은 눈에 띄어야 한다(§2.8 알림과 같은 사건)."""
+    from app.llm.fake_llm import fixture_token
 
     created, _ = await helpers.open_and_join(client, "P00")
     await helpers.consent(client)
-    await helpers.presurvey(client)
-    await client.post("/api/checkpoint/confirm")
-    await helpers.advance(client, "P4")
+    await helpers.confirm_checkpoint(client)
+    await helpers.advance(client, "P3")
+    # 두 시도 모두 규칙 위반 → §6.5 neutral_fallback.
     await client.post(
-        "/api/branch/1/user1",
-        json={
-            "disposition": "reply",
-            # 두 시도 모두 규칙 위반 → §6.6 neutral_fallback.
-            "text": f"장단점만 정리해줘 {FIXTURE_TOKEN.format(name='too_long')}",
-        },
+        "/api/focal/user1", json={"text": f"비교만 해줘 {fixture_token('too_long')}"}
     )
-    await client.post("/api/branch/1/sidecar", json={"choice": "none"})
-    await client.post("/api/branch/1/ai2")
+    await client.post("/api/focal/sidecar", json={"has_more": False})
+    await client.post("/api/focal/ai2")
 
     body = await _monitor(client, created["session_id"])
-    assert body["branches"][0]["ai2_state"] == "fallback"
-    assert body["branches"][0]["attempts"] >= 2
+    assert body["focal"]["ai2_state"] == "fallback"
+    assert body["focal"]["attempts"] >= 2
 
 
 async def test_r2_monitor_shows_flag_reason_in_the_event_stream(client: AsyncClient) -> None:
@@ -332,56 +369,120 @@ async def test_monitor_404s_on_unknown_session(client: AsyncClient) -> None:
 # --------------------------------------------------------------------------- #
 
 
-async def test_r3_review_shows_four_columns_with_sidecar_ratings_and_private_layer(
+async def test_r3_contrastive_view_shows_everything_the_interview_needs(
     client: AsyncClient, session
 ) -> None:
+    """§4.13 R3 — ① focal trajectory ② 평정·MC ③ 대안 순서 ④ 세 pair ⑤ researcher_only ⑥ flag."""
     created, _ = await helpers.open_and_join(client, "P00")
     await helpers.consent(client)
-    await helpers.presurvey(client)
-    await client.post("/api/checkpoint/confirm")
-    await helpers.advance(client, "P4")
+    await helpers.confirm_checkpoint(client)
+    await helpers.advance(client, "P3")
+    await client.post("/api/focal/user1", json={"text": "비교만 해줘"})
     await client.post(
-        "/api/branch/1/user1", json={"disposition": "reply", "text": "장단점만 정리해줘"}
+        "/api/focal/sidecar",
+        json={
+            "has_more": True,
+            "free_text": "사실 이직은 이미 정했다",
+            "provenance": "preexisting",
+            "reason": "말하기 번거로웠다",
+        },
     )
+    await client.post("/api/focal/ai2")
+    await helpers.advance(client, "P6")
     await client.post(
-        "/api/branch/1/sidecar",
-        json={"choice": "has", "free_text": "사실 이직은 이미 정했다", "relevance": 6},
+        "/api/focal/downstream",
+        json={"disposition": "end", "end_type": "seek_human", "reason": "사람에게 묻고 싶다"},
     )
-    await client.post("/api/branch/1/ai2")
     await helpers.advance(client, "P7")
-    await client.post("/api/branch/1/downstream", json={"code": "pause"})
-    await client.post("/api/branch/1/ratings", json=helpers.ratings_payload())
-    for index in range(2, 5):
-        await helpers.complete_branch(client, index, "no_reply")
+    await helpers.submit_ratings(client)
+    await helpers.complete_alt_exposures(client)
+    await helpers.complete_pairwise(client)
 
     body = (await client.get(f"/admin/review/{created['session_id']}", auth=ADMIN_AUTH)).json()
-    assert [row["index"] for row in body["branches"]] == [1, 2, 3, 4]
 
-    first = body["branches"][0]
-    assert first["ai1"] and first["user1"] == "장단점만 정리해줘"
-    assert first["ai2"] and first["downstream_code"] == "pause"
-    # P10과 다른 점 ①: sidecar가 보인다(§4.12 — 참가자 화면은 PH-02로 비표시).
-    assert first["sidecar"]["free_text"] == "사실 이직은 이미 정했다"
-    assert len(first["ratings"]) == 12
-    # 다른 점 ②: 조건 라벨이 붙는다.
-    assert first["condition"] == "C4"
-    # §4.12 — researcher_only 요약(인터뷰 참조용).
+    # ① focal trajectory — **조건 라벨이 붙는다**(참가자 화면과 다른 점).
+    trajectory = body["trajectory"]
+    assert trajectory["condition"] == "C1"
+    assert trajectory["ai1"] and trajectory["user1"] == "비교만 해줘"
+    assert trajectory["ai2"] and trajectory["ai2_state"] == "clean"
+    # sidecar가 보인다(§4.13 — 참가자에게는 재표시 없음).
+    assert trajectory["sidecar"]["free_text"] == "사실 이직은 이미 정했다"
+    assert trajectory["sidecar"]["provenance"] == "preexisting"
+    assert trajectory["sidecar"]["reason_text"] == "말하기 번거로웠다"
+    assert trajectory["downstream"]["end_type"] == "seek_human"
+    assert trajectory["downstream"]["reason_text"] == "사람에게 묻고 싶다"
+    # §8.4 — generation 경로가 그대로 보인다(NT-15).
+    assert trajectory["generation_path"] and trajectory["generation_path"][-1]["final"] is True
+
+    # ② 평정·MC
+    from app.assets import rating_items
+
+    assert len(body["ratings"]) == rating_items.load().item_count
+    assert {row["scope"] for row in body["ratings"]} == {"focal", "mc"}
+
+    # ③ 대안 노출 순서
+    assert [row["position"] for row in body["alt_exposures"]] == [1, 2, 3]
+    assert all(row["ai1"] for row in body["alt_exposures"])
+
+    # ④ 세 pair — 좌우·조건 라벨·focal 포함 여부·응답값
+    assert len(body["pairs"]) == 3
+    for pair in body["pairs"]:
+        assert pair["left"]["condition"] and pair["right"]["condition"]
+        assert pair["responses"], "문항 응답이 비어 있다"
+        assert all(row["text"] for row in pair["responses"])
+    assert any(pair["focal_included"] for pair in body["pairs"])
+
+    # ⑤ researcher_only + evidence_code
     assert body["researcher_only"]["retrospective_stance"]
+    assert body["evidence_code"]["permitted_operation"]
 
     assert [log.target for log in await _audit(session, "decrypt")] == [
         f"session:{created['session_id']}:review"
     ]
 
 
+async def test_nt39_participant_p11_has_none_of_the_researcher_payload(
+    client: AsyncClient,
+) -> None:
+    """NT-39 — R3에 있는 것이 참가자 P11에는 **없다**.
+
+    조건 라벨·sidecar·researcher_only·문항 응답값이 참가자 화면으로 새면 그 자체가 §1.2
+    위반이고, 인터뷰 중 참가자가 그 값을 보면 응답이 오염된다.
+    """
+    import json
+
+    from app.assets.dossier_private import load_researcher_only
+
+    await helpers.reach_focal(client, "P00")
+    await helpers.complete_focal(client, has_more=True)
+    await helpers.advance(client, "P7")
+    await helpers.submit_ratings(client)
+    await helpers.complete_alt_exposures(client)
+    await helpers.complete_pairwise(client)
+
+    state = await helpers.state(client)
+    assert state["screen"] == "P11"
+    text = json.dumps(state, ensure_ascii=False)
+
+    for label in ("C1", "C2", "C3", "C4"):
+        assert f'"{label}"' not in text
+    assert "사실 한 가지 더 있었어" not in text, "sidecar가 참가자 화면에 재표시됐다"
+    assert "focal_included" not in text and "focal_side" not in text
+    for value in load_researcher_only("P00").values():
+        assert str(value)[:20] not in text
+    # 문항·응답값도 재표시하지 않는다(§4.11).
+    assert "responses" not in text and "item_id" not in text
+
+
 async def test_r3_review_lists_flags_with_reasons(client: AsyncClient) -> None:
     created, _ = await helpers.open_and_join(client, "P00")
     await client.post(
         f"/admin/sessions/{created['session_id']}/flag",
-        json={"reason": "checkpoint 사실 오류 언급 — 자산 미반영(D-08)"},
+        json={"reason": "checkpoint 수정이 자극 전제를 건드림 — 계속 진행 판단(§3.4)"},
         auth=ADMIN_AUTH,
     )
     body = (await client.get(f"/admin/review/{created['session_id']}", auth=ADMIN_AUTH)).json()
-    assert body["flags"][0]["payload"]["reason"].startswith("checkpoint 사실 오류")
+    assert body["flags"][0]["payload"]["reason"].startswith("checkpoint 수정이")
 
 
 # --------------------------------------------------------------------------- #
@@ -389,22 +490,43 @@ async def test_r3_review_lists_flags_with_reasons(client: AsyncClient) -> None:
 # --------------------------------------------------------------------------- #
 
 
-async def test_r4_dossier_viewer_shows_three_layers_stimuli_and_lock(
+async def test_r4_viewer_shows_layers_segments_assembled_stimuli_and_assignment(
     client: AsyncClient, session
 ) -> None:
+    """§4.13 R4 — 3층 + evidence code + R/U/Q segment + 조립 4자극 + fallback + QC + 배정."""
     body = (await client.get("/admin/dossier/P00", auth=ADMIN_AUTH)).json()
+
     assert [row["condition"] for row in body["stimuli"]] == ["C1", "C2", "C3", "C4"]
     assert all(row["text"] and row["hash"] for row in body["stimuli"])
-    # §5.3 질문 수 계약이 화면에서도 보인다(NT-22).
+    # §5.4 질문 수 계약이 화면에서도 보인다(NT-22).
     questions = {row["condition"]: row["meta"]["questions"] for row in body["stimuli"]}
     assert questions == {"C1": 0, "C2": 1, "C3": 0, "C4": 1}
+    # 조립 레시피가 보인다 — 네 전문을 저장하지 않는다는 사실이 화면에 드러난다(D-35).
+    recipes = {row["condition"]: row["recipe"] for row in body["stimuli"]}
+    assert recipes == {"C1": ["r"], "C2": ["r", "q"], "C3": ["r", "u"], "C4": ["r", "u", "q"]}
 
+    assert set(body["segments"]) == {"r", "u", "q"}
     assert body["ai_visible"]["situation_summary"]
-    assert body["derivation"]["neutral_fallback"]
-    assert body["derivation"]["referent_map"]
+    assert body["ai_visible"]["provenance"]
+    assert body["evidence_code"]["prohibited_inference"]
+    assert body["neutral_fallback"]
+    assert set(body["qc"]) >= {"r_identity", "u_identity", "q_identity", "reviewer"}
     assert body["researcher_only"]["retrospective_stance"]
     assert body["content_hash"] and "locked" in body
+    # P00은 배정표에 없다(QA 합성 — §5.1).
+    assert body["assignment"] is None
+
     assert [log.target for log in await _audit(session, "view")] == ["dossier:P00"]
+
+
+async def test_r4_shows_the_assignment_row_for_real_participants(client: AsyncClient) -> None:
+    """§4.13 R4 — 배정표 행이 함께 보인다(읽기 전용)."""
+    from app.core import assignment
+
+    participant_no = assignment.load().participant_numbers[0]
+    body = (await client.get(f"/admin/dossier/{participant_no}", auth=ADMIN_AUTH)).json()
+    assert body["assignment"]["focal_condition"] in {"C1", "C2", "C3", "C4"}
+    assert len(body["assignment"]["alt_order"]) == 3
 
 
 async def test_r4_rejects_unknown_participant(client: AsyncClient) -> None:
@@ -453,7 +575,7 @@ async def test_nt26_every_console_action_leaves_an_audit_row(
 
 
 async def test_console_has_no_write_path_into_dossier_assets(client: AsyncClient) -> None:
-    """§5.2 — 자산 수정은 파일·2인 판정·lock 절차를 지난다. 콘솔에는 쓰기 경로가 없다."""
+    """§5.3 — 자산 수정은 파일·2인 판정·lock 절차를 지난다. 콘솔에는 쓰기 경로가 없다."""
     from app.main import create_app
 
     routes = helpers.route_table(create_app())
@@ -480,7 +602,9 @@ async def test_admin_surface_matches_the_spec_api_table() -> None:
         ("/admin/review/{session_id}", ("GET",)),
         ("/admin/dossier/{participant_no}", ("GET",)),
         ("/admin/costs", ("GET",)),
-        # §4.12 R1 화면용 목록과 콘솔 페이지 — §8.2 표에는 없다(PROGRESS 확인 필요).
+        # §8.2 v2가 명시한 신설 — `GET /admin/assignment`.
+        ("/admin/assignment", ("GET",)),
+        # §4.13 R1 화면용 목록과 콘솔 페이지 — §8.2 표에는 없다(PROGRESS 확인 필요).
         ("/admin/participants", ("GET",)),
         ("/admin/console", ("GET",)),
     }

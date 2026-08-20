@@ -1,14 +1,15 @@
-"""설계 동결과 모집 게이트 (구현명세서 §10.5 · §11.3 · 부록 E.4).
+"""설계 동결과 모집 게이트 (구현명세서 §10.5 · §11.2 · 부록 E.4).
 
 두 가지를 한 모듈에 둔다. 같은 질문의 앞뒤이기 때문이다 — **지금 이 구성으로 사람을 받아도
 되는가**, 그리고 **받은 뒤 그 구성을 무엇으로 증명할 것인가**.
 
-1. `blockers()` — §11.3의 마지막 줄("PH-IRB 계열·PH-03 착지 전에는 본 모집을 시작하지
-   않는다")을 실행 가능한 점검으로 옮긴다. dossier 실값 lock, IRB 문안 착지, 프롬프트
-   lock, 모델 슬러그 설정을 본다. **자동 차단 장치가 아니다** — 콘솔·스크립트가 상태를
-   보여 주고, 시작 여부는 사람이 정한다(D-10과 같은 태도: 시스템은 판정하지 않는다).
+1. `blockers()` — §11.2의 마지막 줄("PH-03(dossier)·PH-08(배정표)·PH-06·PH-07(문항)·
+   PH-IRB 착지 전 본 모집 금지")을 실행 가능한 점검으로 옮긴다(부록 H.2가 지정한 항목
+   목록이 그대로다). **자동 차단 장치가 아니다** — 콘솔·스크립트가 상태를 보여 주고,
+   시작 여부는 사람이 정한다(D-10과 같은 태도: 시스템은 판정하지 않는다).
 2. `freeze()` — §10.5 "soft launch 종료 시 `study_version`에 spec_version·prompt_hash·
-   model_strings·assets_hash 동결 기입". 이후 변경은 §1.4 본실험 열만 적용된다.
+   model_strings·assets_hash(dossier 24 + assignment + prompt_config + items) 동결 기입".
+   이후 변경은 §1.4 본실험 열만 적용된다.
 
 `study_version`은 **한 번만** 쓴다. 두 번째 호출은 기존 행을 돌려주고 덮어쓰지 않는다 —
 동결 기록이 바뀌면 그건 동결이 아니다.
@@ -24,8 +25,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.assets import dossier_loader, presurvey, rating_items, screen_copy
+from app.assets import dossier_loader, pairwise_items, rating_items, screen_copy
 from app.assets.files import QA_PARTICIPANT_NO
+from app.core import assignment
 from app.core.config import get_settings
 from app.llm import prompts
 from app.models import tables
@@ -33,8 +35,8 @@ from app.models import tables
 #: 부록 E.4 — 모집 게이트가 보는 TODO 태그. 문안에 이 문자열이 남아 있으면 미착지다.
 IRB_TAGS: tuple[str, ...] = ("PH-IRB-1", "PH-IRB-2")
 
-#: 부록 E.4 PH-01 — 실값 자산은 `presurvey_items_v1.json`이다. v0은 placeholder다(§4.2).
-PRESURVEY_PLACEHOLDER_SUFFIX = "_v0.json"
+#: 부록 E.4 — 문항 자산은 `*_v1.json`이 실값이고 `_v0`은 placeholder다(§4.8·§4.10).
+PLACEHOLDER_SUFFIX = "_v0.json"
 
 
 def _file_hash(path: Path) -> str:
@@ -43,66 +45,109 @@ def _file_hash(path: Path) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Blocker:
-    """본 모집을 막는 사유 1건 (§11.3)."""
+    """본 모집을 막는 사유 1건 (§11.2)."""
 
     tag: str
     detail: str
 
 
 def blockers() -> list[Blocker]:
-    """본 모집 전 착지해야 하는 항목 중 **아직 안 된 것**들."""
+    """본 모집 전 착지해야 하는 항목 중 **아직 안 된 것**들 (§11.2 · 부록 H.2)."""
     found: list[Blocker] = []
 
-    unlocked = [
+    # PH-03 — dossier 실값 작성·2인 판정·lock. 배정표의 24명만 본다(P00은 QA 전용).
+    try:
+        table = assignment.load()
+        targets = set(table.participant_numbers)
+    except assignment.AssignmentContractError:
+        table = None
+        targets = set()
+
+    dossiers = dossier_loader.load_all()
+    unlocked = sorted(
         participant_no
-        for participant_no, dossier in dossier_loader.load_all().items()
-        if participant_no != QA_PARTICIPANT_NO and (dossier.is_dummy or not dossier.is_locked)
-    ]
+        for participant_no, dossier in dossiers.items()
+        if participant_no != QA_PARTICIPANT_NO
+        and (not targets or participant_no in targets)
+        and (dossier.is_dummy or not dossier.is_locked)
+    )
     if unlocked:
+        found.append(Blocker("PH-03", f"dossier 실값 lock 미완 — {', '.join(unlocked)} (§5.3)"))
+
+    # PH-08 — 배정표 생성·동결. dummy로 내려가 있으면 미착지다(NT-42).
+    if table is None:
+        found.append(Blocker("PH-08", "배정표를 읽을 수 없다 — 제약 위반 또는 파일 없음 (§5.2)"))
+    elif table.is_dummy:
         found.append(
-            Blocker("PH-03", f"dossier 실값 lock 미완 — {', '.join(sorted(unlocked))} (§5.2)")
+            Blocker("PH-08", f"배정표가 dummy다 — {table.source_path.name} (§5.2 · NT-42)")
+        )
+    elif table is not None:
+        # 배정표에 있는데 dossier가 없으면 세션 생성이 막힌다(§9.1 마지막 행).
+        missing = sorted(targets - set(dossiers))
+        if missing:
+            found.append(
+                Blocker("PH-03", f"배정표 참가자의 dossier 없음 — {', '.join(missing)} (§9.1)")
+            )
+
+    # PH-06 · PH-07 — 문항 문면 PI 승인.
+    if rating_items.load().is_placeholder:
+        found.append(
+            Blocker("PH-06", f"focal 문항 원문 미착지 — {rating_items.asset_path().name} (§4.8)")
+        )
+    if pairwise_items.load().is_placeholder:
+        found.append(
+            Blocker(
+                "PH-07", f"pairwise 문항 원문 미착지 — {pairwise_items.asset_path().name} (§4.10)"
+            )
         )
 
+    # PH-IRB-1 · PH-IRB-2 — 동의서·디브리핑 정본.
     consent_text = screen_copy.CONSENT_TODO + screen_copy.DEBRIEF_TODO
     for tag in IRB_TAGS:
         if tag in consent_text:
-            found.append(Blocker(tag, "문안 미착지 — 동의서·디브리핑 정본 필요 (§4.1·§4.11)"))
-
-    if presurvey.asset_path().name.endswith(PRESURVEY_PLACEHOLDER_SUFFIX):
-        found.append(
-            Blocker("PH-01", f"사전설문 문항 원문 미착지 — {presurvey.asset_path().name} (§4.2)")
-        )
+            found.append(Blocker(tag, "문안 미착지 — 동의서·디브리핑 정본 필요 (§4.1·§4.12)"))
 
     settings = get_settings()
     if not settings.dev_mode and not (settings.main_model_id and settings.validator_model_id):
-        found.append(Blocker("확인 1", "MAIN·VALIDATOR 모델 슬러그 미설정 (§2.2.1)"))
+        found.append(Blocker("확인 1", "MAIN·VALIDATOR 모델 슬러그 미설정 (§2.2)"))
 
     return found
 
 
 def asset_hashes() -> dict[str, Any]:
-    """§10.5 `assets_hash` — 동결 시점의 자산 지문 묶음."""
+    """§10.5 `assets_hash` — dossier 24 + assignment + prompt_config + items."""
     dossiers = {
         participant_no: dossier.content_hash
         for participant_no, dossier in sorted(dossier_loader.load_all().items())
     }
+    try:
+        table = assignment.load()
+        assignment_entry: dict[str, Any] = {
+            "version": table.version,
+            "seed": table.seed,
+            "is_dummy": table.is_dummy,
+            "hash": _file_hash(table.source_path),
+        }
+    except assignment.AssignmentContractError as exc:  # pragma: no cover — 기동 게이트가 먼저 잡는다
+        assignment_entry = {"error": str(exc)}
+
     return {
         "dossiers": dossiers,
-        "presurvey": {
-            "version": presurvey.load().version,
-            "hash": _file_hash(presurvey.asset_path()),
+        "assignment": assignment_entry,
+        "focal_items": {
+            "version": rating_items.load().version,
+            "hash": _file_hash(rating_items.asset_path()),
         },
-        "normalization_patterns": prompts.config()["normalization_patterns_version"],
-        # §7.3 12문항은 코드 상수다 — 파일이 없으므로 원문에서 지문을 만든다.
-        "rating_items": hashlib.sha256(
-            "\n".join(item.text for item in rating_items.RATING_ITEMS).encode("utf-8")
-        ).hexdigest(),
+        "pairwise_items": {
+            "version": pairwise_items.load().version,
+            "hash": _file_hash(pairwise_items.asset_path()),
+        },
         "consent_version": screen_copy.CONSENT_VERSION,
     }
 
 
 def model_strings() -> dict[str, Any]:
-    """§2.2.2-③ — soft launch 종료 시점의 모델 문자열."""
+    """§2.2 — soft launch 종료 시점의 모델 문자열."""
     settings = get_settings()
     return {
         "main_requested": settings.main_model_id,

@@ -1,6 +1,6 @@
 """PLACEHOLDER 레지스트리 대조 (`PLACEHOLDERS.md` · 구현명세서 부록 E.4).
 
-구 리포(`../study2_pipeline`)의 `tests/unit/test_placeholder_registry.py`를 이식했다. 규칙은 같다:
+규칙은 v1.0.1에서 그대로 승계했다:
 
     "이 표에 없는 placeholder가 코드에 남아 있으면 미완으로 간주한다."
 
@@ -84,7 +84,7 @@ def test_registry_covers_the_spec_todo_index() -> None:
 
     명세서가 정본이므로 색인이 늘면 이 테스트가 먼저 깨진다(반대 순서 금지 — 레지스트리 §11).
     """
-    spec = (REPO_ROOT / "docs" / "구현명세서_v1.0.1.md").read_text(encoding="utf-8")
+    spec = (REPO_ROOT / "docs" / "구현명세서_v2.0.md").read_text(encoding="utf-8")
     index_section = spec.split("## E.4")[1].split("## E.5")[0]
     spec_tags = {tag for tag in PH_REFERENCE.findall(index_section)}
     # PH-P-n(논문 역반영)은 형식이 다르므로 위 정규식에 잡히지 않는다 — 레지스트리 §9가 담당한다.

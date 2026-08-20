@@ -1,12 +1,12 @@
 """운영 알림 — Discord webhook `notify()` 단일 함수 (구현명세서 §2.8 — v5.0 §2.8 ADAPT).
 
-kill switch·모집 자동 종료·비용 상한은 폐기됐고(부록 G), 남은 트리거는 §2.8 표의 **5종**뿐이다.
+§2.8의 트리거는 **6종**이다 — v1.0.1의 5종 + `checkpoint_cue_edited`(v2 신설, D-25).
 두 가지 규율이 이 모듈의 전부다(v5.0에서 승계).
 
 1. **알림이 파이프라인을 죽이지 않는다.** webhook 장애·타임아웃은 삼키고 로그만 남긴다 —
    §9.1의 dead-end 금지는 알림 경로에도 적용된다.
 2. **payload에 참가자 원문이 들어가지 않는다.** 참가자 번호·세션 id·상태값·카운트만 보낸다.
-   Discord는 연구 시스템 밖이므로(§9.3) User1·sidecar·AI2 텍스트는 금지다.
+   Discord는 연구 시스템 밖이므로(§9.3) User1·sidecar·AI2·checkpoint 수정 내용은 금지다.
 """
 
 from __future__ import annotations
@@ -25,13 +25,17 @@ NOTIFY_TIMEOUT_S = 5.0
 
 
 class NotifyEvent(StrEnum):
-    """§2.8 트리거 표 — 5종. 새 트리거를 늘리려면 명세 개정이 먼저다."""
+    """§2.8 트리거 표 — 6종. 새 트리거를 늘리려면 명세 개정이 먼저다."""
 
     AI2_FALLBACK_USED = "ai2_fallback_used"
     CHECKER_SKIPPED = "checker_skipped"
     PROVIDER_MODEL_CHANGED = "provider_model_changed"
     RESEARCHER_ABORT = "researcher_abort"
     SERVER_ERROR_STREAK = "server_error_streak"
+    #: v2 신설(§2.8 · §3.4) — checkpoint의 `trouble_cue`·`problematic_ai_response` 수정.
+    #: 자극의 전제가 흔들릴 수 있어 연구자가 Zoom에서 **즉시 구두 확인**해야 한다.
+    #: 시스템은 막지 않는다 — 계속/abort 판단은 사람이 한다(부록 D.3).
+    CHECKPOINT_CUE_EDITED = "checkpoint_cue_edited"
 
 
 async def _post(url: str, content: str) -> None:

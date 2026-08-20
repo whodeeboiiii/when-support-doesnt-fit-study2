@@ -1,6 +1,6 @@
 """운영 알림 (§2.8 — v5.0 `notify` 이식).
 
-두 규율만 본다: 알림이 파이프라인을 죽이지 않는다, 그리고 트리거 목록이 명세의 5종이다.
+두 규율만 본다: 알림이 파이프라인을 죽이지 않는다, 그리고 트리거 목록이 명세의 6종이다(v2 — checkpoint 경보 신설).
 """
 
 from __future__ import annotations
@@ -11,13 +11,17 @@ from app.notify import watch
 from app.notify.discord import NotifyEvent, notify
 
 
-def test_trigger_list_is_exactly_the_five_in_spec() -> None:
+def test_trigger_list_is_exactly_the_six_in_spec() -> None:
+    """§2.8 — 승계 5종 + v2 신설 1종. 새 트리거를 늘리려면 명세 개정이 먼저다."""
     assert {str(event) for event in NotifyEvent} == {
         "ai2_fallback_used",
         "checker_skipped",
         "provider_model_changed",
         "researcher_abort",
         "server_error_streak",
+        # v2 신설(§2.8 · §3.4 · D-25) — checkpoint의 trouble_cue·problematic_ai_response
+        # 수정. 연구자가 Zoom에서 즉시 구두 확인할 수 있도록 알린다.
+        "checkpoint_cue_edited",
     }
 
 

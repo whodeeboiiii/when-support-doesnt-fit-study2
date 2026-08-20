@@ -1,4 +1,4 @@
-"""설계 동결 · 모집 게이트 점검 (구현명세서 §10.5 · §11.3).
+"""설계 동결 · 모집 게이트 점검 (구현명세서 §10.5 · §11.2).
 
     python scripts/freeze_study_version.py --check              # 모집 게이트만 본다
     python scripts/freeze_study_version.py --actor <이름>        # soft launch 종료 시 1회 동결
@@ -33,9 +33,9 @@ from app.security.audit import AuditAction, record  # noqa: E402
 
 def _print_gate(blockers: list[freeze.Blocker]) -> None:
     if not blockers:
-        print("모집 게이트: 통과 — PH-03·PH-IRB 계열 착지 (§11.3)")
+        print("모집 게이트: 통과 — PH-03·PH-IRB 계열 착지 (§11.2)")
         return
-    print(f"모집 게이트: 미착지 {len(blockers)}건 — 본 모집을 시작하지 않는다 (§11.3)")
+    print(f"모집 게이트: 미착지 {len(blockers)}건 — 본 모집을 시작하지 않는다 (§11.2)")
     for blocker in blockers:
         print(f"  - {blocker.tag}: {blocker.detail}")
 

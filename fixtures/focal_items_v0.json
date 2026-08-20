@@ -1,0 +1,77 @@
+{
+  "version": "focal_items_v0",
+  "_note": "구현명세서 부록 A.4 초판 placeholder <TODO: PH-06>. 문면은 v1.0.1 §7.3에서 임시 차용했고 PI 재승인 대상이다. 실값 착지 시 focal_items_v1.json으로 올린다(모집 게이트 PH-06 — core/freeze.py).",
+  "scale": { "min": 1, "max": 7 },
+  "blocks": [
+    {
+      "scope": "focal",
+      "instruction": "다음 문항들은 방금 경험한 대화 전체에 대한 것입니다.",
+      "instruction_status": "제안",
+      "ai1_card": false,
+      "items": [
+        {
+          "item_id": "gs_1",
+          "construct": "grounding_sufficiency",
+          "referent": "interaction",
+          "text": "AI가 다음 지원을 적절히 이어가기 위해 필요한 내용을 충분히 이해했다고 느꼈다."
+        },
+        {
+          "item_id": "gs_2",
+          "construct": "grounding_sufficiency",
+          "referent": "interaction",
+          "text": "다음 지원의 방향과 범위가 충분히 좁혀졌다고 느꼈다."
+        },
+        {
+          "item_id": "ce_1",
+          "construct": "correction_effort",
+          "referent": "interaction",
+          "text": "이 AI와 대화를 다시 맞추기 위해 내가 들여야 할 노력이 크게 느껴졌다."
+        },
+        {
+          "item_id": "ce_2",
+          "construct": "correction_effort",
+          "referent": "interaction",
+          "text": "AI가 이해할 수 있도록 맥락을 다시 정리하고 표현하는 일이 부담스럽게 느껴졌다."
+        },
+        {
+          "item_id": "ri_1",
+          "construct": "reinvestment",
+          "referent": "interaction",
+          "text": "이 AI에게 조금 더 설명하면 다음 반응이 나아질 것 같았다."
+        },
+        {
+          "item_id": "cn_1",
+          "construct": "clarification_need",
+          "referent": "interaction",
+          "text": "다음 지원을 하기 전에 AI가 나에게 추가로 확인해야 할 것이 남아 있다고 느꼈다."
+        },
+        {
+          "item_id": "rci_1",
+          "construct": "retrospective_continuation_intention",
+          "referent": "interaction",
+          "text": "<TODO: PH-06 — 신규 작성 필요> 실제 상황이었다면 이 대화를 계속 이어갔을 것 같다."
+        }
+      ]
+    },
+    {
+      "scope": "mc",
+      "instruction": "다음 두 문항은 재구성된 대화 직후 AI가 보인 첫 번째 답변(위 카드)에 대한 것입니다.",
+      "instruction_status": "제안",
+      "ai1_card": true,
+      "items": [
+        {
+          "item_id": "mc_recognition",
+          "construct": "manipulation_check",
+          "referent": "first_ai_response",
+          "text": "<TODO: PH-06 — referent 문구와 함께 재승인> AI가 내가 문제 삼은 지점을 알아차렸다고 느꼈다."
+        },
+        {
+          "item_id": "mc_uptake",
+          "construct": "manipulation_check",
+          "referent": "first_ai_response",
+          "text": "<TODO: PH-06 — referent 문구와 함께 재승인> AI가 그 문제를 실제 다음 반응에 반영했다고 느꼈다."
+        }
+      ]
+    }
+  ]
+}

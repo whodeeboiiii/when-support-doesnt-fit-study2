@@ -23,14 +23,17 @@ async def test_health_endpoint_reports_assets(client) -> None:
     body = response.json()
     assert body["status"] == "ok"
     assert body["dev_mode"] is True
-    assert body["dossiers"]["loaded"] == 13  # P00 + P01–P12
+    assert body["dossiers"]["loaded"] >= 25  # P00 + 배정표 24명
+    # §5.2 — 배정표 상태도 보고한다. dummy를 감추지 않는다(NT-42).
+    assert body["assignment"]["n"] == 24
+    assert body["assignment"]["is_dummy"] is True
     # 자산 **내용**은 실리지 않는다 (§2.9 · NT-13).
-    assert "stimuli" not in response.text
-    assert "researcher_only" not in response.text
+    for banned in ("stimuli", "researcher_only", "focal_condition", "trouble_cue"):
+        assert banned not in response.text
 
 
 async def test_dev_mode_injects_fake_llm() -> None:
-    """§6.7 — DEV_MODE는 실키 없이 전 경로를 돌린다."""
+    """§6.6 — DEV_MODE는 실키 없이 전 경로를 돌린다."""
     from app.llm.gateway.client import get_client
     from app.main import _install_llm_client
 

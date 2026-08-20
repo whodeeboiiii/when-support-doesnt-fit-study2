@@ -1,10 +1,14 @@
 /**
- * P10 cross-branch review · P11 디브리핑 · 종료·중단 화면 (구현명세서 §4.10–§4.11 · §9.1).
+ * P11 contrastive interview 대기 · P12 디브리핑 · 종료·중단 화면 (§4.11–§4.12 · §9.1).
  *
- * P10은 네 trajectory를 나란히 재표시한다. 라벨은 **번호로만** — 조건명·구성 원리는 표시하지
- * 않는다(§4.10 construct label 비공개). sidecar 내용도 재표시하지 않는다 `<TODO: PH-02>`.
+ * **P11이 v1.0.1의 P10(cross-branch review)을 대체한다.** 네 trajectory를 나란히 보여 주던
+ * 화면은 사라졌고(4-branch 설계와 함께), 대신 **세 pair를 제시된 순서·좌우 그대로** 읽기
+ * 전용으로 세로 배치한다. 참가자가 인터뷰 중 참조하는 화면이다.
  *
- * 인터뷰는 Zoom 구두 진행이고 이 화면은 참조용이다. 종료 버튼은 참가자가 누른다(§3.1).
+ * 여기 없는 것이 중요하다(NT-39): 문항·응답값 재표시 없음, sidecar 없음, 조건 라벨 없음,
+ * researcher_only 없음. 그것들은 연구자 R3에만 있다.
+ *
+ * 인터뷰는 Zoom 구두 진행이고(부록 D.3) 종료 버튼은 참가자가 누른다(§4.11).
  */
 
 import { api } from '../api'
@@ -13,47 +17,39 @@ import { SubmitBar } from '../components/Inputs'
 import { DONE_NOTICE, NEXT } from '../copy'
 import { ScreenProps, ScreenTitle, useSubmit } from './common'
 
-interface Trajectory {
-  index: number
+interface PairView {
+  position: number
   label: string
-  ai1: string | null
-  user1: string | null
-  disposition: string | null
-  ai2: string | null
-  downstream: string | null
+  sides: { label: string; ai1: string }[]
 }
 
-export function CrossReview({ state, onState }: ScreenProps) {
-  const branches: Trajectory[] = state.data.branches ?? []
+export function InterviewHold({ state, onState }: ScreenProps) {
+  const pairs: PairView[] = state.data.pairs ?? []
   const { busy, error, run } = useSubmit(onState)
 
   return (
-    <div className="screen" style={{ maxWidth: '1200px' }}>
-      <ScreenTitle>네 번의 대화 되돌아보기</ScreenTitle>
-      <div className="grid grid-cols-4 gap-4">
-        {branches.map((branch) => (
-          <section key={branch.index} className="sec space-y-3">
-            <h2 className="text-sm font-semibold text-gray-600">{branch.label}</h2>
-            {branch.ai1 && <Bubble role="ai" text={branch.ai1} />}
-            {branch.user1 && <Bubble role="user" text={branch.user1} />}
-            {/* no_reply/end는 빈칸이 아니라 그 자체가 하나의 trajectory다(§3.2). */}
-            {!branch.user1 && (
-              <p className="text-sm text-gray-500">
-                {branch.disposition === 'end' ? '대화를 끝냈습니다' : '답장을 보내지 않았습니다'}
-              </p>
-            )}
-            {branch.ai2 && <Bubble role="ai" text={branch.ai2} />}
-            {branch.downstream && (
-              <p className="text-sm text-gray-600">선택: {branch.downstream}</p>
-            )}
+    <div className="screen" style={{ maxWidth: '1100px' }}>
+      <ScreenTitle>비교한 응답들</ScreenTitle>
+      <div className="space-y-10">
+        {pairs.map((pair) => (
+          <section key={pair.position}>
+            <h2 className="mb-3 text-sm font-semibold text-gray-600">{pair.label}</h2>
+            <div className="grid grid-cols-2 gap-4">
+              {pair.sides.map((side) => (
+                <div key={side.label} className="sec">
+                  <p className="mb-3 text-sm text-gray-600">{side.label}</p>
+                  <Bubble role="ai" text={side.ai1} />
+                </div>
+              ))}
+            </div>
           </section>
         ))}
       </div>
       <SubmitBar
-        label={state.data.end_button}
+        label={state.data.button}
         busy={busy}
         error={error}
-        onClick={() => run(() => api.advance('P10'))}
+        onClick={() => run(() => api.advance('P11'))}
       />
     </div>
   )

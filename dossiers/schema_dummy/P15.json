@@ -1,0 +1,84 @@
+{
+  "participant_no": "P15",
+  "version": "p15_schema_dummy_v2",
+  "locked_at": null,
+  "hash": null,
+  "evidence_code": {
+    "a_level": "A2",
+    "mismatch_locus": "trajectory_timing",
+    "mismatch_locus_text": "<TODO: PH-03 — P15 무엇이 problematized되었는지 미착지>",
+    "directional_constraint": "<TODO: PH-03 — P15 evidence의 방향 제약 미착지>",
+    "permitted_operation": "<TODO: PH-03 — P15 U의 상한 미착지>",
+    "residual_uncertainty": "<TODO: PH-03 — P15 minimum U 이후 남는 consequential uncertainty 미착지>",
+    "consequential_justification": "<TODO: PH-03 — P15 plausible next move 분기 근거 미착지>",
+    "prohibited_inference": [
+      "<TODO: PH-03 — P15 금지 추론 목록 미착지 (checker 판정 참조)>"
+    ],
+    "coders": "researcher_only_ref",
+    "adjudicated_at": null
+  },
+  "ai_visible": {
+    "situation_summary": "<TODO: PH-03 — P15 상황 요약 미착지> 사건 이해에 필요한 최소 context가 이 자리에 들어간다.",
+    "prior_evidence": [
+      "<TODO: PH-03 — P15 checkpoint 이전에 사용자가 이미 제공한 정보 미착지>"
+    ],
+    "original_request": "<TODO: PH-03 — P15 원 요청 미착지>",
+    "problematic_ai_response": "<TODO: PH-03 — P15 문제된 AI 응답 발췌 미착지>",
+    "trouble_cue": "<TODO: PH-03 — P15 실제 AI-visible trouble turn 미착지>",
+    "provenance": {
+      "situation_summary": "researcher_paraphrase",
+      "prior_evidence": "participant_quote",
+      "original_request": "verbatim_log",
+      "problematic_ai_response": "participant_quote",
+      "trouble_cue": "verbatim_log"
+    },
+    "excerpt_note": "<TODO: PH-03 — P15 발췌 생략 범위·2인 확인 기록 참조 미착지>"
+  },
+  "researcher_only": {
+    "retrospective_stance": "<TODO: PH-03 — P15 회고 stance 미착지>",
+    "unsent_at_the_time": "<TODO: PH-03 — P15 미전송 생각 미착지>",
+    "mismatch_interpretation": "<TODO: PH-03 — P15 mismatch 해석 미착지>",
+    "original_trajectory": "<TODO: PH-03 — P15 원 trajectory 미착지>",
+    "ideal_response_reported": "<TODO: PH-03 — P15 ideal response 미착지>",
+    "correction_labor_notes": "<TODO: PH-03 — P15 correction labor 기록 미착지>",
+    "verification_notes": "<TODO: PH-03 — P15 P2·인터뷰에서 나온 private preference 기록 자리>"
+  },
+  "stimulus": {
+    "r": "<TODO: PH-03 — P15 R(recognition) segment 미착지> 이 자리에는 문제 지점을 알아차렸음을 보이는 최소 문장이 들어간다.",
+    "u": "<TODO: PH-03 — P15 U(minimum substantive uptake) segment 미착지> 이 자리에는 현재 evidence가 정당화하는 최소 조정의 실행문이 들어간다.",
+    "q": "<TODO: PH-03 — P15 Q(minimum elicitation) segment 미착지> 지금은 어느 쪽이 더 필요하세요?",
+    "stimuli_meta": {
+      "C1": {
+        "chars": 84,
+        "sentences": 1,
+        "questions": 0
+      },
+      "C2": {
+        "chars": 158,
+        "sentences": 2,
+        "questions": 1
+      },
+      "C3": {
+        "chars": 190,
+        "sentences": 2,
+        "questions": 0
+      },
+      "C4": {
+        "chars": 264,
+        "sentences": 3,
+        "questions": 1
+      }
+    },
+    "neutral_fallback": "<TODO: PH-03 — P15 neutral fallback 문안 미착지> 말씀해주신 내용은 잘 받았습니다. 지금 말씀해주신 범위 안에서 이어가겠습니다.",
+    "qc": {
+      "r_identity": false,
+      "u_identity": false,
+      "q_identity": false,
+      "permitted_boundary": false,
+      "leakage": false,
+      "minimum_q": false,
+      "reviewer": "<TODO: PH-03 — P15 독립 second researcher QC 미실시>",
+      "at": null
+    }
+  }
+}

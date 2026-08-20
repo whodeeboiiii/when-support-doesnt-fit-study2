@@ -7,9 +7,12 @@
 1. **저장 층**: 세션을 끝까지 돌린 뒤 **DB 전 테이블을 통째로 훑어** 참가자·연구자가 쓴
    문자열이 한 번도 평문으로 나타나지 않는지 본다. 컬럼별 검사가 아니라 전수 훑기인 이유는
    §8.1이 나열하지 않은 자리(예: `events.payload`)로 평문이 새는 경우를 잡기 위해서다.
-2. **접근 층**: 복호화 지점이 §2.9의 둘(콘솔·export) + 명세된 예외 둘(참가자 P10 재표시,
-   R-1·R-2 규칙 대조)로 한정되는지 **정적으로** 세고, 콘솔·export 경로가 `audit_logs`에
-   기록을 남기는지 실행으로 확인한다.
+2. **접근 층**: 복호화 지점이 §2.9가 **열거한 다섯**으로 한정되는지 **정적으로** 세고,
+   콘솔·export 경로가 `audit_logs`에 기록을 남기는지 실행으로 확인한다.
+
+§2.9 v2는 지점을 열거형으로 못박았다: 콘솔 · export · leakage 대조 · AI2 payload용
+User1/수정본 읽기 · 참가자 본인 화면 재표시(P6 AI2·P11 pair 참조). 여섯 번째가 생기면
+이 테스트가 먼저 깨진다 — 그게 목적이다.
 """
 
 from __future__ import annotations
@@ -30,16 +33,20 @@ BACKEND = Path(__file__).resolve().parents[2] / "backend"
 
 USER1_TEXT = "평문검사용참가자발화센티넬"
 SIDECAR_TEXT = "평문검사용사이드카센티넬"
+REASON_TEXT = "평문검사용미포함사유센티넬"
+EDIT_TEXT = "평문검사용수정본센티넬"
+END_REASON_TEXT = "평문검사용이탈사유센티넬"
 FLAG_REASON = "평문검사용플래그사유센티넬"
 ABORT_REASON = "평문검사용중단사유센티넬"
 
 #: §2.9 — 복호화가 허용된 모듈과 그 근거. 새 모듈이 늘면 이 표를 고치는 결정이 먼저다.
-#: ②(분석 export)는 `analysis/`에 있어 이 정적 검사의 대상 밖이다(런타임 코드가 아니다).
+#: export(`analysis/`)는 런타임 코드가 아니라 이 정적 검사의 대상 밖이다.
 ALLOWED_DECRYPT_MODULES: dict[str, str] = {
-    "app/api/admin_views.py": "§2.9 ① 콘솔 표시 (audit 기록)",
-    "app/api/state_payload.py": "§4.10 P10 — 참가자 본인 텍스트 재표시",
-    "app/api/leakage_sources.py": "§6.5 R-1·R-2 대조 (평문 대조를 규칙이 요구)",
-    "app/api/branch.py": "§6.2 — AI2 payload에 넣을 정규화본 User1 (allowlist 3종 중 하나)",
+    "app/api/admin_views.py": "§2.9 콘솔 표시 (요청 단위 audit 기록)",
+    "app/api/state_payload.py": "§2.9 참가자 본인 화면 재표시 (P6 AI2 · P11 pair 참조)",
+    "app/api/store.py": "§2.9 AI2 payload용 checkpoint 수정본 읽기 (§3.4 effective 조립)",
+    "app/api/leakage_sources.py": "§2.9 leakage 대조 (평문 대조를 R-1이 요구)",
+    "app/api/focal.py": "§6.2 — AI2 payload에 넣을 User1 원문 (allowlist 3종 중 하나)",
 }
 
 
@@ -56,15 +63,26 @@ async def _dump_all_rows(session) -> str:
 async def _run_session(client: AsyncClient) -> str:
     created, _ = await helpers.open_and_join(client, "P00")
     await helpers.consent(client)
-    await helpers.presurvey(client)
-    await client.post("/api/checkpoint/confirm")
-    await helpers.advance(client, "P4")
-    await client.post("/api/branch/1/user1", json={"disposition": "reply", "text": USER1_TEXT})
+    # §2.9 v2 신설 — checkpoint 수정본도 🔒 대상이다(D-25).
+    await helpers.edit_checkpoint(client, "situation_summary", EDIT_TEXT)
+    await helpers.confirm_checkpoint(client)
+    await helpers.advance(client, "P3")
+    await client.post("/api/focal/user1", json={"text": USER1_TEXT})
     await client.post(
-        "/api/branch/1/sidecar",
-        json={"choice": "has", "free_text": SIDECAR_TEXT, "relevance": 4},
+        "/api/focal/sidecar",
+        json={
+            "has_more": True,
+            "free_text": SIDECAR_TEXT,
+            "provenance": "preexisting",
+            "reason": REASON_TEXT,
+        },
     )
-    await client.post("/api/branch/1/ai2")
+    await client.post("/api/focal/ai2")
+    await helpers.advance(client, "P6")
+    await client.post(
+        "/api/focal/downstream",
+        json={"disposition": "end", "end_type": "stop_here", "reason": END_REASON_TEXT},
+    )
     await client.post(
         f"/admin/sessions/{created['session_id']}/flag",
         json={"reason": FLAG_REASON},
@@ -82,7 +100,15 @@ async def test_nt28_no_plaintext_of_protected_fields_anywhere_in_the_database(
     )
 
     dump = await _dump_all_rows(session)
-    for sentinel in (USER1_TEXT, SIDECAR_TEXT, FLAG_REASON, ABORT_REASON):
+    for sentinel in (
+        USER1_TEXT,
+        SIDECAR_TEXT,
+        REASON_TEXT,
+        EDIT_TEXT,
+        END_REASON_TEXT,
+        FLAG_REASON,
+        ABORT_REASON,
+    ):
         assert sentinel not in dump, f"평문 저장: {sentinel}"
 
 
@@ -100,10 +126,22 @@ async def test_nt28_protected_columns_hold_fernet_tokens(client: AsyncClient, se
         )
     ).scalars().one()
 
-    for value in (turn.text, turn.text_normalized, entry.free_text, generation.output_text):
+    edit = (await session.execute(select(tables.CheckpointEdit))).scalars().one()
+    action = (await session.execute(select(tables.DownstreamAction))).scalars().one()
+
+    for value in (
+        turn.text,
+        entry.free_text,
+        entry.reason_text,
+        generation.output_text,
+        edit.original,
+        edit.edited,
+        action.reason_text,
+    ):
         assert isinstance(value, bytes) and value.startswith(b"gAAAA"), "Fernet 토큰이 아니다"
     assert fernet.decrypt(turn.text) == USER1_TEXT
     assert fernet.decrypt(entry.free_text) == SIDECAR_TEXT
+    assert fernet.decrypt(edit.edited) == EDIT_TEXT
 
 
 async def test_nt28_console_view_records_a_decrypt_row(client: AsyncClient, session) -> None:
@@ -154,11 +192,18 @@ def test_encrypted_fields_match_the_spec_list() -> None:
         for column in table.columns
         if isinstance(column.type, LargeBinary)
     }
+    # §2.9 v2 — User1·User2·AI2 출력·sidecar free_text·reason_text·종료 이유·flag 사유·
+    # abort 사유·**checkpoint 수정본**. flag 사유는 `events.payload` 안의 암호문 필드다
+    # (§8.1 컬럼 목록 유지 — 컬럼을 늘리지 않는다).
     assert encrypted == {
         "turns.text",
-        "turns.text_normalized",
         "generations.output_text",
         "sidecar_entries.free_text",
         "sidecar_entries.reason_text",
+        "downstream_actions.reason_text",
+        "checkpoint_edits.original",
+        "checkpoint_edits.edited",
         "sessions.abort_reason",
     }
+    # `text_normalized`는 삭제됐다(D-34 — normalization 폐기).
+    assert "turns.text_normalized" not in encrypted

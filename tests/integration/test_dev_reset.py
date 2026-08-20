@@ -45,7 +45,7 @@ def test_dev_routes_are_absent_outside_dev_mode() -> None:
 
 
 async def test_status_reports_current_sessions(client: AsyncClient) -> None:
-    await helpers.reach_branch_block(client, "P00")
+    await helpers.reach_focal(client, "P00")
     response = await client.get("/api/dev/status")
     assert response.status_code == 200
     body = response.json()
@@ -57,9 +57,12 @@ async def test_status_reports_current_sessions(client: AsyncClient) -> None:
 async def test_reset_wipes_progress_and_issues_a_new_code(
     client: AsyncClient, session: AsyncSession
 ) -> None:
-    await helpers.reach_branch_block(client, "P00")
-    await helpers.complete_branch(client, 1, "reply")
+    await helpers.reach_focal(client, "P00")
+    await helpers.complete_focal(client)
+    await helpers.advance(client, "P7")
+    await helpers.submit_ratings(client)
     assert await _count(session, tables.Rating) > 0
+    assert await _count(session, tables.AltExposure) > 0
 
     response = await client.post("/api/dev/reset", json={"participant_no": "P00"})
     assert response.status_code == 200, response.text
@@ -67,14 +70,17 @@ async def test_reset_wipes_progress_and_issues_a_new_code(
     assert len(body["access_code"]) == 6
 
     for model in (
-        tables.Branch,
+        tables.FocalRun,
         tables.Turn,
         tables.Rating,
         tables.SidecarEntry,
         tables.Generation,
         tables.LlmCall,
         tables.DownstreamAction,
-        tables.PresurveyResponse,
+        tables.CheckpointEdit,
+        tables.AltExposure,
+        tables.PairwiseView,
+        tables.PairwiseResponse,
         tables.Event,
     ):
         assert await _count(session, model) == 0, f"{model.__tablename__}가 남았다"
@@ -114,7 +120,7 @@ async def test_reset_keeps_the_audit_trail(client: AsyncClient, session: AsyncSe
 async def test_reset_only_touches_the_named_participant(
     client: AsyncClient, session: AsyncSession
 ) -> None:
-    await helpers.reach_branch_block(client, "P00")
+    await helpers.reach_focal(client, "P00")
     await helpers.create_session(client, "P01")
 
     await client.post("/api/dev/reset", json={"participant_no": "P01"})
@@ -124,7 +130,7 @@ async def test_reset_only_touches_the_named_participant(
     # P00의 진행은 그대로다.
     p00 = next(row for row in remaining if row.participant_no == "P00")
     assert p00.ss_state == "SS04"
-    assert await _count(session, tables.PresurveyResponse) > 0
+    assert await _count(session, tables.FocalRun) > 0
 
 
 @pytest.mark.parametrize("participant_no", ["P99", "XX", ""])

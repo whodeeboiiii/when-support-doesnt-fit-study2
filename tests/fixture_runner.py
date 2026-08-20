@@ -2,8 +2,11 @@
 
 §10의 3층 검증에서 부록 C의 NT 테스트가 "코드가 정해진 대로 도는가"라면, 여기는 **"판정이
 기대와 일치하는가"**를 케이스 분포로 본다. 그래서 fixture 텍스트를 실제 런타임 경로 그대로
-태운다 — `llm.normalization.normalize`와 `llm.integrity_rules.check_all` · `llm.checker.run`은
-참가자 세션이 부르는 바로 그 함수다.
+태운다 — `llm.integrity_rules.check_all` · `flag_alt_overlap` · `llm.checker.run`은 참가자
+세션이 부르는 바로 그 함수다.
+
+**v2에서 normalization fixture가 폐기됐다**(D-34 · §10.1). 대신 블록 A(대안 segment
+overlap — **위반이 아니라 플래그**)가 들어왔다.
 
     통과 기준(§10.1): 결정론 케이스 100%. LLM checker는
     [파일럿 확정: 위반 검출 누락 0을 목표로 문항별 분석] — fake LLM(CI)에서는 결정론이므로
@@ -24,21 +27,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.assets import dossier_loader
 from app.llm import checker as checker_module
-from app.llm import normalization
-from app.llm.integrity_rules import ForbiddenText, check_all
+from app.llm.integrity_rules import AltSegment, ForbiddenText, check_all, flag_alt_overlap
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES_DIR = REPO_ROOT / "fixtures"
-NORMALIZATION_FIXTURE = FIXTURES_DIR / "normalization_fixture_v1.jsonl"
-INTEGRITY_FIXTURE = FIXTURES_DIR / "integrity_fixture_v1.jsonl"
+INTEGRITY_FIXTURE = FIXTURES_DIR / "integrity_fixture_v2.jsonl"
 
 #: §10.1 통과 기준. None = 게이트 없음(분포만 본다).
-NORMALIZATION_THRESHOLDS: dict[str, float | None] = {"A": 1.0, "B": 1.0, "C": 1.0}
-INTEGRITY_THRESHOLDS: dict[str, float | None] = {"R": 1.0, "C": 1.0}
+#: R = 규칙 계층 · A = alt_overlap 플래그 · C = LLM checker. 셋 다 CI에서는 결정론이다.
+INTEGRITY_THRESHOLDS: dict[str, float | None] = {"R": 1.0, "A": 1.0, "C": 1.0}
 
 #: checker fixture가 쓰는 고정 맥락. 판정 대상은 **초안**이므로 맥락은 어느 것이든 같아야 한다.
 CHECKER_CONTEXT_PARTICIPANT = "P00"
-CHECKER_USER1 = "장기 계획 말고 장단점만 정리해줘"
+CHECKER_USER1 = "장기 계획 말고 두 선택지 비교만 해줘"
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,46 +103,7 @@ def load_cases(path: Path) -> list[dict[str, Any]]:
 
 
 # --------------------------------------------------------------------------- #
-# normalization (§6.4 · NT-24)
-# --------------------------------------------------------------------------- #
-
-
-def _referents(raw: Sequence[dict[str, Any]]) -> tuple[dossier_loader.ReferentEntry, ...]:
-    return tuple(
-        dossier_loader.ReferentEntry(
-            patterns=tuple(entry.get("patterns", ())), proposition=entry.get("proposition", "")
-        )
-        for entry in raw
-    )
-
-
-def run_normalization_fixture(path: Path = NORMALIZATION_FIXTURE) -> FixtureReport:
-    """지시표현 치환 케이스 전수. 실호출·DB 없이 돈다(순수 함수)."""
-    report = FixtureReport(name="normalization", path=path)
-    for case in load_cases(path):
-        expected = case["expect"]
-        result = normalization.normalize(case["user1"], _referents(case.get("referent_map", [])))
-        actual = {
-            "applied": result.applied,
-            "pattern": result.matched_pattern_id,
-            "referent": result.referent_id,
-            "substituted": result.substituted,
-        }
-        report.results.append(
-            CaseResult(
-                id=case["id"],
-                block=case.get("block", "A"),
-                passed=all(actual[key] == value for key, value in expected.items()),
-                expected=expected,
-                actual=actual,
-                note=case.get("note", ""),
-            )
-        )
-    return report
-
-
-# --------------------------------------------------------------------------- #
-# integrity (§6.5 · NT-25)
+# integrity (§6.4 · NT-25)
 # --------------------------------------------------------------------------- #
 
 
@@ -157,12 +119,24 @@ def _forbidden(raw: Sequence[dict[str, Any]]) -> list[ForbiddenText]:
     ]
 
 
+def _alt_segments(raw: Sequence[dict[str, Any]]) -> list[AltSegment]:
+    return [
+        AltSegment(
+            condition=entry["condition"], segment=entry["segment"], text=entry["text"]
+        )
+        for entry in raw
+    ]
+
+
 async def run_integrity_fixture(
     session: AsyncSession, path: Path = INTEGRITY_FIXTURE
 ) -> FixtureReport:
-    """규칙 계층 전수 + checker 블록. checker는 주입된 클라이언트(CI=fake)로 판정한다."""
+    """규칙 계층 + alt_overlap + checker 블록. checker는 주입된 클라이언트(CI=fake)로 판정한다."""
     report = FixtureReport(name="integrity", path=path)
-    ai_visible = dossier_loader.load(CHECKER_CONTEXT_PARTICIPANT).ai_visible
+    dossier = dossier_loader.load(CHECKER_CONTEXT_PARTICIPANT)
+    # checker 맥락도 **effective checkpoint**다(D-25). 수정이 없는 세션이므로 원문과 같다.
+    effective = dossier_loader.build_effective(dossier.ai_visible, {})
+    focal_ai1 = dossier.assemble("C1")
 
     for case in load_cases(path):
         expected = case["expect"]
@@ -173,11 +147,19 @@ async def run_integrity_fixture(
         actual: dict[str, Any] = {"rules": sorted({v.rule for v in violations})}
         passed = actual["rules"] == sorted(expected.get("rules", []))
 
+        if "alt_overlap" in expected:
+            # §6.4 R-2 — **위반 목록과 분리해서** 확인한다. 이 값이 rules에 섞이면
+            # 플래그가 위반으로 승격된 것이고, 그게 v2가 막으려는 바로 그 실수다.
+            overlaps = flag_alt_overlap(draft, _alt_segments(case.get("alt_segments", [])))
+            actual["alt_overlap"] = overlaps
+            passed = passed and overlaps == expected["alt_overlap"]
+
         if "checker_types" in expected:
             verdict = await checker_module.run(
                 session,
-                ai_visible=ai_visible,
-                user1_normalized=CHECKER_USER1,
+                effective=effective,
+                focal_ai1=focal_ai1,
+                user1=CHECKER_USER1,
                 draft=draft,
             )
             actual["checker_types"] = sorted(verdict.violation_types)

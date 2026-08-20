@@ -1,0 +1,25 @@
+# 배정표 생성 로그 (§5.2 ⑥) — 2026-08-20T16:42:26.912574+00:00
+seed: 20260820
+시도 횟수: 1
+n: 24
+
+## focal 분포
+- C1: 6명
+- C2: 6명
+- C3: 6명
+- C4: 6명
+
+## strata 분포 (A-level × focal condition)
+- A0 (n=8): C1=2 · C2=2 · C3=2 · C4=2 — max−min=0
+- A1 (n=8): C1=2 · C2=2 · C3=2 · C4=2 — max−min=0
+- A2 (n=8): C1=2 · C2=2 · C3=2 · C4=2 — max−min=0
+
+## mismatch_locus 분포
+- affective_tone_intensity: 5명
+- content_depth: 5명
+- context_memory_use: 5명
+- interpretation: 5명
+- trajectory_timing: 4명
+
+## 제약 재검증 (NT-32)
+- ✅ 전 제약 통과

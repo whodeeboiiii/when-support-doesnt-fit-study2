@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.assets import dossier_loader
+from app.core import assignment
 from app.core.config import get_settings
 from app.llm import prompts
 
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/api", tags=["health"])
 async def health() -> dict[str, object]:
     settings = get_settings()
     dossiers = dossier_loader.load_all()
+    table = assignment.load()
     return {
         "status": "ok",
         "study_version": settings.study_version,
@@ -31,5 +33,11 @@ async def health() -> dict[str, object]:
             # 실값이 아직 안 들어온 참가자 — 콘솔 R4·부록 D.2의 lock 확인 항목과 같은 정보다.
             "schema_dummy": sorted(no for no, d in dossiers.items() if d.is_dummy),
             "locked": sorted(no for no, d in dossiers.items() if d.is_locked),
+        },
+        "assignment": {
+            "version": table.version,
+            "n": len(table.rows),
+            # NT-42 — dummy 상태를 감추지 않는다.
+            "is_dummy": table.is_dummy,
         },
     }

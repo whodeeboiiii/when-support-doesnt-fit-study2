@@ -1,15 +1,15 @@
-"""fake LLM — DEV_MODE·CI 공용 결정론 클라이언트 (구현명세서 §6.7 · 부록 A.5, v5.0 이식).
+"""fake LLM — DEV_MODE·CI 공용 결정론 클라이언트 (구현명세서 §6.6 · 부록 A.6 (v2)).
 
 `llm.gateway.client.LLMClient` 프로토콜을 만족하는 가짜 구현이다. 실호출 0건으로 전 경로를
 돌린다 — 팀 시연(DEV_MODE=true)과 CI가 같은 구현을 쓴다.
 
-기본 응답은 **규칙을 지키는 모델**을 모사한다(부록 A.5).
-- AI2(`ai2_generation`): [대화 맥락]·[사용자 메시지] 블록을 되받는 결정론 응답. 질문 0개·
-  1,200자 미만이라 규칙 계층(§6.5 R-3·R-4)을 통과한다 — 통합 테스트가 fallback이 아니라
+기본 응답은 **규칙을 지키는 모델**을 모사한다(부록 A.6).
+- AI2(`ai2_generation`): [대화 맥락]·[AI의 직전 답변]·[사용자 메시지] 블록을 되받는 결정론
+  응답. 질문 0개·1,200자 미만이라 규칙 계층(§6.4 R-3·R-4)을 통과한다 — 통합 테스트가 fallback이 아니라
   정상 경로를 돌아야 하기 때문이다.
 - checker(`integrity_checker`): `{"violations": [], "pass": true}` 결정론 JSON.
 
-부록 A.5의 "fixture 트리거 문자열로 위반 유형 재현"도 여기 있다(§10.1). User1에 `[[fixture:…]]`
+부록 A.6의 "fixture 트리거 문자열로 위반 유형 재현"도 여기 있다(§10.1). User1에 `[[fixture:…]]`
 토큰이 들어오면 해당 위반을 가진 결정론 초안을 낸다 — 위반 경로(재생성·fallback)를 실호출 없이
 끝까지 태우기 위해서다. checker 역할은 초안에서 **규칙표 문구**를 찾아 결정론 JSON을 낸다.
 """
@@ -24,15 +24,16 @@ from collections.abc import Sequence
 from app.llm.gateway.client import LLMRequest, LLMResponse
 from app.llm.prompts import AI2_PROMPT_KEY, CHECKER_PROMPT_KEY
 
-#: 부록 A.1·A.2 프롬프트의 블록 머리말.
+#: 부록 A.1·A.2 v2 프롬프트의 블록 머리말.
 _CONTEXT_BLOCK = "[대화 맥락]"
+_PRIOR_AI_BLOCK = "[AI의 직전 답변]"
 _MESSAGE_BLOCK = "[사용자 메시지]"
 
 _DRAFT_BLOCK = "[AI 응답 초안]"
 
 _CHECKER_PASS = json.dumps({"violations": [], "pass": True}, ensure_ascii=False)
 
-#: 부록 A.5 — fixture 트리거. User1 텍스트에 이 토큰이 있으면 해당 위반 초안을 낸다.
+#: 부록 A.6 — fixture 트리거. User1 텍스트에 이 토큰이 있으면 해당 위반 초안을 낸다.
 FIXTURE_TOKEN = "[[fixture:{name}]]"
 
 #: 트리거별 결정론 초안. 규칙 계층(R-3·R-4)과 checker(부록 A.2 3유형)를 모두 재현한다.
@@ -93,7 +94,7 @@ def _default_ai2(request: LLMRequest) -> str:
 
 
 def _default_checker(request: LLMRequest) -> str:
-    """규칙표 기반 결정론 JSON (부록 A.5·A.2).
+    """규칙표 기반 결정론 JSON (부록 A.6·A.2).
 
     초안 블록만 본다 — 맥락·User1에 같은 문구가 있어도 위반이 아니다(위반은 **AI 출력**의
     성질이다).
@@ -143,7 +144,7 @@ class FakeLLM:
         return [call.prompt_key for call in self.calls]
 
     def sent_texts(self, prompt_key: str) -> Sequence[str]:
-        """§NT-01·NT-02 leakage 검사가 보는 것 — 실제로 모델에 나간 문자열 전문."""
+        """NT-01·NT-02 leakage 검사가 보는 것 — 실제로 모델에 나간 문자열 전문."""
         return [
             f"{call.system}\n{call.user}" for call in self.calls if call.prompt_key == prompt_key
         ]

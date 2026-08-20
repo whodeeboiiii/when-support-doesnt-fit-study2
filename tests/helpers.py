@@ -1,9 +1,12 @@
-"""테스트 헬퍼 (구 리포 `tests/helpers.py`의 신판 — NS1에서 NS2로 이월한 항목).
+"""테스트 헬퍼 (구현명세서 §3 SS·F · §8.2).
 
-구 헬퍼는 S00–S20 흐름 전용이라 반입하지 않았다. 신판은 §3의 SS·B와 §8.2의 엔드포인트만 안다.
+v1.0.1의 B-루프 헬퍼(`complete_branch` ×4)는 v2.0 설계 전환으로 사라졌다. 신판은 **focal
+1회 + 대안 3 + pairwise 3**을 안다.
 
 의도적으로 **얇게** 유지한다: 요청을 대신 보내 주기만 하고 상태를 계산하지 않는다. 헬퍼가
-상태를 알기 시작하면 테스트가 서버 대신 헬퍼를 검증하게 된다.
+상태를 알기 시작하면 테스트가 서버 대신 헬퍼를 검증하게 된다. 다만 **문항 수는 자산에서
+읽는다** — 문항이 placeholder라 개수가 바뀔 수 있고, 헬퍼에 숫자를 박으면 자산 교체가
+테스트를 깨뜨린다.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ ADMIN_AUTH = (ADMIN_USER, ADMIN_PASS)
 #: §2.8 알림을 부르는 모듈들. `from … import notify`로 들여왔으므로 **호출부마다** 갈아끼운다.
 NOTIFY_CALL_SITES = (
     "app.api.admin",
+    "app.api.participant",
     "app.llm.ai2_pipeline",
     "app.llm.checker",
     "app.notify.watch",
@@ -56,9 +60,31 @@ def capture_notifications(monkeypatch) -> list[tuple[str, dict[str, Any]]]:
         monkeypatch.setattr(importlib.import_module(module_name), "notify", _record)
     return captured
 
-#: 평정 12문항 전부에 같은 값을 넣는 payload (§4.9 — 값 자체는 이 테스트들의 관심사가 아니다).
+
+# --------------------------------------------------------------------------- #
+# 제출 payload
+# --------------------------------------------------------------------------- #
+
+
 def ratings_payload(value: int = 4) -> dict[str, Any]:
-    return {"items": [{"position": position, "value": value} for position in range(1, 13)]}
+    """§4.8 focal 5 construct + MC 2 — 전 문항에 같은 값. 값 자체는 관심사가 아니다."""
+    from app.assets import rating_items
+
+    count = rating_items.load().item_count
+    return {"items": [{"position": position, "value": value} for position in range(1, count + 1)]}
+
+
+def pairwise_payload(contrast: str, value: int = 4) -> dict[str, Any]:
+    """§4.10 — contrast별 문항 수만큼."""
+    from app.assets import pairwise_items
+
+    count = len(pairwise_items.load().items_for(contrast))
+    return {"items": [{"position": position, "value": value} for position in range(1, count + 1)]}
+
+
+# --------------------------------------------------------------------------- #
+# 세션 진행
+# --------------------------------------------------------------------------- #
 
 
 async def create_session(client: AsyncClient, participant_no: str = "P00") -> dict[str, Any]:
@@ -108,63 +134,103 @@ async def consent(client: AsyncClient) -> dict[str, Any]:
     return response.json()
 
 
-async def presurvey(client: AsyncClient) -> dict[str, Any]:
-    """자산이 placeholder이므로 문항 유형에 맞는 아무 값이나 넣는다 `<TODO: PH-01>`."""
-    current = await state(client)
-    responses = []
-    for item in current["data"]["items"]:
-        if item["type"] == "multi_choice":
-            value: Any = [item["options"][0]["value"]]
-        elif item["type"] == "single_choice":
-            value = item["options"][0]["value"]
-        else:
-            value = 4
-        responses.append({"position": item["position"], "value": value})
-    response = await client.post("/api/presurvey", json={"responses": responses})
+async def edit_checkpoint(client: AsyncClient, segment: str, text: str) -> dict[str, Any]:
+    """§4.2 — segment 1건 수정 (D-25)."""
+    response = await client.post(
+        "/api/checkpoint/edit", json={"segment": segment, "text": text}
+    )
     assert response.status_code == 200, response.text
     return response.json()
 
 
-async def reach_branch_block(client: AsyncClient, participant_no: str = "P00") -> dict[str, Any]:
-    """SS00 → SS04(branch 1의 B0)까지 한 번에 (P0 → P1 → P2 → P3)."""
-    await open_and_join(client, participant_no)
-    await consent(client)
-    await presurvey(client)
+async def confirm_checkpoint(client: AsyncClient) -> dict[str, Any]:
     response = await client.post("/api/checkpoint/confirm")
     assert response.status_code == 200, response.text
     return response.json()
 
 
-async def complete_branch(
+async def reach_focal(client: AsyncClient, participant_no: str = "P00") -> dict[str, Any]:
+    """SS00 → SS04·F0까지 한 번에 (P0 → P1 → P2 → P3)."""
+    await open_and_join(client, participant_no)
+    await consent(client)
+    await confirm_checkpoint(client)
+    return await advance(client, "P3")
+
+
+async def complete_focal(
     client: AsyncClient,
-    branch_index: int,
-    disposition: str = "reply",
     *,
-    sidecar_choice: str = "none",
-    downstream_code: str = "pause",
+    user1: str = "장기 계획 말고 두 선택지 비교만 해줘",
+    has_more: bool = False,
+    disposition: str = "reply",
+    end_type: str = "stop_here",
 ) -> dict[str, Any]:
-    """P4 → P9까지 한 branch 전체 (§3.2 B0 → B7)."""
-    await advance(client, "P4")
-    body: dict[str, Any] = {"disposition": disposition}
-    if disposition == "reply":
-        body["text"] = "장기 계획 말고 장단점만 정리해줘"
-    response = await client.post(f"/api/branch/{branch_index}/user1", json=body)
+    """P4 → P7까지 focal 전체 (§3.2 F0 → F5). 반환 상태는 P7(종료 안내)이다."""
+    response = await client.post("/api/focal/user1", json={"text": user1})
     assert response.status_code == 200, response.text
 
-    response = await client.post(
-        f"/api/branch/{branch_index}/sidecar", json={"choice": sidecar_choice}
-    )
+    body: dict[str, Any] = {"has_more": has_more}
+    if has_more:
+        body |= {"free_text": "사실 한 가지 더 있었어", "provenance": "preexisting"}
+    response = await client.post("/api/focal/sidecar", json=body)
     assert response.status_code == 200, response.text
 
+    response = await client.post("/api/focal/ai2")
+    assert response.status_code == 200, response.text
+    await advance(client, "P6")
+
+    payload: dict[str, Any] = {"disposition": disposition}
     if disposition == "reply":
-        response = await client.post(f"/api/branch/{branch_index}/ai2")
-        assert response.status_code == 200, response.text
-        await advance(client, "P7")
+        payload["text"] = "알겠어, 그렇게 정리해줘"
+    else:
+        payload |= {"end_type": end_type, "reason": "지금은 여기까지면 충분해서"}
+    response = await client.post("/api/focal/downstream", json=payload)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+async def submit_ratings(client: AsyncClient, value: int = 4) -> dict[str, Any]:
+    """§4.8 — SS05 → SS06. 제출과 동시에 대안 노출 행 3건이 생긴다."""
+    response = await client.post("/api/ratings", json=ratings_payload(value))
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+async def complete_alt_exposures(client: AsyncClient) -> dict[str, Any]:
+    """§4.9 — 세 대안을 순차로 넘긴다. 3번째에서 SS07로 간다."""
+    current = await state(client)
+    while current["screen"] == "P9":
+        current = await advance(client, "P9")
+    return current
+
+
+async def complete_pairwise(client: AsyncClient, value: int = 4) -> dict[str, Any]:
+    """§4.10 — 세 pair를 배정 순서대로 제출한다. 3번째에서 SS08로 간다."""
+    current = await state(client)
+    while current["screen"] == "P10":
+        position = current["pair_index"]
+        # contrast는 서버가 정한다 — 문항 수를 알기 위해 payload 크기만 맞춘다.
+        count = len(current["data"]["items"])
         response = await client.post(
-            f"/api/branch/{branch_index}/downstream", json={"code": downstream_code}
+            f"/api/pairwise/{position}",
+            json={"items": [{"position": index, "value": value} for index in range(1, count + 1)]},
         )
         assert response.status_code == 200, response.text
+        current = response.json()
+    return current
 
-    response = await client.post(f"/api/branch/{branch_index}/ratings", json=ratings_payload())
+
+async def complete_session(
+    client: AsyncClient, participant_no: str = "P00", **focal: Any
+) -> dict[str, Any]:
+    """SS00 → SS10 완주 (§11.2 Definition of Done 1행)."""
+    await reach_focal(client, participant_no)
+    await complete_focal(client, **focal)
+    await advance(client, "P7")
+    await submit_ratings(client)
+    await complete_alt_exposures(client)
+    await complete_pairwise(client)
+    await advance(client, "P11")
+    response = await client.post("/api/debrief/confirm")
     assert response.status_code == 200, response.text
     return response.json()

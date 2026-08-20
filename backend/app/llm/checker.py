@@ -1,6 +1,6 @@
-"""LLM integrity checker (구현명세서 §6.5 · 부록 A.2 · §9.1).
+"""LLM integrity checker (구현명세서 §6.4 · 부록 A.2 v2 · §9.1).
 
-규칙 계층(§6.5 R-계열)이 못 잡는 셋만 본다 — unsupported_inference · expansion ·
+규칙 계층(§6.4 R-계열)이 못 잡는 셋만 본다 — unsupported_inference · expansion ·
 correction_ignored. 질문 수·길이·문자열 누출은 결정론 규칙이 전담하므로 checker에 중복
 위임하지 않는다(부록 A.2 주).
 
@@ -9,7 +9,7 @@ correction_ignored. 질문 수·길이·문자열 누출은 결정론 규칙이 
 떨어지고, 그건 조작 자체를 바꾼다(§6.6은 fallback을 예외 경로로 설계했다).
 
 ⚠ checker payload도 allowlist 대상이다(NT-02). 조립은 `llm/context.py`가 하고 이 모듈은
-호출·판정 해석만 한다.
+호출·판정 해석만 한다. checkpoint는 **참가자 수정본**이다(D-25) — 원문이 아니다.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from typing import Any, Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.assets.dossier_loader import AiVisible
+from app.assets.dossier_loader import EffectiveAiVisible
 from app.llm import context, prompts
 from app.llm.gateway.calls import CallFailed, call_model
 from app.notify.discord import NotifyEvent, notify
@@ -79,15 +79,20 @@ def parse_verdict(data: dict[str, Any] | None) -> CheckerVerdict:
 async def run(
     session: AsyncSession,
     *,
-    ai_visible: AiVisible,
-    user1_normalized: str,
+    effective: EffectiveAiVisible,
+    focal_ai1: str,
+    user1: str,
     draft: str,
     prohibited_inference: Sequence[str] = (),
     generation_id: uuid.UUID | None = None,
 ) -> CheckerVerdict:
-    """checker 1회. 실패는 예외로 올리지 않고 `skipped` 판정으로 흡수한다(§9.1)."""
+    """checker 1회. 실패는 예외로 올리지 않고 `skipped` 판정으로 흡수한다(§9.1).
+
+    입력은 §6.4가 허용한 다섯이다: effective checkpoint · focal AI1 · User1 · 초안 ·
+    prohibited_inference (NT-02). 시그니처가 그 목록이다.
+    """
     payload = context.build_checker_payload(
-        ai_visible, user1_normalized, draft, prohibited_inference
+        effective, focal_ai1, user1, draft, prohibited_inference
     )
     try:
         result = await call_model(

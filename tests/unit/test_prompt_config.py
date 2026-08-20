@@ -42,12 +42,27 @@ def test_ai2_prompt_carries_no_condition_label() -> None:
         assert label not in system, f"AI2 프롬프트에 조건 라벨이 있다: {label}"
 
 
-def test_ai2_prompt_has_only_the_two_allowed_slots() -> None:
-    """§6.2 입력 계약 — 프롬프트가 요구하는 자리는 ai_visible 맥락과 정규화된 User1뿐이다."""
+def test_ai2_prompt_has_only_the_three_allowed_slots() -> None:
+    """§6.2 입력 계약(D-34) — effective checkpoint · **focal AI1** · User1 **원문**.
+
+    v1.0.1과 두 곳이 다르다: `{focal_ai1}`이 생겼고(AI1 원문을 주는 것이 v2 정책),
+    `{user1_normalized}`가 `{user1}`로 바뀌었다(normalization 폐기).
+    """
     system = prompts.system_template(prompts.AI2_PROMPT_KEY)
     assert "{ai_visible_context}" in system
-    assert "{user1_normalized}" in system
-    for forbidden in ("{ai1", "{sidecar", "{researcher", "{ratings", "{presurvey", "{condition"):
+    assert "{focal_ai1}" in system
+    assert "{user1}" in system
+    assert "{user1_normalized}" not in system, "normalization은 v2에 없다 (D-34)"
+    for forbidden in (
+        "{sidecar",
+        "{researcher",
+        "{ratings",
+        "{alt",
+        "{condition",
+        "{assignment",
+        "{pairwise",
+        "{user2",
+    ):
         assert forbidden not in system
 
 

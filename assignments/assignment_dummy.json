@@ -1,0 +1,735 @@
+{
+  "version": "assignment_dummy",
+  "generated_at": "2026-08-20T16:42:26.912574+00:00",
+  "seed": 20260820,
+  "n": 24,
+  "constraints_checked": {
+    "focal_balance": true,
+    "alt_order_latin": true,
+    "pair_order_4x": true,
+    "side_balance": true,
+    "strata_spread": "max_diff<=0"
+  },
+  "rows": [
+    {
+      "participant_no": "P01",
+      "a_level": "A0",
+      "mismatch_locus": "affective_tone_intensity",
+      "focal_condition": "C4",
+      "alt_order": [
+        "C1",
+        "C3",
+        "C2"
+      ],
+      "pair_order": [
+        "stopping",
+        "sequence",
+        "scope"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C2",
+          "C4"
+        ],
+        "scope": [
+          "C1",
+          "C3"
+        ],
+        "stopping": [
+          "C3",
+          "C4"
+        ]
+      }
+    },
+    {
+      "participant_no": "P02",
+      "a_level": "A1",
+      "mismatch_locus": "content_depth",
+      "focal_condition": "C4",
+      "alt_order": [
+        "C2",
+        "C3",
+        "C1"
+      ],
+      "pair_order": [
+        "scope",
+        "stopping",
+        "sequence"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C4",
+          "C2"
+        ],
+        "scope": [
+          "C1",
+          "C3"
+        ],
+        "stopping": [
+          "C4",
+          "C3"
+        ]
+      }
+    },
+    {
+      "participant_no": "P03",
+      "a_level": "A2",
+      "mismatch_locus": "context_memory_use",
+      "focal_condition": "C2",
+      "alt_order": [
+        "C4",
+        "C1",
+        "C3"
+      ],
+      "pair_order": [
+        "scope",
+        "sequence",
+        "stopping"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C2",
+          "C4"
+        ],
+        "scope": [
+          "C3",
+          "C1"
+        ],
+        "stopping": [
+          "C4",
+          "C3"
+        ]
+      }
+    },
+    {
+      "participant_no": "P04",
+      "a_level": "A0",
+      "mismatch_locus": "interpretation",
+      "focal_condition": "C2",
+      "alt_order": [
+        "C1",
+        "C4",
+        "C3"
+      ],
+      "pair_order": [
+        "stopping",
+        "scope",
+        "sequence"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C4",
+          "C2"
+        ],
+        "scope": [
+          "C3",
+          "C1"
+        ],
+        "stopping": [
+          "C4",
+          "C3"
+        ]
+      }
+    },
+    {
+      "participant_no": "P05",
+      "a_level": "A1",
+      "mismatch_locus": "trajectory_timing",
+      "focal_condition": "C3",
+      "alt_order": [
+        "C4",
+        "C2",
+        "C1"
+      ],
+      "pair_order": [
+        "sequence",
+        "stopping",
+        "scope"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C4",
+          "C2"
+        ],
+        "scope": [
+          "C3",
+          "C1"
+        ],
+        "stopping": [
+          "C4",
+          "C3"
+        ]
+      }
+    },
+    {
+      "participant_no": "P06",
+      "a_level": "A2",
+      "mismatch_locus": "affective_tone_intensity",
+      "focal_condition": "C3",
+      "alt_order": [
+        "C2",
+        "C1",
+        "C4"
+      ],
+      "pair_order": [
+        "stopping",
+        "sequence",
+        "scope"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C4",
+          "C2"
+        ],
+        "scope": [
+          "C1",
+          "C3"
+        ],
+        "stopping": [
+          "C3",
+          "C4"
+        ]
+      }
+    },
+    {
+      "participant_no": "P07",
+      "a_level": "A0",
+      "mismatch_locus": "content_depth",
+      "focal_condition": "C2",
+      "alt_order": [
+        "C4",
+        "C3",
+        "C1"
+      ],
+      "pair_order": [
+        "scope",
+        "stopping",
+        "sequence"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C4",
+          "C2"
+        ],
+        "scope": [
+          "C1",
+          "C3"
+        ],
+        "stopping": [
+          "C4",
+          "C3"
+        ]
+      }
+    },
+    {
+      "participant_no": "P08",
+      "a_level": "A1",
+      "mismatch_locus": "context_memory_use",
+      "focal_condition": "C1",
+      "alt_order": [
+        "C4",
+        "C2",
+        "C3"
+      ],
+      "pair_order": [
+        "stopping",
+        "sequence",
+        "scope"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C2",
+          "C4"
+        ],
+        "scope": [
+          "C3",
+          "C1"
+        ],
+        "stopping": [
+          "C4",
+          "C3"
+        ]
+      }
+    },
+    {
+      "participant_no": "P09",
+      "a_level": "A2",
+      "mismatch_locus": "interpretation",
+      "focal_condition": "C1",
+      "alt_order": [
+        "C2",
+        "C3",
+        "C4"
+      ],
+      "pair_order": [
+        "stopping",
+        "scope",
+        "sequence"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C2",
+          "C4"
+        ],
+        "scope": [
+          "C1",
+          "C3"
+        ],
+        "stopping": [
+          "C3",
+          "C4"
+        ]
+      }
+    },
+    {
+      "participant_no": "P10",
+      "a_level": "A0",
+      "mismatch_locus": "trajectory_timing",
+      "focal_condition": "C1",
+      "alt_order": [
+        "C3",
+        "C4",
+        "C2"
+      ],
+      "pair_order": [
+        "scope",
+        "stopping",
+        "sequence"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C4",
+          "C2"
+        ],
+        "scope": [
+          "C1",
+          "C3"
+        ],
+        "stopping": [
+          "C3",
+          "C4"
+        ]
+      }
+    },
+    {
+      "participant_no": "P11",
+      "a_level": "A1",
+      "mismatch_locus": "affective_tone_intensity",
+      "focal_condition": "C3",
+      "alt_order": [
+        "C2",
+        "C4",
+        "C1"
+      ],
+      "pair_order": [
+        "scope",
+        "stopping",
+        "sequence"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C4",
+          "C2"
+        ],
+        "scope": [
+          "C3",
+          "C1"
+        ],
+        "stopping": [
+          "C3",
+          "C4"
+        ]
+      }
+    },
+    {
+      "participant_no": "P12",
+      "a_level": "A2",
+      "mismatch_locus": "content_depth",
+      "focal_condition": "C4",
+      "alt_order": [
+        "C3",
+        "C2",
+        "C1"
+      ],
+      "pair_order": [
+        "sequence",
+        "scope",
+        "stopping"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C2",
+          "C4"
+        ],
+        "scope": [
+          "C3",
+          "C1"
+        ],
+        "stopping": [
+          "C3",
+          "C4"
+        ]
+      }
+    },
+    {
+      "participant_no": "P13",
+      "a_level": "A0",
+      "mismatch_locus": "context_memory_use",
+      "focal_condition": "C4",
+      "alt_order": [
+        "C3",
+        "C1",
+        "C2"
+      ],
+      "pair_order": [
+        "sequence",
+        "stopping",
+        "scope"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C4",
+          "C2"
+        ],
+        "scope": [
+          "C3",
+          "C1"
+        ],
+        "stopping": [
+          "C4",
+          "C3"
+        ]
+      }
+    },
+    {
+      "participant_no": "P14",
+      "a_level": "A1",
+      "mismatch_locus": "interpretation",
+      "focal_condition": "C4",
+      "alt_order": [
+        "C2",
+        "C1",
+        "C3"
+      ],
+      "pair_order": [
+        "scope",
+        "sequence",
+        "stopping"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C2",
+          "C4"
+        ],
+        "scope": [
+          "C3",
+          "C1"
+        ],
+        "stopping": [
+          "C4",
+          "C3"
+        ]
+      }
+    },
+    {
+      "participant_no": "P15",
+      "a_level": "A2",
+      "mismatch_locus": "trajectory_timing",
+      "focal_condition": "C4",
+      "alt_order": [
+        "C1",
+        "C2",
+        "C3"
+      ],
+      "pair_order": [
+        "stopping",
+        "scope",
+        "sequence"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C4",
+          "C2"
+        ],
+        "scope": [
+          "C1",
+          "C3"
+        ],
+        "stopping": [
+          "C3",
+          "C4"
+        ]
+      }
+    },
+    {
+      "participant_no": "P16",
+      "a_level": "A0",
+      "mismatch_locus": "affective_tone_intensity",
+      "focal_condition": "C1",
+      "alt_order": [
+        "C4",
+        "C3",
+        "C2"
+      ],
+      "pair_order": [
+        "scope",
+        "sequence",
+        "stopping"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C2",
+          "C4"
+        ],
+        "scope": [
+          "C1",
+          "C3"
+        ],
+        "stopping": [
+          "C4",
+          "C3"
+        ]
+      }
+    },
+    {
+      "participant_no": "P17",
+      "a_level": "A1",
+      "mismatch_locus": "content_depth",
+      "focal_condition": "C1",
+      "alt_order": [
+        "C3",
+        "C2",
+        "C4"
+      ],
+      "pair_order": [
+        "sequence",
+        "scope",
+        "stopping"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C4",
+          "C2"
+        ],
+        "scope": [
+          "C3",
+          "C1"
+        ],
+        "stopping": [
+          "C3",
+          "C4"
+        ]
+      }
+    },
+    {
+      "participant_no": "P18",
+      "a_level": "A2",
+      "mismatch_locus": "context_memory_use",
+      "focal_condition": "C3",
+      "alt_order": [
+        "C1",
+        "C4",
+        "C2"
+      ],
+      "pair_order": [
+        "stopping",
+        "scope",
+        "sequence"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C2",
+          "C4"
+        ],
+        "scope": [
+          "C1",
+          "C3"
+        ],
+        "stopping": [
+          "C3",
+          "C4"
+        ]
+      }
+    },
+    {
+      "participant_no": "P19",
+      "a_level": "A0",
+      "mismatch_locus": "interpretation",
+      "focal_condition": "C3",
+      "alt_order": [
+        "C1",
+        "C2",
+        "C4"
+      ],
+      "pair_order": [
+        "scope",
+        "sequence",
+        "stopping"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C2",
+          "C4"
+        ],
+        "scope": [
+          "C3",
+          "C1"
+        ],
+        "stopping": [
+          "C4",
+          "C3"
+        ]
+      }
+    },
+    {
+      "participant_no": "P20",
+      "a_level": "A1",
+      "mismatch_locus": "trajectory_timing",
+      "focal_condition": "C2",
+      "alt_order": [
+        "C1",
+        "C3",
+        "C4"
+      ],
+      "pair_order": [
+        "sequence",
+        "scope",
+        "stopping"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C4",
+          "C2"
+        ],
+        "scope": [
+          "C1",
+          "C3"
+        ],
+        "stopping": [
+          "C3",
+          "C4"
+        ]
+      }
+    },
+    {
+      "participant_no": "P21",
+      "a_level": "A2",
+      "mismatch_locus": "affective_tone_intensity",
+      "focal_condition": "C2",
+      "alt_order": [
+        "C3",
+        "C4",
+        "C1"
+      ],
+      "pair_order": [
+        "sequence",
+        "stopping",
+        "scope"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C2",
+          "C4"
+        ],
+        "scope": [
+          "C1",
+          "C3"
+        ],
+        "stopping": [
+          "C3",
+          "C4"
+        ]
+      }
+    },
+    {
+      "participant_no": "P22",
+      "a_level": "A0",
+      "mismatch_locus": "content_depth",
+      "focal_condition": "C3",
+      "alt_order": [
+        "C4",
+        "C1",
+        "C2"
+      ],
+      "pair_order": [
+        "sequence",
+        "scope",
+        "stopping"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C2",
+          "C4"
+        ],
+        "scope": [
+          "C1",
+          "C3"
+        ],
+        "stopping": [
+          "C4",
+          "C3"
+        ]
+      }
+    },
+    {
+      "participant_no": "P23",
+      "a_level": "A1",
+      "mismatch_locus": "context_memory_use",
+      "focal_condition": "C2",
+      "alt_order": [
+        "C3",
+        "C1",
+        "C4"
+      ],
+      "pair_order": [
+        "stopping",
+        "sequence",
+        "scope"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C2",
+          "C4"
+        ],
+        "scope": [
+          "C3",
+          "C1"
+        ],
+        "stopping": [
+          "C3",
+          "C4"
+        ]
+      }
+    },
+    {
+      "participant_no": "P24",
+      "a_level": "A2",
+      "mismatch_locus": "interpretation",
+      "focal_condition": "C1",
+      "alt_order": [
+        "C2",
+        "C4",
+        "C3"
+      ],
+      "pair_order": [
+        "sequence",
+        "stopping",
+        "scope"
+      ],
+      "pair_sides": {
+        "sequence": [
+          "C4",
+          "C2"
+        ],
+        "scope": [
+          "C3",
+          "C1"
+        ],
+        "stopping": [
+          "C4",
+          "C3"
+        ]
+      }
+    }
+  ]
+}

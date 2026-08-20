@@ -26,7 +26,7 @@ from sqlalchemy import delete, select
 
 from app.api import admin
 from app.api.deps import SESSION_COOKIE, DbSession
-from app.assets.files import PARTICIPANT_NUMBERS, QA_PARTICIPANT_NO
+from app.assets.files import QA_PARTICIPANT_NO, is_participant_no
 from app.core import access_code
 from app.core.config import get_settings, is_local_db
 from app.core.state_machine import SsState
@@ -49,12 +49,17 @@ def _require_dev() -> None:
 
 
 async def purge_participant(db: DbSession, participant_no: str) -> dict[str, int]:
-    """해당 참가자의 세션·branch 산출물을 전부 지운다. `audit_logs`·`participants`는 남긴다."""
+    """해당 참가자의 세션 산출물을 전부 지운다. `audit_logs`·`participants`는 남긴다."""
     session_ids = select(tables.Session.id).where(
         tables.Session.participant_no == participant_no
     )
-    branch_ids = select(tables.Branch.id).where(tables.Branch.session_id.in_(session_ids))
-    generation_ids = select(tables.Generation.id).where(tables.Generation.branch_id.in_(branch_ids))
+    run_ids = select(tables.FocalRun.id).where(tables.FocalRun.session_id.in_(session_ids))
+    view_ids = select(tables.PairwiseView.id).where(
+        tables.PairwiseView.session_id.in_(session_ids)
+    )
+    generation_ids = select(tables.Generation.id).where(
+        tables.Generation.focal_run_id.in_(run_ids)
+    )
 
     deleted: dict[str, int] = {}
 
@@ -62,17 +67,19 @@ async def purge_participant(db: DbSession, participant_no: str) -> dict[str, int
         result = await db.execute(delete(model).where(condition))
         deleted[model.__tablename__] = int(result.rowcount or 0)
 
-    # generations를 참조하는 것부터 → branches를 참조하는 것 → sessions를 참조하는 것 순.
+    # generations를 참조하는 것부터 → focal_runs를 참조하는 것 → sessions를 참조하는 것 순.
     await _wipe(tables.LlmCall, tables.LlmCall.generation_id.in_(generation_ids))
-    await _wipe(tables.Turn, tables.Turn.branch_id.in_(branch_ids))
-    await _wipe(tables.Rating, tables.Rating.branch_id.in_(branch_ids))
-    await _wipe(tables.DownstreamAction, tables.DownstreamAction.branch_id.in_(branch_ids))
-    await _wipe(tables.SidecarEntry, tables.SidecarEntry.branch_id.in_(branch_ids))
-    await _wipe(tables.Normalization, tables.Normalization.branch_id.in_(branch_ids))
-    await _wipe(tables.Generation, tables.Generation.branch_id.in_(branch_ids))
+    await _wipe(tables.Turn, tables.Turn.focal_run_id.in_(run_ids))
+    await _wipe(tables.DownstreamAction, tables.DownstreamAction.focal_run_id.in_(run_ids))
+    await _wipe(tables.SidecarEntry, tables.SidecarEntry.focal_run_id.in_(run_ids))
+    await _wipe(tables.Generation, tables.Generation.focal_run_id.in_(run_ids))
+    await _wipe(tables.PairwiseResponse, tables.PairwiseResponse.pairwise_view_id.in_(view_ids))
+    await _wipe(tables.PairwiseView, tables.PairwiseView.session_id.in_(session_ids))
+    await _wipe(tables.AltExposure, tables.AltExposure.session_id.in_(session_ids))
+    await _wipe(tables.Rating, tables.Rating.session_id.in_(session_ids))
+    await _wipe(tables.CheckpointEdit, tables.CheckpointEdit.session_id.in_(session_ids))
     await _wipe(tables.Event, tables.Event.session_id.in_(session_ids))
-    await _wipe(tables.PresurveyResponse, tables.PresurveyResponse.session_id.in_(session_ids))
-    await _wipe(tables.Branch, tables.Branch.session_id.in_(session_ids))
+    await _wipe(tables.FocalRun, tables.FocalRun.session_id.in_(session_ids))
     await _wipe(tables.Session, tables.Session.participant_no == participant_no)
     await db.flush()
     return deleted
@@ -87,14 +94,18 @@ async def dev_status(db: DbSession) -> dict[str, Any]:
         {
             "participant_no": row.participant_no,
             "ss_state": row.ss_state,
-            "branch_index": row.branch_index,
+            "f_state": row.f_state,
             "status": row.status,
         }
         for row in result.scalars().all()
     ]
+    # §5.1 — 세션을 열 수 있는 번호는 배정표의 행 + P00이다.
+    from app.core import assignment
+
+    numbers = [QA_PARTICIPANT_NO, *assignment.load().participant_numbers]
     return {
         "dev_mode": True,
-        "participants": list(PARTICIPANT_NUMBERS),
+        "participants": numbers,
         "default_participant": QA_PARTICIPANT_NO,
         "sessions": sessions,
     }
@@ -116,7 +127,7 @@ async def reset_participant(
     """
     _require_dev()
     participant_no = payload.participant_no.strip().upper()
-    if participant_no not in PARTICIPANT_NUMBERS:
+    if not is_participant_no(participant_no):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"알 수 없는 참가자 번호: {participant_no}")
 
     deleted = await purge_participant(db, participant_no)

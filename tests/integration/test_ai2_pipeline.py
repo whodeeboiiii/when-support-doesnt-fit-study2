@@ -1,372 +1,380 @@
-"""AI2 파이프라인 — NT-11 · NT-15 · NT-16 + §9.1 오류 경로 (구현명세서 §6 · §8.3 · §9.1).
+"""AI2 파이프라인 (구현명세서 §6.1 · §6.4 · §6.5 · §9.1 · §8.4 · NT-15·16·25).
+
+    payload 조립 → 생성(MAIN) → 규칙 검사(R-1·R-3·R-4) → checker(VALIDATOR)
+    → 위반 시 재생성 1회 → 재위반 시 neutral_fallback
 
 세 가지를 본다.
-
-1. **시간 순서**(NT-16 · §8.3): sidecar 제출 **전에** AI2가 생성되는 경로가 존재하지 않는다.
-   참가자에게 "이 내용은 AI에게 전달되지 않습니다"라고 고지하는 문안(§4.6 [정본])의 진실성이
-   여기 걸려 있다 — 정보 경계뿐 아니라 **시간 순서로도** 보장한다.
-2. **normalization 저장**(NT-11): 전 조건 동일 규칙 + raw/normalized/matched_pattern 저장.
-3. **audit 재구성**(NT-15): `generations`·`llm_calls`만으로 {정상 | 재생성 통과 | fallback}
-   경로가 복원된다. 참가자 화면에서는 구분되지 않지만(§4.7) 기록에서는 구분되어야 한다.
-
-§9.1의 세 경로(AI2 호출 실패 · checker 실패 · 재생성 후에도 위반)도 여기서 끝까지 태운다.
-어느 경로든 **표시 가능한 텍스트**로 끝나야 한다(dead-end 금지).
+1. **사다리의 끝은 언제나 표시 가능한 텍스트다**(§9.1 dead-end 금지). 어느 경로로 가도
+   참가자 화면에는 {정상 | 재생성 통과 | fallback} 중 하나가 뜬다.
+2. **경로가 사후 복원된다**(NT-15). `generations`·`llm_calls`만으로 무엇이 왜 기각됐는지
+   말할 수 있어야 한다.
+3. **R-2는 위반이 아니다**(§6.4 v2 개정). 대안 segment overlap은 `alt_overlap`에 기록만
+   되고 재생성을 부르지 않는다 — 이걸 위반으로 승격시키면 정상 생성물이 fallback으로
+   떨어지고 조작 자체가 바뀐다.
 """
 
 from __future__ import annotations
 
-from typing import Any
-
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.assets import dossier_loader
-from app.core.williams import condition as williams_condition
-from app.llm.fake_llm import FakeLLM
-from app.llm.prompts import AI2_PROMPT_KEY, CHECKER_PROMPT_KEY
+from app.llm import prompts
+from app.llm.fake_llm import fixture_token
 from app.models import tables
 from app.security import fernet
 from tests import helpers
 
-REFERRING_USER1 = "응 그렇게 해줘"
 
-
-async def _reach_sidecar(client: AsyncClient, index: int, text: str = REFERRING_USER1) -> None:
-    await helpers.advance(client, "P4")
-    response = await client.post(
-        f"/api/branch/{index}/user1", json={"disposition": "reply", "text": text}
-    )
-    assert response.status_code == 200
-
-
-async def _reach_ai2(client: AsyncClient, index: int, text: str = REFERRING_USER1) -> None:
-    await _reach_sidecar(client, index, text)
-    await client.post(f"/api/branch/{index}/sidecar", json={"choice": "none"})
-
-
-async def _finish_branch(client: AsyncClient, index: int) -> None:
-    await helpers.advance(client, "P7")
-    await client.post(f"/api/branch/{index}/downstream", json={"code": "pause"})
-    await client.post(f"/api/branch/{index}/ratings", json=helpers.ratings_payload())
-
-
-async def _generations(db: AsyncSession, branch_index: int = 1) -> list[tables.Generation]:
+async def _generations(db: AsyncSession) -> list[tables.Generation]:
     result = await db.execute(
-        select(tables.Generation)
-        .join(tables.Branch, tables.Generation.branch_id == tables.Branch.id)
-        .where(tables.Branch.branch_index == branch_index)
-        .order_by(tables.Generation.attempt, tables.Generation.fallback_used)
+        select(tables.Generation).order_by(tables.Generation.attempt, tables.Generation.created_at)
     )
     return list(result.scalars().all())
 
 
-async def reconstruct_path(db: AsyncSession, branch_index: int = 1) -> dict[str, Any]:
-    """NT-15 — **`generations`·`llm_calls`만으로** 최종 표시 텍스트의 경로를 복원한다.
+async def _final(db: AsyncSession) -> tables.Generation:
+    rows = [row for row in await _generations(db) if row.final]
+    assert len(rows) == 1, f"final 생성물은 정확히 1행이어야 한다 (실제 {len(rows)})"
+    return rows[0]
 
-    참가자 응답·화면 상태를 보지 않는다. 이 함수가 성립한다는 것이 곧 "논문의 generation
-    integrity 보고를 이 필드만으로 재구성할 수 있다"는 §8.4의 요구다.
-    """
-    generations = await _generations(db, branch_index)
-    finals = [row for row in generations if row.final]
-    assert len(finals) == 1, f"final 행은 정확히 1건이어야 한다 (실제 {len(finals)})"
-    final = finals[0]
 
-    calls = list(
-        (
-            await db.execute(
-                select(tables.LlmCall).where(
-                    tables.LlmCall.generation_id.in_([row.id for row in generations])
-                )
-            )
-        )
-        .scalars()
-        .all()
+async def _run_focal_ai2(client: AsyncClient, user1: str) -> None:
+    await helpers.reach_focal(client)
+    response = await client.post("/api/focal/user1", json={"text": user1})
+    assert response.status_code == 200, response.text
+    await client.post("/api/focal/sidecar", json={"has_more": False})
+    response = await client.post("/api/focal/ai2")
+    assert response.status_code == 200, response.text
+
+
+# --------------------------------------------------------------------------- #
+# 정상 경로
+# --------------------------------------------------------------------------- #
+
+
+async def test_clean_generation_is_final_on_first_attempt(
+    client: AsyncClient, session: AsyncSession, llm
+) -> None:
+    """§6.1 — 규칙·checker를 통과하면 attempt 1이 그대로 final이다."""
+    await _run_focal_ai2(client, "장기 계획 말고 비교만 해줘")
+
+    rows = await _generations(session)
+    assert len(rows) == 1
+    final = rows[0]
+    assert (final.attempt, final.final, final.fallback_used) == (1, True, False)
+    assert final.rule_violations == []
+    assert final.checker_skipped is False
+    assert final.alt_overlap == []
+
+    # 호출 1건 = `llm_calls` 1행 (§8.4).
+    calls = (await session.execute(select(tables.LlmCall))).scalars().all()
+    assert {row.role for row in calls} == {"main", "validator"}
+    assert all(row.prompt_hash for row in calls), "prompt_hash가 비어 있다 (§8.4 재현성)"
+
+
+async def test_ai2_turn_is_stored_encrypted_and_linked(
+    client: AsyncClient, session: AsyncSession
+) -> None:
+    """§8.1 — `turns.ai2`가 🔒로 저장되고 `generation_id`로 이어진다."""
+    await _run_focal_ai2(client, "비교만 해줘")
+    turn = (
+        await session.execute(select(tables.Turn).where(tables.Turn.role == "ai2"))
+    ).scalars().one()
+    final = await _final(session)
+    assert turn.generation_id == final.id
+    assert fernet.decrypt(turn.text) == fernet.decrypt(final.output_text)
+    assert b"\x00" not in (turn.text or b""), "평문 저장 흔적"
+
+
+# --------------------------------------------------------------------------- #
+# 규칙 위반 → 재생성 → fallback (§6.1 사다리)
+# --------------------------------------------------------------------------- #
+
+
+async def test_rule_violation_triggers_one_regeneration(
+    client: AsyncClient, session: AsyncSession, llm
+) -> None:
+    """§0.5 — 재생성 **최대 1회**. 첫 초안이 R-3을 어기고 두 번째가 통과하는 경우."""
+    llm.stub(
+        prompts.AI2_PROMPT_KEY,
+        "어느 쪽이 필요하세요? 아니면 다른 방식이 좋을까요?",  # R-3 (질문 2개)
+        "말씀하신 범위 안에서 비교를 이어가겠습니다.",  # 통과
     )
-    drafts = [row for row in generations if not row.fallback_used]
+    await _run_focal_ai2(client, "비교만 해줘")
+
+    rows = await _generations(session)
+    assert [row.attempt for row in rows] == [1, 2]
+    assert rows[0].final is False
+    assert [item["rule"] for item in rows[0].rule_violations] == ["R-3"]
+    assert rows[1].final is True and rows[1].fallback_used is False
+
+
+async def test_repeated_violation_falls_back(
+    client: AsyncClient, session: AsyncSession, llm
+) -> None:
+    """§6.5 — 재생성 후에도 위반이면 참가자별 `neutral_fallback`으로 수렴한다(§9.1)."""
+    llm.stub(prompts.AI2_PROMPT_KEY, "어느 쪽인가요? 아니면 다른 쪽인가요?")
+    await _run_focal_ai2(client, "비교만 해줘")
+
+    final = await _final(session)
+    assert final.fallback_used is True
+    expected = dossier_loader.load("P00").stimulus.neutral_fallback
+    assert fernet.decrypt(final.output_text) == expected
+
+    # fallback은 **별도 행**이다 — 기각된 초안 원문이 덮어써지지 않는다.
+    rows = await _generations(session)
+    assert len(rows) == 3, "attempt 1·2 + fallback 행"
+    drafts = [fernet.decrypt(row.output_text) for row in rows if not row.fallback_used]
+    assert all(draft != expected for draft in drafts)
+
+
+async def test_call_failure_converges_to_fallback(
+    client: AsyncClient, session: AsyncSession, llm
+) -> None:
+    """§9.1 — AI2 호출 실패의 종착지도 fallback이다. **참가자 화면은 막다르지 않는다**."""
+    llm.fail(prompts.AI2_PROMPT_KEY, times=4)
+    await _run_focal_ai2(client, "비교만 해줘")
+
+    final = await _final(session)
+    assert final.fallback_used is True
+    assert any(
+        item.get("rule") == "call_failed" for item in (final.rule_violations or [])
+    ), "장애 경로가 기록되지 않았다"
+
+    state = await helpers.state(client)
+    assert state["data"]["ai2"], "표시할 텍스트가 없다 (§9.1 dead-end 금지)"
+
+
+async def test_checker_failure_is_absorbed_as_skipped(
+    client: AsyncClient, session: AsyncSession, llm
+) -> None:
+    """§9.1 — checker 실패는 `checker_skipped`로 흡수하고 규칙 계층만으로 판정한다.
+
+    판정 불능을 위반으로 취급하면 정상 생성물이 fallback으로 떨어진다.
+    """
+    llm.fail(prompts.CHECKER_PROMPT_KEY, times=4)
+    await _run_focal_ai2(client, "비교만 해줘")
+
+    final = await _final(session)
+    assert final.checker_skipped is True
+    assert final.fallback_used is False, "checker 불능이 fallback을 불렀다"
+    assert final.rule_violations == []
+
+
+async def test_checker_violation_triggers_regeneration(
+    client: AsyncClient, session: AsyncSession, llm
+) -> None:
+    """부록 A.2 — checker 3유형. fixture 트리거로 `expansion`을 재현한다(부록 A.6)."""
+    await _run_focal_ai2(client, f"비교만 해줘 {fixture_token('expansion')}")
+
+    rows = await _generations(session)
+    assert len(rows) >= 2, "checker 위반이 재생성을 부르지 않았다"
+    first = rows[0]
+    assert first.checker_result is not None
+    assert "expansion" in {
+        item.get("type") for item in first.checker_result.get("violations", [])
+    }
+
+
+async def test_rule_violation_skips_the_checker(
+    client: AsyncClient, session: AsyncSession, llm
+) -> None:
+    """§6.1 (NS3 결정 승계) — 규칙 위반이 이미 있으면 checker를 부르지 않는다.
+
+    판정 결과(재생성)가 같고 시간 예산을 아낀다. 기록에서는 `rule_violations`가 비어 있지
+    않고 `checker_result=null`인 상태로 구분된다.
+    """
+    llm.stub(prompts.AI2_PROMPT_KEY, "어느 쪽인가요? 다른 쪽인가요?", "정상 응답입니다.")
+    await _run_focal_ai2(client, "비교만 해줘")
+
+    rows = await _generations(session)
+    assert rows[0].rule_violations and rows[0].checker_result is None
+    # checker는 두 번째 시도에서만 불린다.
+    assert llm.call_count(prompts.CHECKER_PROMPT_KEY) == 1
+
+
+# --------------------------------------------------------------------------- #
+# §6.4 R-2 — alt_overlap은 **위반이 아니다**
+# --------------------------------------------------------------------------- #
+
+
+async def test_alt_segment_overlap_is_flagged_not_violated(
+    client: AsyncClient, session: AsyncSession, llm
+) -> None:
+    """§6.4 R-2 (v2 개정) — 대안 segment가 통째로 나와도 재생성을 부르지 않는다.
+
+    "AI2가 정책상 스스로 유사 질문을 할 수 있으므로 위반으로 보지 않는다"가 명세의 근거다.
+    """
+    dossier = dossier_loader.load("P00")
+    # P00의 focal은 C1(= r)이므로 u는 대안에만 있는 segment다.
+    llm.stub(prompts.AI2_PROMPT_KEY, dossier.stimulus.u)
+
+    await _run_focal_ai2(client, "비교만 해줘")
+
+    final = await _final(session)
+    assert final.fallback_used is False, "overlap이 fallback을 불렀다 — 위반으로 승격됐다"
+    assert final.rule_violations == [], "overlap이 rule_violations에 들어갔다"
+    assert final.alt_overlap == [{"condition": "C3", "segment": "u"}] or any(
+        item["segment"] == "u" for item in final.alt_overlap
+    ), f"overlap이 기록되지 않았다: {final.alt_overlap}"
+    # 재생성이 없었다 — 생성 행이 1건이다.
+    assert len(await _generations(session)) == 1
+
+
+async def test_partial_overlap_is_not_flagged(
+    client: AsyncClient, session: AsyncSession, llm
+) -> None:
+    """§6.4 — **전문 일치**만 본다. 문장 몇 개가 닮는 것은 같은 정책의 정상 결과다."""
+    dossier = dossier_loader.load("P00")
+    llm.stub(prompts.AI2_PROMPT_KEY, dossier.stimulus.u[:20] + " 이어서 정리하겠습니다.")
+    await _run_focal_ai2(client, "비교만 해줘")
+
+    final = await _final(session)
+    assert final.alt_overlap == []
+
+
+# --------------------------------------------------------------------------- #
+# R-1 — 금지 문자열 대조 (§6.4)
+# --------------------------------------------------------------------------- #
+
+
+async def test_sidecar_leak_in_output_is_a_violation(
+    client: AsyncClient, session: AsyncSession, llm
+) -> None:
+    """R-1 — sidecar 문자열이 출력에 등장하면 위반이다(§1.2 방화벽의 런타임 검출)."""
+    secret = "사실은 이직 쪽으로 이미 기울어 있었다"
+    llm.stub(prompts.AI2_PROMPT_KEY, f"말씀하신 {secret}를 전제로 이어가겠습니다.")
+
+    await helpers.reach_focal(client)
+    await client.post("/api/focal/user1", json={"text": "비교만 해줘"})
+    await client.post(
+        "/api/focal/sidecar",
+        json={"has_more": True, "free_text": secret, "provenance": "preexisting"},
+    )
+    await client.post("/api/focal/ai2")
+
+    rows = await _generations(session)
+    assert any(
+        item["rule"] == "R-1" for row in rows for item in (row.rule_violations or [])
+    ), "sidecar 누출이 R-1로 잡히지 않았다"
+    # 위반 기록에는 **라벨만** 남는다 — 원문이 새 누출 경로가 되면 안 된다(§2.9).
+    for row in rows:
+        for item in row.rule_violations or []:
+            assert secret not in item["detail"]
+
+
+async def test_pre_edit_original_leak_is_a_violation(
+    client: AsyncClient, session: AsyncSession, llm
+) -> None:
+    """R-1 (v2 신설) — **checkpoint 수정 전 원문**이 출력에 등장하면 위반이다(§6.4)."""
+    original = dossier_loader.load("P00").ai_visible.problematic_ai_response
+    llm.stub(prompts.AI2_PROMPT_KEY, f"앞서 {original} 그 부분을 빼겠습니다.")
+
+    await helpers.open_and_join(client)
+    await helpers.consent(client)
+    await helpers.edit_checkpoint(
+        client, "problematic_ai_response", "AI가 다른 방향으로 답했습니다."
+    )
+    await helpers.confirm_checkpoint(client)
+    await helpers.advance(client, "P3")
+    await client.post("/api/focal/user1", json={"text": "비교만 해줘"})
+    await client.post("/api/focal/sidecar", json={"has_more": False})
+    await client.post("/api/focal/ai2")
+
+    rows = await _generations(session)
+    assert any(
+        item["rule"] == "R-1" for row in rows for item in (row.rule_violations or [])
+    ), "수정 전 원문 누출이 R-1로 잡히지 않았다"
+
+
+async def test_effective_checkpoint_echo_is_not_a_violation(
+    client: AsyncClient, session: AsyncSession, llm
+) -> None:
+    """§6.4 R-1의 예외 — payload에 정당히 포함된 문자열은 대조에서 뺀다.
+
+    이 예외가 없으면 수정본을 되짚는 정상 응답이 위반으로 잡힌다(수정 전 원문과 수정본은
+    대부분의 문장이 겹치기 때문이다).
+    """
+    dossier = dossier_loader.load("P00")
+    llm.stub(prompts.AI2_PROMPT_KEY, dossier.ai_visible.original_request)
+
+    await helpers.open_and_join(client)
+    await helpers.consent(client)
+    await helpers.edit_checkpoint(client, "situation_summary", "조금 다른 상황 요약입니다.")
+    await helpers.confirm_checkpoint(client)
+    await helpers.advance(client, "P3")
+    await client.post("/api/focal/user1", json={"text": "비교만 해줘"})
+    await client.post("/api/focal/sidecar", json={"has_more": False})
+    await client.post("/api/focal/ai2")
+
+    final = await _final(session)
+    assert final.fallback_used is False, "정상 응답이 fallback으로 떨어졌다 (§6.4 예외 미적용)"
+
+
+# --------------------------------------------------------------------------- #
+# NT-15 — audit 재구성
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("stubs", "expected"),
+    [
+        (["정상 응답입니다."], "clean"),
+        (["어느 쪽인가요? 다른 쪽인가요?", "정상 응답입니다."], "regenerated"),
+        (["어느 쪽인가요? 다른 쪽인가요?"], "fallback"),
+    ],
+)
+async def test_path_is_reconstructible_from_generations(
+    client: AsyncClient, session: AsyncSession, llm, stubs: list[str], expected: str
+) -> None:
+    """§8.4 · NT-15 — `generations`만으로 {정상 | 재생성 | fallback}이 복원된다."""
+    llm.stub(prompts.AI2_PROMPT_KEY, *stubs)
+    await _run_focal_ai2(client, "비교만 해줘")
+
+    rows = await _generations(session)
+    final = next(row for row in rows if row.final)
     if final.fallback_used:
         path = "fallback"
     elif final.attempt > 1:
         path = "regenerated"
     else:
         path = "clean"
-    return {
-        "path": path,
-        "attempts": len(drafts),
-        "final_attempt": final.attempt,
-        "checker_skipped": final.checker_skipped,
-        "violations": [item.get("rule") for item in (final.rule_violations or [])],
-        "main_calls": sum(1 for call in calls if call.role == "main"),
-        "validator_calls": sum(1 for call in calls if call.role == "validator"),
-        "call_errors": sum(1 for call in calls if call.status != "ok"),
-        "text": fernet.decrypt(final.output_text) if final.output_text else None,
-    }
+    assert path == expected
+
+    # 콘솔 R2·R3의 라벨과 같은 판정을 쓴다(표시용 상태 컬럼을 따로 두지 않는다).
+    from app.api.admin_views import ai2_state
+
+    row = (await session.execute(select(tables.Session))).scalars().first()
+    assert ai2_state(row, rows) == expected
 
 
-# --------------------------------------------------------------------------- #
-# NT-16 — sidecar 제출 전 AI2 호출 0건
-# --------------------------------------------------------------------------- #
-
-
-async def test_nt16_no_ai2_call_before_sidecar(
-    client: AsyncClient, session: AsyncSession, llm: FakeLLM
+async def test_every_call_has_one_llm_calls_row(
+    client: AsyncClient, session: AsyncSession, llm
 ) -> None:
-    await helpers.reach_branch_block(client, "P00")
-    await _reach_sidecar(client, 1)
-
-    # User1은 저장·정규화까지 끝났지만(§8.3-1) 모델은 아직 한 번도 불리지 않았다.
-    assert llm.call_count(AI2_PROMPT_KEY) == 0
-    assert (await client.post("/api/branch/1/ai2")).status_code == 409
-    assert llm.call_count(AI2_PROMPT_KEY) == 0
-    assert (
-        await session.execute(select(tables.Generation))
-    ).scalars().all() == []
-
-    await client.post("/api/branch/1/sidecar", json={"choice": "none"})
-    await client.post("/api/branch/1/ai2")
-    assert llm.call_count(AI2_PROMPT_KEY) == 1
-
-
-async def test_nt16_sidecar_row_exists_before_the_first_call(
-    client: AsyncClient, session: AsyncSession, llm: FakeLLM
-) -> None:
-    """시간 순서를 저장물로도 확인한다 — sidecar 행이 generations보다 먼저 존재한다."""
-    await helpers.reach_branch_block(client, "P00")
-    await _reach_ai2(client, 1)
-    sidecar = (await session.execute(select(tables.SidecarEntry))).scalars().one()
-    assert sidecar is not None
-    await client.post("/api/branch/1/ai2")
-    assert llm.call_count(AI2_PROMPT_KEY) == 1
-
-
-# --------------------------------------------------------------------------- #
-# NT-11 — normalization 전 조건 동일 + 저장
-# --------------------------------------------------------------------------- #
-
-
-async def test_nt11_normalization_is_stored_with_raw_and_normalized(
-    client: AsyncClient, session: AsyncSession
-) -> None:
-    await helpers.reach_branch_block(client, "P00")
-    await _reach_ai2(client, 1)
-
-    turn = (
-        await session.execute(select(tables.Turn).where(tables.Turn.role == "user1"))
-    ).scalars().one()
-    row = (await session.execute(select(tables.Normalization))).scalars().one()
-
-    assert fernet.decrypt(turn.text) == REFERRING_USER1, "원문은 그대로 보존된다"
-    normalized = fernet.decrypt(turn.text_normalized)
-    proposition = dossier_loader.load("P00").derivation.referent_map[0].proposition
-    assert proposition in normalized, "지시 대상이 복원되어야 한다"
-    assert REFERRING_USER1 in normalized, "원문 병기(부록 A.3)"
-    assert row.applied is True
-    assert row.matched_pattern_id == "NP-01"
-    assert row.referent_id == "R-01"
-
-
-async def test_nt11_same_rule_in_every_condition(
-    client: AsyncClient, session: AsyncSession
-) -> None:
-    """§6.4 — 전 조건 동일 규칙. 네 branch(=네 조건)에서 같은 입력은 같은 판정이다."""
-    await helpers.reach_branch_block(client, "P00")
-    for index in range(1, 5):
-        await _reach_ai2(client, index)
-        await client.post(f"/api/branch/{index}/ai2")
-        await _finish_branch(client, index)
-
-    rows = (
-        await session.execute(
-            select(tables.Normalization, tables.Branch.condition).join(
-                tables.Branch, tables.Normalization.branch_id == tables.Branch.id
-            )
-        )
-    ).all()
-    assert len(rows) == 4
-    conditions = {condition for _row, condition in rows}
-    assert conditions == {williams_condition("P00", index) for index in range(1, 5)}
-    assert {(row.applied, row.matched_pattern_id, row.referent_id) for row, _ in rows} == {
-        (True, "NP-01", "R-01")
-    }
-
-
-async def test_normalization_result_reaches_the_payload(
-    client: AsyncClient, llm: FakeLLM
-) -> None:
-    """§6.2 ③ — payload에 실리는 것은 **정규화본**이다."""
-    await helpers.reach_branch_block(client, "P00")
-    await _reach_ai2(client, 1)
-    await client.post("/api/branch/1/ai2")
-
-    proposition = dossier_loader.load("P00").derivation.referent_map[0].proposition
-    payload = llm.sent_texts(AI2_PROMPT_KEY)[0]
-    assert proposition in payload
-
-
-# --------------------------------------------------------------------------- #
-# NT-15 — audit 재구성 (§8.4)
-# --------------------------------------------------------------------------- #
-
-
-async def test_nt15_clean_path(client: AsyncClient, session: AsyncSession) -> None:
-    await helpers.reach_branch_block(client, "P00")
-    await _reach_ai2(client, 1)
-    await client.post("/api/branch/1/ai2")
-
-    record = await reconstruct_path(session)
-    assert record["path"] == "clean"
-    assert (record["attempts"], record["final_attempt"]) == (1, 1)
-    assert (record["main_calls"], record["validator_calls"]) == (1, 1)
-    assert record["violations"] == []
-    assert record["checker_skipped"] is False
-
-
-async def test_nt15_regenerated_path(
-    client: AsyncClient, session: AsyncSession, llm: FakeLLM
-) -> None:
-    """§6.5 — 위반 1회 → 같은 정책으로 재생성 → 통과."""
-    llm.stub(
-        AI2_PROMPT_KEY,
-        "어느 쪽이 더 필요하세요? 아니면 다른 방식이 좋을까요?",  # R-3 위반(질문 2개)
-        "말씀하신 범위 안에서 이어가겠습니다.",
+    """§8.4 — 호출 1건 = 1행. 자산 버전·파라미터가 함께 남는다."""
+    await _run_focal_ai2(client, "비교만 해줘")
+    calls = (await session.execute(select(tables.LlmCall))).scalars().all()
+    assert len(calls) == llm.call_count(prompts.AI2_PROMPT_KEY) + llm.call_count(
+        prompts.CHECKER_PROMPT_KEY
     )
-    await helpers.reach_branch_block(client, "P00")
-    await _reach_ai2(client, 1)
-    await client.post("/api/branch/1/ai2")
-
-    record = await reconstruct_path(session)
-    assert record["path"] == "regenerated"
-    assert (record["attempts"], record["final_attempt"]) == (2, 2)
-    assert record["main_calls"] == 2
-    assert record["text"] == "말씀하신 범위 안에서 이어가겠습니다."
-
-    rejected = [row for row in await _generations(session) if not row.final]
-    assert [item["rule"] for item in rejected[0].rule_violations] == ["R-3"]
-    assert rejected[0].output_text is not None, "기각된 초안 원문이 남아야 한다"
+    for call in calls:
+        assert call.request_id and call.status
+        assert call.params, "생성 파라미터가 기록되지 않았다"
 
 
-async def test_nt15_fallback_after_second_violation(
-    client: AsyncClient, session: AsyncSession, llm: FakeLLM
-) -> None:
-    """§9.1 — 재생성 후에도 위반 → neutral_fallback + violation 기록."""
-    llm.stub(AI2_PROMPT_KEY, "어느 쪽이세요? 아니면 다른 쪽일까요?")  # 매번 R-3 위반
-    await helpers.reach_branch_block(client, "P00")
-    await _reach_ai2(client, 1)
-    response = await client.post("/api/branch/1/ai2")
-    assert response.status_code == 200
-
-    record = await reconstruct_path(session)
-    assert record["path"] == "fallback"
-    assert record["attempts"] == 2, "재생성까지 시도한 뒤에 fallback이다"
-    assert record["main_calls"] == 2
-    assert record["violations"] == ["R-3"]
-    assert record["text"] == dossier_loader.load("P00").derivation.neutral_fallback
-    # 참가자 화면에도 그 텍스트가 그대로 뜬다(§4.7 — 경로는 구분되지 않는다).
-    assert (await helpers.state(client))["data"]["ai2"] == record["text"]
+# --------------------------------------------------------------------------- #
+# NT-25 — fixture 러너 (§10.1)
+# --------------------------------------------------------------------------- #
 
 
-async def test_nt15_fallback_after_call_failure(
-    client: AsyncClient, session: AsyncSession, llm: FakeLLM
-) -> None:
-    """§9.1 — AI2 timeout·API 오류 → 동일 request id 1회 retry → 실패 시 fallback."""
-    llm.fail(AI2_PROMPT_KEY)
-    await helpers.reach_branch_block(client, "P00")
-    await _reach_ai2(client, 1)
-    response = await client.post("/api/branch/1/ai2")
-    assert response.status_code == 200
+async def test_integrity_fixture_v2_is_deterministic(session: AsyncSession) -> None:
+    """§10.1 — 규칙 계층·alt_overlap·checker 블록 전부 100%."""
+    from tests import fixture_runner
 
-    record = await reconstruct_path(session)
-    assert record["path"] == "fallback"
-    assert record["attempts"] == 1, "호출 실패는 재생성 대상이 아니다 — 이미 재시도했다"
-    assert record["call_errors"] == 1
-    assert record["violations"] == ["call_failed"]
-    assert record["text"] == dossier_loader.load("P00").derivation.neutral_fallback
-
-
-async def test_retry_reuses_the_same_request_id(
-    client: AsyncClient, session: AsyncSession, llm: FakeLLM
-) -> None:
-    """§9.1 — "동일 request id 1회 retry". 재시도가 새 논리 요청이 되지 않는다."""
-    llm.fail(AI2_PROMPT_KEY)
-    await helpers.reach_branch_block(client, "P00")
-    await _reach_ai2(client, 1)
-    await client.post("/api/branch/1/ai2")
-
-    request_ids = {call.request_id for call in llm.calls if call.prompt_key == AI2_PROMPT_KEY}
-    assert len(request_ids) == 1, "재시도가 request id를 바꿨다"
-    rows = (await session.execute(select(tables.LlmCall))).scalars().all()
-    assert len([row for row in rows if row.role == "main"]) == 1, "호출 1건 = llm_calls 1행"
-
-
-async def test_checker_failure_is_recorded_and_does_not_block(
-    client: AsyncClient, session: AsyncSession, llm: FakeLLM
-) -> None:
-    """§9.1 — checker timeout·파싱 실패 → 규칙 계층만으로 판정 + `checker_skipped`."""
-    llm.fail(CHECKER_PROMPT_KEY)
-    await helpers.reach_branch_block(client, "P00")
-    await _reach_ai2(client, 1)
-    response = await client.post("/api/branch/1/ai2")
-    assert response.status_code == 200
-
-    record = await reconstruct_path(session)
-    assert record["path"] == "clean", "checker 불능이 정상 생성물을 fallback으로 떨어뜨리지 않는다"
-    assert record["checker_skipped"] is True
-    assert record["validator_calls"] == 1
-
-
-async def test_checker_violation_triggers_regeneration(
-    client: AsyncClient, session: AsyncSession, llm: FakeLLM
-) -> None:
-    """§6.5 — 규칙은 통과했지만 checker가 잡은 경우에도 재생성 1회."""
-    from app.llm import fake_llm
-
-    llm.stub(
-        AI2_PROMPT_KEY,
-        fake_llm.FIXTURE_DRAFTS["expansion"],  # checker가 expansion으로 잡는다
-        "말씀하신 범위 안에서 이어가겠습니다.",
-    )
-    await helpers.reach_branch_block(client, "P00")
-    await _reach_ai2(client, 1)
-    await client.post("/api/branch/1/ai2")
-
-    record = await reconstruct_path(session)
-    assert record["path"] == "regenerated"
-    rejected = [row for row in await _generations(session) if not row.final][0]
-    assert rejected.rule_violations == []
-    assert rejected.checker_result["violations"][0]["type"] == "expansion"
-
-
-async def test_regeneration_feedback_carries_types_not_spans(
-    client: AsyncClient, llm: FakeLLM
-) -> None:
-    """§6.5 재생성 피드백에 위반 **유형만** 실린다 — span에는 금지 문자열이 들어 있을 수 있다."""
-    llm.stub(AI2_PROMPT_KEY, "어느 쪽이세요? 아니면 다른 쪽일까요?")
-    await helpers.reach_branch_block(client, "P00")
-    await _reach_sidecar(client, 1)
-    await client.post(
-        "/api/branch/1/sidecar",
-        json={"choice": "has", "free_text": "비공개기록에타", "relevance": 5},
-    )
-    await client.post("/api/branch/1/ai2")
-
-    second = llm.sent_texts(AI2_PROMPT_KEY)[1]
-    assert "R-3" in second, "재생성 요청에 위반 유형이 실려야 한다"
-    assert "비공개기록에타" not in second
-
-
-async def test_audit_records_asset_versions(
-    client: AsyncClient, session: AsyncSession
-) -> None:
-    """§8.4 — 자산 버전·hash가 호출 기록에 남아야 재현이 가능하다."""
-    await helpers.reach_branch_block(client, "P00")
-    await _reach_ai2(client, 1)
-    await client.post("/api/branch/1/ai2")
-
-    call = (
-        await session.execute(select(tables.LlmCall).where(tables.LlmCall.role == "main"))
-    ).scalars().one()
-    assert call.prompt_hash and len(call.prompt_hash) == 64
-    assert call.params["prompt_config_version"] == "prompt_config_v1"
-    assert call.params["normalization_patterns_version"] == "normalization_patterns_v1"
-    assert call.params["temperature"] == 0.4
-    assert call.request_id
+    report = await fixture_runner.run_integrity_fixture(session)
+    breaches = report.gate_failures(fixture_runner.INTEGRITY_THRESHOLDS)
+    assert breaches == [], f"fixture 미달: {breaches}\n{[f.id for f in report.failures()]}"
+    assert set(report.blocks) == {"R", "A", "C"}, "블록 A(alt_overlap)가 빠졌다"

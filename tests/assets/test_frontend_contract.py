@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from app.assets import dossier_loader, rating_items, screen_copy
+from app.assets import dossier_loader, pairwise_items, rating_items, screen_copy
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_SRC = REPO_ROOT / "frontend" / "src"
@@ -67,31 +67,56 @@ def test_nt13_no_secrets_in_frontend_sources() -> None:
             assert token not in text, f"{path.name}: 비밀 문자열 {token}"
 
 
+def _asset_texts() -> list[str]:
+    """번들에 있으면 안 되는 자산 원문 전부 (§1.2 · NT-13).
+
+    v2에서 목록이 늘었다: 조립된 자극 4종은 물론 **R/U/Q segment**도 포함한다 — segment가
+    번들에 있으면 클라이언트가 대안 자극을 스스로 조립할 수 있고, 그건 NT-31을 우회한다.
+    """
+    dossier = dossier_loader.load("P00")
+    return [
+        *dossier.all_stimuli().values(),
+        *(dossier.stimulus.segment(key) for key in dossier_loader.SEGMENT_KEYS),
+        dossier.stimulus.neutral_fallback,
+        *(item.text for item in rating_items.load().items),
+        *(
+            item.text
+            for entry in pairwise_items.load().sets.values()
+            for item in entry.items
+        ),
+        screen_copy.SIDECAR_Q1,
+        screen_copy.SIDECAR_Q2,
+        screen_copy.SIDECAR_Q3,
+        screen_copy.CHECKPOINT_VERIFY_INTRO,
+        screen_copy.USER1_INSTRUCTION,
+    ]
+
+
 def test_nt13_no_stimulus_or_item_text_in_frontend_sources() -> None:
     """자극·문항은 **서버가 화면마다** 내려준다 — 번들에 사전 로드하지 않는다."""
-    dossier = dossier_loader.load("P00")
-    stimuli = [dossier.stimulus(condition) for condition in dossier_loader.CONDITIONS]
-    item_texts = [item.text for item in rating_items.RATING_ITEMS]
-    sidecar_texts = [
-        screen_copy.SIDECAR_QUESTION_REPLY,
-        screen_copy.SIDECAR_QUESTION_NO_REPLY,
-    ]
     for path in _source_files():
         text = path.read_text(encoding="utf-8")
-        for asset_text in [*stimuli, *item_texts, *sidecar_texts, dossier.derivation.neutral_fallback]:
+        for asset_text in _asset_texts():
             assert asset_text not in text, f"{path.name}: 자산 원문이 클라이언트에 있다"
+
+
+def test_nt31_no_condition_label_in_frontend_sources() -> None:
+    """§1.2 · NT-31 — 조건 라벨·구성 원리가 참가자 코드에 없다.
+
+    "C1"–"C4"·"uptake"·"elicitation"·`focal_condition` 같은 문자열이 번들에 있으면, 화면이
+    조건을 알고 있다는 뜻이거나 언젠가 알게 되는 경로가 열린 것이다.
+    """
+    banned = ('"C1"', '"C2"', '"C3"', '"C4"', "focal_condition", "alt_order", "pair_sides")
+    for path in _source_files():
+        text = path.read_text(encoding="utf-8")
+        for token in banned:
+            assert token not in text, f"{path.name}: 조건 라벨 {token}"
 
 
 @pytest.mark.skipif(not FRONTEND_DIST.is_dir(), reason="빌드 산출물 없음 (npm run build)")
 def test_nt13_built_bundle_carries_no_asset_text() -> None:
     """빌드 산출물에도 없어야 한다 — 소스에 없어도 import 경로로 들어올 수 있다."""
-    dossier = dossier_loader.load("P00")
-    needles = [
-        dossier.stimulus("C1"),
-        dossier.derivation.neutral_fallback,
-        rating_items.RATING_ITEMS[0].text,
-        screen_copy.SIDECAR_QUESTION_REPLY,
-    ]
+    needles = _asset_texts()
     for path in sorted(FRONTEND_DIST.rglob("*")):
         if path.suffix not in {".js", ".css", ".html"}:
             continue
@@ -110,13 +135,13 @@ def test_frontend_never_derives_the_next_screen_itself() -> None:
 
 
 def test_console_page_is_not_part_of_the_participant_bundle() -> None:
-    """§2.7·NT-13 — 연구자 콘솔은 별도 정적 파일이다(빌드 대상 아님).
+    """§2.1·NT-13 — 연구자 콘솔은 별도 정적 파일이다(빌드 대상 아님).
 
     콘솔이 참가자 SPA 안으로 들어오면 조건 라벨·researcher_only·sidecar를 다루는 코드가
     참가자 번들에 실린다. 경계를 파일 위치로 지킨다.
     """
     console = REPO_ROOT / "frontend" / "console" / "index.html"
-    assert console.is_file(), "콘솔 페이지가 없다 (§4.12 R1–R4)"
+    assert console.is_file(), "콘솔 페이지가 없다 (§4.13 R1–R4)"
     assert not (FRONTEND_SRC / "console").exists(), "콘솔이 참가자 빌드 트리에 있다"
     for path in _source_files():
         text = path.read_text(encoding="utf-8")
@@ -126,14 +151,9 @@ def test_console_page_is_not_part_of_the_participant_bundle() -> None:
 def test_console_page_carries_no_secrets_or_asset_text() -> None:
     """콘솔도 값은 전부 `/admin/*` JSON에서 받는다 — 파일 자체에는 자산·비밀이 없다."""
     text = (REPO_ROOT / "frontend" / "console" / "index.html").read_text(encoding="utf-8")
-    dossier = dossier_loader.load("P00")
     for banned in ("OPENROUTER_API_KEY", "FERNET_KEY", "ADMIN_PASS", "sk-or-"):
         assert banned not in text
-    for asset_text in (
-        dossier.stimulus("C1"),
-        dossier.derivation.neutral_fallback,
-        rating_items.RATING_ITEMS[0].text,
-    ):
+    for asset_text in _asset_texts():
         assert asset_text not in text
 
 
