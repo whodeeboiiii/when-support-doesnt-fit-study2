@@ -52,6 +52,8 @@ interface PresurveyItem {
   options?: { value: string; label: string }[]
   scale_min?: number
   scale_max?: number
+  scale_min_label?: string
+  scale_max_label?: string
 }
 
 export function Presurvey({ state, onState }: ScreenProps) {
@@ -106,6 +108,8 @@ export function Presurvey({ state, onState }: ScreenProps) {
                 <LikertRow
                   min={item.scale_min ?? 1}
                   max={item.scale_max ?? 7}
+                  minLabel={item.scale_min_label}
+                  maxLabel={item.scale_max_label}
                   value={(values[item.position] as number) ?? null}
                   onChange={(value) => setValue(item.position, value)}
                 />

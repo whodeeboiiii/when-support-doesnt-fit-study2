@@ -105,3 +105,40 @@ export const api = {
       payload,
     }).catch(() => undefined),
 }
+
+/**
+ * 개발용 API (서버가 DEV_MODE + 로컬 DB일 때만 존재한다 — `backend/app/api/dev.py`).
+ *
+ * 배포 빌드에도 이 코드는 들어가지만, 서버에 경로가 없으면 `status()`가 null을 돌려주고
+ * 개발 바는 아무것도 그리지 않는다. **존재 여부를 클라이언트가 판단하지 않는다** — 빌드
+ * 플래그로 가르면 "배포인데 개발 빌드"라는 조합이 생긴다.
+ */
+export interface DevSessionRow {
+  participant_no: string
+  ss_state: string
+  branch_index: number | null
+  status: string
+}
+
+export interface DevStatus {
+  participants: string[]
+  default_participant: string
+  sessions: DevSessionRow[]
+}
+
+export const dev = {
+  status: async (): Promise<DevStatus | null> => {
+    try {
+      return await request<DevStatus>('/api/dev/status')
+    } catch {
+      return null
+    }
+  },
+
+  /** 참가자 산출물을 지우고 새 접속 코드를 발급한다. 접속은 P0에서 사람이 한다. */
+  reset: (participantNo: string) =>
+    post<{ participant_no: string; access_code: string; deleted: Record<string, number> }>(
+      '/api/dev/reset',
+      { participant_no: participantNo },
+    ),
+}

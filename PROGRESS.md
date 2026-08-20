@@ -250,6 +250,120 @@ tests/{unit/test_normalization.py, integration/{test_evidence_boundary,test_ai2_
 
 ---
 
+## NS4 — 콘솔·마감 (완료, 2026-08-16)
+
+### 완료 기준 대비 결과
+
+| 기준 (§11.1 NS4 행) | 결과 | 근거 |
+|---|---|---|
+| R1 세션 관리 | ✅ | `GET /admin/participants`(참가자·sequence·dossier lock·세션 일람·모집 게이트) + 세션 생성·코드 재발급·SS91 버튼 + `GET /admin/costs`(§2.8 usage 합산) |
+| R2 라이브 모니터 | ✅ | `GET /admin/monitor/{id}` — SS·B·화면, transcript(복호화), 이벤트 스트림, **AI2 파이프라인 상태**(generating/clean/regenerated/fallback), 3s 폴링 |
+| R3 review 뷰 | ✅ | `GET /admin/review/{id}` — P10과 같은 4열 + sidecar·평정·flag·researcher_only |
+| R4 dossier·자극 뷰어 | ✅ | `GET /admin/dossier/{pno}` — 3층·AI1 4종·fallback·referent_map·hash·lock (읽기 전용, 쓰기 경로 0건) |
+| notify | ✅ | §2.8 5종 전부 발화 경로 확보 — abort 트리거 신설 + 5xx 누적 미들웨어(`main.py`) 배선 |
+| export 스크립트 | ✅ | `analysis/export_trajectory.py`(participant × condition trajectory) + `analysis/tagging_flags.py`(first-opportunity·carryover) |
+| QA 워크스루 (부록 D.1 리허설) | ✅ | `tests/qa_rehearsal.py` + `scripts/run_qa_rehearsal.py` — 자동 22건 통과·수동 2건·실패 0건 |
+| soft launch 준비 | ✅ | `backend/app/core/freeze.py` + `scripts/freeze_study_version.py` — §11.3 모집 게이트 점검 + §10.5 `study_version` 1회 동결 |
+| **NT-26** flag non-blocking·abort만 SS90·전 콘솔 행위 audit | ✅ | `tests/integration/test_console.py` — flag 전후 상태 동일, abort→SS90+참가자 안내, 엔드포인트 9종 호출마다 audit 증가 |
+| **NT-28** 🔒 평문 저장 0건·복호화 audit | ✅ | `tests/integration/test_encryption_audit.py` — 전 테이블 덤프 훑기 + Fernet 토큰 검사 + 복호화 지점 **정적 열거**(4곳) |
+| **NT-30** export 비식별·자유 텍스트 opt-in 분리·태깅 플래그 열 | ✅ | `tests/integration/test_export.py` — 기본 실행 전 파일에 문장 0건, `--include-text`만 `free_text.csv` 생성 |
+| **NT-13** 번들 비밀 0건 실측 | ✅ | 빌드 산출물 대상 검사 + 콘솔 페이지 분리 검사 (`tests/assets/test_frontend_contract.py`) |
+| 부록 D.1 리허설 완료 | ✅ | 아래 [리허설 결과](#부록-d1-리허설-결과) |
+| Definition of Done 전 항목 (§11.3) | ✅ 10/11 | 마지막 줄(PH-IRB·PH-03 착지 전 모집 금지)은 **자산·IRB 착지 대기** — 게이트 점검은 구현됨 |
+| 테스트 전체 green | ✅ | **508 passed** (기준선 188 → 400 → 444 → 508. 불감소) |
+
+### 검증 명령
+
+```bash
+./backend/.venv/bin/python -m pytest -q                          # 508 passed
+DEV_MODE=true ./backend/.venv/bin/python scripts/run_qa_rehearsal.py --out reports/qa_rehearsal.md
+DEV_MODE=true ./backend/.venv/bin/python scripts/freeze_study_version.py --check   # 모집 게이트
+DEV_MODE=true ./backend/.venv/bin/python analysis/export_trajectory.py --actor <이름> --out exports/
+#   자유 텍스트가 필요하면 --include-text (free_text.csv 분리 생성) · --coding <csv>로 carryover 플래그
+```
+
+콘솔은 `http://localhost:8000/admin/console` (Basic auth — `ADMIN_USER`/`ADMIN_PASS`).
+
+### 부록 D.1 리허설 결과
+
+자동 22건 통과 · 수동 2건 · 실패 0건.
+
+| D.1 체크리스트 행 | 확인 방식 |
+|---|---|
+| 4 branch × 종결 3종 | reply×2 · no_reply×1 · end×1, 조건 C1–C4 전수, SS00→SS07 완주 |
+| 새로고침·재접속·코드 재발급·중복 제출·flag·abort 각 1회 | 항목 D1-2a~2g (SS91 처리 포함) |
+| DEV_MODE·실모델 각 1회 | DEV_MODE ✅ / **실모델은 수동** — `scripts/run_fixtures.py --real` + [확인 4] 비용 기록 |
+| R1–R4 전 기능, notify 5종 발화 | 엔드포인트 6종 200 + 5종 발화 확인(2종은 감시 함수 직접 호출) |
+| 문안 [정본] 초안 대조 | [정본] 4항목·[제안] 20항목 명세서 원문 일치 (윤문 0건) |
+
+수동으로 남은 2건: **실모델 1회**(실키·비용), **렌더 수준 확인**(NT-19 — JS 러너 미도입).
+
+### 실서버 확인 (DEV_MODE)
+
+P00 세션을 실서버(`localhost:8000`)에서 끝까지 돌려 콘솔 경로를 확인했다.
+
+- R2: `SS04/P7`, branch 1 = `C4 · clean`, transcript 3턴(ai1·user1·ai2) 복호화 표시
+- flag 후 참가자 화면 `P7` 그대로 — 상태 불변(D-07)
+- R3: sidecar·flag 사유 표시, abort 후 참가자 화면 = 중단 안내 문안
+- `GET /costs`: main 2건 / validator 2건 usage 합산
+- SQLite 파일 바이트 검사 — User1·sidecar·flag 사유·중단 사유 평문 **0건**, `audit_logs` view 9 · decrypt 4 · flag 1 · abort 1 · code_issue 4
+
+### 구현물 (NS4 추가분)
+
+```
+backend/app/api/
+  admin.py             R1 목록·비용 + flag(non-blocking)·abort(SS90)·dropout(SS91) + 모집 게이트 표시
+  admin_views.py       R2 모니터 · R3 review · R4 dossier (복호화 지점 ① — 요청 단위 audit)
+  console.py           `/admin/console` 정적 콘솔 서빙 (Basic auth)
+backend/app/core/freeze.py     §11.3 모집 게이트 점검 + §10.5 study_version 1회 동결
+backend/app/main.py            5xx 누적 알림 미들웨어(§2.8) + NS4 라우터 배선
+frontend/console/index.html    R1–R4 콘솔 1장 (빌드 없음 — 참가자 번들과 분리)
+analysis/export_trajectory.py  participant × condition trajectory + 4개 부속 표
+analysis/tagging_flags.py      first_opportunity(기계) · carryover_sensitive(코딩 입력)
+scripts/{run_qa_rehearsal,freeze_study_version}.py
+tests/qa_rehearsal.py
+tests/{integration/{test_console,test_export,test_encryption_audit,test_freeze,test_qa_rehearsal}.py,
+       unit/test_tagging_flags.py}
+```
+
+### 설계 메모 (읽는 사람이 헷갈릴 지점)
+
+- **콘솔은 참가자 SPA에 넣지 않았다.** 빌드 없는 정적 HTML 1장을 Basic auth 뒤에서 서빙한다. 한 번들이면 조건 라벨·researcher_only·sidecar를 다루는 코드가 참가자 번들에 실릴 수 있는 경로가 생기고(NT-13), 세션 중 콘솔 수정이 참가자 번들 재빌드를 요구한다.
+- **R3는 P10 조립기를 재사용하지 않는다.** 참가자 화면은 sidecar를 **빼야** 하고(PH-02) 연구자 화면은 **넣어야** 한다. 같은 함수에 플래그를 달면 언젠가 참가자 쪽에서 그 플래그가 켜진다.
+- **복호화 audit은 값 단위가 아니라 요청 단위**다. 한 화면이 40개 필드를 복호화한다고 40행을 남기면 접근 이력이 잡음이 된다. 남기는 것은 "누가 언제 무엇을 열었는가"뿐이고 값은 audit에 옮겨 적지 않는다.
+- **AI2 파이프라인 상태는 저장하지 않고 `generations`에서 읽는다.** 표시용 상태 컬럼을 만들면 그 값이 §8.4 audit과 어긋날 수 있다. 재구성의 정본은 언제나 generations다(NT-15).
+- **`carryover_sensitive`는 코딩 없이는 빈 칸이다.** "실질 동일 내용이 이전 branch에서 표현됐는가"는 사람의 판정이고(§7.6), 문자열 유사도로 대신하면 그 오차가 결과 변수(disposition·downstream)와 상관된다. 빈 칸은 "아니오"가 아니다.
+- **기본 export는 복호화하되 텍스트를 쓰지 않는다.** §7.4가 요구하는 텍스트 **길이**를 내려면 복호화가 필요하다. 그래서 `--include-text`는 "복호화 여부"가 아니라 "문장을 파일에 쓰는지"의 스위치이고, audit `decrypt`는 두 경우 모두 남는다.
+- **모집 게이트는 표시만 한다.** PH-03·PH-IRB 미착지 상태에서도 세션 생성은 된다(P00 리허설이 막히면 안 된다). 시작 여부는 연구자가 정한다 — 시스템이 판정하지 않는다는 D-10과 같은 태도다.
+
+---
+
+## 확인 필요 (NS4) — 명세서에 없어 내가 정한 사항
+
+| # | 정한 것 | 명세서 상태 | 반려 시 비용 |
+|---|---|---|---|
+| ① | **연구자 콘솔을 빌드 없는 정적 HTML 1장으로** 분리(`frontend/console/index.html`) | §2.1은 Participant UI만 React로 지정, §2.0 다이어그램은 콘솔을 FastAPI 쪽에 그린다 | 낮음 (React로 옮기려면 두 번째 진입점 필요) |
+| ② | `GET /admin/participants`·`GET /admin/console` 신설 | §8.2 표에 없음. §4.12 R1 화면이 요구 | 낮음 |
+| ③ | 복호화 audit을 **요청 단위 1행**으로 | §2.9는 "복호화 조회는 audit 기록"만 | 낮음 (값 단위로 바꾸면 audit 폭증) |
+| ④ | R2 모니터가 매 폴링(3s)마다 audit 2행을 남긴다 | §2.7은 "모든 콘솔 조회" 기록만 | 중간 — 3s 폴링이면 세션 1건에 수백 행. 화면 열람 세션 단위로 묶는 대안 있음 |
+| ⑤ | AI2 상태 라벨 5종(`generating`/`pending`/`clean`/`regenerated`/`fallback`) | §4.12는 "생성 중/재생성/fallback" 3종 | 낮음 |
+| ⑥ | `events.type` 3종 신설(`researcher_flag`·`researcher_abort`·`researcher_dropout`) | §8.1은 "beacon·flag(사유🔒)·abort"라고만 | 낮음 |
+| ⑦ | dropout은 **알림 없음** | §2.8 표에 트리거가 없다(abort만 있음) | 낮음 |
+| ⑧ | dropout에는 사유를 받지 않는다 | §8.2 `POST /dropout`에 body 미지정 | 낮음 |
+| ⑨ | export 파일 5종 분할(trajectory·ratings·presurvey·generation_integrity·events) + opt-in `free_text` | §7.6은 "플래그 열로 제공"만 | 낮음 |
+| ⑩ | 기본 export도 복호화한다(텍스트 길이 — §7.4). opt-in은 **파일 기록** 스위치 | §2.9·NT-30은 열 분리만 요구 | 낮음 |
+| ⑪ | `first_opportunity = (branch_index == 1)` | §7.6은 "각 branch가 첫 표현 기회였는지 기록" | 낮음 — 같은 사건 4회 반복이므로 기계적으로 결정된다 |
+| ⑫ | `carryover_sensitive`는 코딩 CSV가 있을 때만 산출, 없으면 빈 칸 | §7.6은 산출 방법을 지정하지 않음 | 중간 — 자동 추정을 원하면 유사도 판정 규칙을 명세해야 한다 |
+| ⑬ | export에서 `events.payload.user_agent` 제거 | §4.0은 저장을 지시, §7.6은 비식별 요구 | 낮음 |
+| ⑭ | `study_version` 동결은 **스크립트 전용**(콘솔 버튼 없음) | §10.5는 주체·수단 미지정 | 낮음 |
+| ⑮ | 모집 게이트 판정 항목 4종(PH-03·PH-IRB-1·2·PH-01) | §11.3은 "PH-IRB 계열·PH-03"만 명시 (PH-01은 내가 추가) | 낮음 |
+| ⑯ | notify 5종 중 2종(provider 문자열 변경·5xx 누적)은 리허설에서 **감시 함수 직접 호출**로 확인 | 부록 D.1은 "notify 5종 발화 확인" | 낮음 — 세션 조작으로는 만들 수 없는 사건이다 |
+| ⑰ | 서버 5xx 알림을 **미들웨어**에서 센다 | §2.8은 트리거만 지정 | 낮음 |
+
+**NS3 ⑬의 후속**: 복호화 지점이 실제로는 4곳이다(콘솔·export·R-1/R-2 대조·AI2 payload용 정규화본 읽기). `tests/integration/test_encryption_audit.py`가 이 넷을 **정적으로 열거**하므로, 다섯 번째가 생기면 테스트가 먼저 깨진다. §2.9 문면("복호화 지점 2곳")과의 정합은 PI 확인 사항으로 남긴다.
+
+---
+
 ## 확인 필요 (NS3) — 명세서에 없어 내가 정한 사항
 
 | # | 정한 것 | 명세서 상태 | 반려 시 비용 |
@@ -322,21 +436,22 @@ NS1을 진행하기 위해 필요했지만 명세서가 값을 고정하지 않�
 - `PH-01` 사전설문 **문항 원문·번역** — 구조·로더·계약 테스트는 NS2에서 착지했다. 원문만 넣으면 된다.
 - `PH-02` P10에서 sidecar 비표시 — 현재 비표시로 구현(PI 승인 대상).
 - `PH-05` normalization 패턴 **보강 확정** — 부록 A.3의 NP-01~03 초판이 NS3에서 자산으로 들어갔다. 파일럿에서 1회 보강한다.
-- `PH-IRB-1~7` 문안 — NS4·IRB 제출 시 착지.
+- `PH-IRB-1~7` 문안 — IRB 제출 시 착지. `screen_copy.CONSENT_TODO`·`DEBRIEF_TODO`가 자리를 잡고 있고, 모집 게이트(`core/freeze.py`)가 미착지 상태를 R1에 표시한다.
 - 부록 A.1·A.2 프롬프트 문안의 **PI 승인·lock** — 현재 `prompts/prompt_config_v1.json`은 [제안] 상태다(§1.4).
-- `[확인 4]` integrity checker 실모델 실행 시점·비용 — `scripts/run_fixtures.py --real`이 준비됐다(§10.1 "QA 직전 1회").
+- `[확인 4]` integrity checker 실모델 실행 시점·비용 — `scripts/run_fixtures.py --real`이 준비됐다(§10.1 "QA 직전 1회"). 부록 D.1 리허설의 수동 항목 D1-3b가 이것이다.
 - `[확인 1·2]` 모델 슬러그(`anthropic/claude-opus-4.8`·`openai/gpt-5.4`) 가용성과 provider 고정 문법 — 실호출 전 확인. DEV_MODE에서는 불요.
 - P00b(낮은 actionability 리허설 변형, 부록 A.6 "선택") 미작성.
-- SS90(연구자 abort)·SS91(dropout)은 **상태머신·화면까지만** 있고 API·콘솔은 NS4다. `POST /admin/sessions/{id}/{flag,abort,dropout}`·모니터·review·export 미구현.
+- **NT-19 렌더 검증** — 정적 검사만 걸려 있다. JS 러너(vitest) 도입 여부가 미결이고, 현재는 §10.2 워크스루에서 사람이 확인한다(리허설 수동 항목 D1-4b).
 
-## 다음 단계 — NS4 (콘솔·마감)
+## 다음 단계 — 구현 완료 이후 (운영·자산 착지)
 
-완료 기준(§11.1): 부록 D.1 리허설 완료, Definition of Done 전 항목.
+NS1–NS4 구현은 끝났다. 남은 것은 **코드가 아니라 자산·승인·운영**이다.
 
-1. **R1 세션 관리** — 참가자 목록·sequence 표시, 세션 생성·코드 발급(NS2 API 재사용), SS91 처리, dossier lock 상태, `GET /costs`(§2.8 usage 합산)
-2. **R2 라이브 모니터** — 3s 폴링, transcript·이벤트 스트림, flag(non-blocking) · abort(SS90) — NT-26
-3. **R3 review 뷰** — P10과 같은 4열 + sidecar·평정·flag·researcher_only(콘솔 전용 — `dossier_private`) 열람
-4. **R4 dossier·자극 뷰어** — 3층·AI1 4종·fallback·referent_map, hash·lock 시각
-5. **export** — `analysis/export_trajectory.py`·`tagging_flags.py`: participant × condition trajectory + first_opportunity·carryover 플래그, 자유 텍스트 열 opt-in 분리 (NT-30)
-6. 복호화 audit(NT-28) · 콘솔 전 행위 audit(NT-26) · 번들 비밀 0건 실측(NT-13)
-7. 부록 D.1 QA 리허설(P00) — 4 branch × 종결 3종, 재접속·코드 재발급·중복 제출·flag·abort 각 1회
+1. **본 모집 게이트 해소** — `DEV_MODE=true python scripts/freeze_study_version.py --check`가 현재 4건(PH-03 · PH-IRB-1 · PH-IRB-2 · PH-01)을 보고한다. 착지 순서: PH-IRB(제출·승인) → PH-01(사전설문 원문) → PH-03(dossier 실값·2인 판정·lock) → PH-04(배포 반입).
+2. **프롬프트 lock** — 부록 A.1·A.2 PI 승인 후 `prompt_config_v1.json` 동결, 그 뒤 실모델 fixture 1회(`--real`)와 [확인 4] 비용 기록.
+3. **QA 워크스루(§10.2)** — `scripts/run_qa_rehearsal.py`로 자동분을 돌리고, 수동 2건(실모델·렌더)을 사람이 채운다.
+4. **soft launch(§10.3)** — P01 세션 태깅 → 리뷰 회의 → [파일럿 확정] 파라미터 조정 → P02 전 동결(§1.4).
+5. **설계 동결(§10.5)** — soft launch 종료 시 `scripts/freeze_study_version.py --actor <이름>` 1회.
+6. **배포** — Railway 단일 서비스, `proto_v1` → `main_v1` schema 전환(§2.4), 환경변수 전 항목 설정, dossier 실값 반입(PH-04).
+
+미결 결정 대기: 위 [확인 필요 (NS4)](#확인-필요-ns4--명세서에-없어-내가-정한-사항) ①–⑰ 및 NS1–NS3의 목록. 연구 의미가 걸린 것은 NS4 ④·⑫, NS3 ①·⑬, NS2 ②·⑭ 여섯 건이다.

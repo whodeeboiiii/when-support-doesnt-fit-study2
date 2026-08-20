@@ -20,29 +20,47 @@ interface RowProps {
   max: number
   value: number | null
   onChange: (value: number) => void
+  /** 양 끝 앵커 (P9는 화면 상단에 따로 그리고, P2는 문항마다 여기서 그린다). */
+  minLabel?: string
+  maxLabel?: string
 }
 
 /** 선택 표시는 **채움**이다 — 7칸에 체크 아이콘을 넣으면 숫자 가독성만 떨어진다. */
-export function LikertRow({ min, max, value, onChange }: RowProps) {
+export function LikertRow({ min, max, value, onChange, minLabel, maxLabel }: RowProps) {
   const points = Array.from({ length: max - min + 1 }, (_, index) => min + index)
   return (
-    <div className="mt-2 flex gap-1" role="radiogroup">
-      {points.map((point) => (
-        <button
-          key={point}
-          type="button"
-          role="radio"
-          aria-checked={value === point}
-          onClick={() => onChange(point)}
-          className={`h-11 flex-1 rounded-lg border text-base ${
-            value === point
-              ? 'border-ink bg-ink font-semibold text-white'
-              : 'border-edge bg-white text-gray-700'
-          }`}
-        >
-          {point}
-        </button>
-      ))}
+    <div className="mt-2">
+      <div className="flex gap-1" role="radiogroup">
+        {points.map((point) => (
+          <button
+            key={point}
+            type="button"
+            role="radio"
+            aria-checked={value === point}
+            aria-label={
+              point === min && minLabel
+                ? `${point} ${minLabel}`
+                : point === max && maxLabel
+                  ? `${point} ${maxLabel}`
+                  : String(point)
+            }
+            onClick={() => onChange(point)}
+            className={`h-11 flex-1 rounded-lg border text-base ${
+              value === point
+                ? 'border-ink bg-ink font-semibold text-white'
+                : 'border-edge bg-white text-gray-700'
+            }`}
+          >
+            {point}
+          </button>
+        ))}
+      </div>
+      {(minLabel || maxLabel) && (
+        <div className="mt-1 flex justify-between text-xs text-gray-500">
+          <span>{minLabel}</span>
+          <span>{maxLabel}</span>
+        </div>
+      )}
     </div>
   )
 }

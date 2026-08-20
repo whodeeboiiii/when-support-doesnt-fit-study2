@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>연구자 콘솔 — NOT QUITE YES Study 2</title>
+<!--
+  구현명세서 §4.12 R1–R4 · §2.7.
+
+  이 페이지는 **빌드하지 않는다**. 참가자 SPA(frontend/src → dist)와 완전히 분리된 정적
+  HTML 1장이고, FastAPI가 Basic auth 뒤에서 그대로 서빙한다(`api/console.py`).
+  분리 이유 둘: ① 연구자 화면(조건 라벨·researcher_only·sidecar)이 참가자 번들에 들어갈 수
+  있는 경로를 아예 만들지 않는다(NT-13) ② 세션 중 콘솔을 고치는 일이 참가자 번들 재빌드를
+  요구하지 않는다.
+
+  값은 전부 `/admin/*` JSON 엔드포인트에서 온다. 이 파일에는 자산 원문도 비밀도 없다.
+-->
+<style>
+  :root { color-scheme: light; --line:#d8d8d4; --muted:#6b6b66; --bg:#faf9f7; --warn:#8a4b00; --bad:#8a1c1c; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.55 -apple-system, "Helvetica Neue", "Apple SD Gothic Neo", sans-serif; color:#1b1b19; background:var(--bg); }
+  header { display:flex; align-items:baseline; gap:16px; padding:14px 24px; border-bottom:1px solid var(--line); background:#fff; position:sticky; top:0; z-index:2; }
+  header h1 { font-size:15px; margin:0; font-weight:650; letter-spacing:-.01em; }
+  nav { display:flex; gap:4px; margin-left:auto; }
+  nav a { padding:5px 12px; border:1px solid var(--line); border-radius:6px; text-decoration:none; color:#1b1b19; background:#fff; }
+  nav a.on { background:#1b1b19; color:#fff; border-color:#1b1b19; }
+  main { padding:24px; max-width:1240px; }
+  h2 { font-size:14px; margin:0 0 12px; font-weight:650; }
+  section { margin-bottom:28px; }
+  table { border-collapse:collapse; width:100%; background:#fff; }
+  th, td { border:1px solid var(--line); padding:6px 9px; text-align:left; vertical-align:top; }
+  th { background:#f2f1ee; font-weight:600; white-space:nowrap; }
+  td.mono, .mono { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; }
+  button { font:inherit; padding:4px 10px; border:1px solid var(--line); background:#fff; border-radius:6px; cursor:pointer; }
+  button:hover { background:#f2f1ee; }
+  button.danger { border-color:#c9a3a3; color:var(--bad); }
+  input[type=text] { font:inherit; padding:4px 8px; border:1px solid var(--line); border-radius:6px; }
+  .muted { color:var(--muted); }
+  .warn { color:var(--warn); }
+  .bad { color:var(--bad); font-weight:600; }
+  .pill { display:inline-block; padding:1px 7px; border:1px solid var(--line); border-radius:999px; font-size:12px; background:#fff; }
+  .grid { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; }
+  .card { border:1px solid var(--line); background:#fff; border-radius:8px; padding:12px; }
+  .card h3 { margin:0 0 8px; font-size:13px; }
+  .turn { border-top:1px dashed var(--line); padding:7px 0; white-space:pre-wrap; }
+  .turn b { display:block; font-size:12px; color:var(--muted); font-weight:600; }
+  .code { font-family:ui-monospace, Menlo, monospace; font-size:20px; letter-spacing:.12em; }
+  .row { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .stream { max-height:320px; overflow:auto; border:1px solid var(--line); background:#fff; }
+  .empty { color:var(--muted); padding:8px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>연구자 콘솔</h1>
+  <span class="muted mono" id="ctx"></span>
+  <nav>
+    <a href="#/r1" data-view="r1">R1 세션</a>
+    <a href="#/r2" data-view="r2">R2 모니터</a>
+    <a href="#/r3" data-view="r3">R3 review</a>
+    <a href="#/r4" data-view="r4">R4 dossier</a>
+  </nav>
+</header>
+<main id="app"><p class="muted">불러오는 중…</p></main>
+
+<script>
+"use strict";
+// §2.7 R2 라이브 모니터는 3s 폴링 [파일럿 확정: SSE 전환 가능].
+const POLL_MS = 3000;
+const app = document.getElementById("app");
+const ctx = document.getElementById("ctx");
+let timer = null;
+
+const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+const short = (v) => (v ? String(v).slice(0, 8) : "");
+const time = (v) => (v ? String(v).slice(11, 19) : "");
+
+async function api(path, options) {
+  const response = await fetch(path, Object.assign({ credentials: "same-origin" }, options || {}));
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(response.status + " " + body.slice(0, 200));
+  }
+  return response.json();
+}
+const post = (path, body) =>
+  api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}) });
+
+function fail(error) {
+  app.innerHTML = '<p class="bad">요청 실패 — ' + esc(error.message) + "</p>";
+}
+
+// --------------------------------------------------------------- R1 세션 관리
+async function viewR1() {
+  const [data, cost] = await Promise.all([api("/admin/participants"), api("/admin/costs")]);
+  const rows = data.participants.map((p) => {
+    const sessions = p.sessions.map((s) => `
+      <div class="row" style="margin:2px 0">
+        <span class="pill mono">${esc(s.ss_state)}</span>
+        <span class="pill">${esc(s.status)}</span>
+        <span class="mono muted">${esc(short(s.session_id))}</span>
+        ${s.code_expired ? '<span class="warn">코드 만료</span>' : ""}
+        <button data-act="code" data-id="${esc(s.session_id)}">코드 재발급</button>
+        <button data-act="monitor" data-id="${esc(s.session_id)}">모니터</button>
+        <button data-act="review" data-id="${esc(s.session_id)}">review</button>
+        ${s.status === "active" ? `<button class="danger" data-act="dropout" data-id="${esc(s.session_id)}">SS91 처리</button>` : ""}
+      </div>`).join("") || '<span class="muted">세션 없음</span>';
+    const d = p.dossier;
+    return `<tr>
+      <td class="mono">${esc(p.participant_no)}</td>
+      <td class="mono">${esc(p.sequence_index)} · ${p.sequence.map(esc).join(" → ")}</td>
+      <td>${d.locked ? '<span class="pill">lock</span>' : '<span class="warn">미lock</span>'}
+          ${d.dummy ? '<span class="warn"> 더미</span>' : ""}
+          <div class="muted mono">${esc(d.version)} · ${esc(short(d.hash))}</div></td>
+      <td>${sessions}</td>
+      <td><button data-act="create" data-pno="${esc(p.participant_no)}">세션 생성</button></td>
+    </tr>`;
+  }).join("");
+
+  const gate = data.launch_gate.length
+    ? `<div class="card" style="margin-bottom:12px"><h3 class="warn">본 모집 게이트 — 미착지 ${data.launch_gate.length}건</h3>
+       ${data.launch_gate.map((b) => `<div class="muted">· <b>${esc(b.tag)}</b> ${esc(b.detail)}</div>`).join("")}
+       <div class="muted">P00 리허설·QA는 진행할 수 있습니다. 본 모집 시작은 위 항목 착지 후입니다(§11.3).</div></div>`
+    : '<div class="card" style="margin-bottom:12px"><h3>본 모집 게이트: 통과</h3></div>';
+  const frozen = data.study_version_frozen_at
+    ? `<span class="pill">설계 동결 ${esc(data.study_version_frozen_at)}</span>`
+    : '<span class="muted">설계 미동결 — soft launch 종료 시 `scripts/freeze_study_version.py` (§10.5)</span>';
+
+  app.innerHTML = `
+    <section>
+      <h2>참가자 · 세션 (§4.12 R1)</h2>
+      ${gate}
+      <div class="row">${frozen}</div>
+      <div id="issued"></div>
+      <table><thead><tr><th>번호</th><th>sequence</th><th>dossier</th><th>세션</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </section>
+    <section>
+      <h2>비용 (§2.8 — llm_calls 합산)</h2>
+      <table><thead><tr><th>역할</th><th>호출</th><th>prompt</th><th>completion</th><th>cost(USD)</th></tr></thead>
+      <tbody>${cost.by_role.map((r) => `<tr><td>${esc(r.role)}</td><td>${esc(r.calls)}</td>
+        <td>${esc(r.prompt_tokens)}</td><td>${esc(r.completion_tokens)}</td><td>${r.cost.toFixed(4)}</td></tr>`).join("")
+        || '<tr><td colspan="5" class="muted">호출 기록 없음</td></tr>'}</tbody></table>
+    </section>`;
+
+  app.onclick = async (event) => {
+    const button = event.target.closest("button[data-act]");
+    if (!button) return;
+    const { act, id, pno } = button.dataset;
+    try {
+      if (act === "create") {
+        const created = await post("/admin/sessions", { participant_no: pno });
+        showCode(created);
+      } else if (act === "code") {
+        showCode(await post(`/admin/sessions/${id}/code`));
+      } else if (act === "dropout") {
+        if (!confirm("이 세션을 SS91(dropout)로 처리합니다.")) return;
+        await post(`/admin/sessions/${id}/dropout`);
+        route();
+      } else if (act === "monitor") {
+        location.hash = "#/r2/" + id;
+      } else if (act === "review") {
+        location.hash = "#/r3/" + id;
+      }
+    } catch (error) { alert(error.message); }
+  };
+}
+
+function showCode(created) {
+  const box = document.getElementById("issued");
+  if (!box) return;
+  // 평문 코드는 이 응답에만 존재한다(§2.5) — 다시 보려면 재발급이다.
+  box.innerHTML = `<div class="card" style="margin-bottom:12px">
+    <h3>${esc(created.participant_no)} 접속 코드</h3>
+    <div class="code">${esc(created.access_code)}</div>
+    <div class="muted">만료 ${esc(created.code_expires_at)} · 세션 ${esc(short(created.session_id))}
+    <br />이 코드는 지금 화면에만 있습니다. 참가자에게 전달한 뒤 새로고침하면 사라집니다.</div>
+  </div>`;
+}
+
+// --------------------------------------------------------------- R2 모니터
+async function viewR2(sessionId) {
+  if (!sessionId) return picker("r2", "모니터할 세션");
+  const data = await api("/admin/monitor/" + sessionId);
+  const s = data.session;
+  const branches = data.branches.map((b) => `<tr>
+      <td>${esc(b.index)}</td><td class="mono">${esc(b.condition ?? "—")}</td>
+      <td class="mono">${esc(b.b_state)}</td><td>${esc(b.disposition ?? "—")}</td>
+      <td>${b.ai2_state ? `<span class="pill ${b.ai2_state === "fallback" ? "bad" : ""}">${esc(b.ai2_state)}</span>` : "—"}
+          ${b.checker_skipped ? '<span class="warn"> checker 생략</span>' : ""}
+          ${b.rule_violations.length ? `<span class="warn"> 위반 ${esc(b.rule_violations.length)}</span>` : ""}</td>
+    </tr>`).join("");
+  const transcript = data.transcript.map((t) => `<div class="turn">
+      <b>b${esc(t.branch_index)} · ${esc(t.role)} · ${esc(time(t.at))}</b>${esc(t.text)}</div>`).join("")
+      || '<p class="empty">발화 없음</p>';
+  const events = data.events.map((e) => `<div class="turn mono"><b>${esc(time(e.server_ts))} · ${esc(e.type)}</b>${esc(JSON.stringify(e.payload ?? {}))}</div>`).join("")
+      || '<p class="empty">이벤트 없음</p>';
+
+  app.innerHTML = `
+    <section>
+      <div class="row">
+        <span class="pill mono">${esc(s.participant_no)}</span>
+        <span class="pill mono">${esc(s.ss_state)}${s.b_state ? " · " + esc(s.b_state) : ""}</span>
+        <span class="pill">화면 ${esc(s.screen)}</span>
+        <span class="pill">${esc(s.status)}</span>
+        <span class="muted mono">${esc(short(s.session_id))}</span>
+        <button id="flag">flag (기록 전용)</button>
+        <button id="abort" class="danger">세션 중단 (SS90)</button>
+        <a href="#/r3/${esc(s.session_id)}" style="margin-left:auto">review 보기 →</a>
+      </div>
+      <table><thead><tr><th>b</th><th>조건</th><th>상태</th><th>종결</th><th>AI2</th></tr></thead>
+      <tbody>${branches || '<tr><td colspan="5" class="muted">branch 없음</td></tr>'}</tbody></table>
+    </section>
+    <section class="grid" style="grid-template-columns:1.4fr 1fr">
+      <div><h2>transcript</h2><div class="stream" style="padding:0 12px">${transcript}</div></div>
+      <div><h2>이벤트</h2><div class="stream" style="padding:0 12px">${events}</div></div>
+    </section>
+    <p class="muted">3초마다 갱신합니다. flag는 상태를 바꾸지 않고 기록만 남깁니다(D-07).</p>`;
+
+  document.getElementById("flag").onclick = async () => {
+    const reason = prompt("flag 사유 (기록 전용 — 세션 상태는 바뀌지 않습니다)");
+    if (!reason) return;
+    try { await post(`/admin/sessions/${sessionId}/flag`, { reason }); route(); }
+    catch (error) { alert(error.message); }
+  };
+  document.getElementById("abort").onclick = async () => {
+    const reason = prompt("중단 사유 (필수 — 참가자 화면은 중단 안내로 바뀝니다)");
+    if (!reason) return;
+    try { await post(`/admin/sessions/${sessionId}/abort`, { reason }); route(); }
+    catch (error) { alert(error.message); }
+  };
+  timer = setTimeout(() => viewR2(sessionId).catch(fail), POLL_MS);
+}
+
+// --------------------------------------------------------------- R3 review
+async function viewR3(sessionId) {
+  if (!sessionId) return picker("r3", "review할 세션");
+  const data = await api("/admin/review/" + sessionId);
+  const columns = data.branches.map((b) => `<div class="card">
+      <h3>${esc(b.index)}번째 대화 <span class="pill mono">${esc(b.condition ?? "—")}</span>
+        ${b.ai2_state ? `<span class="pill">${esc(b.ai2_state)}</span>` : ""}</h3>
+      <div class="turn"><b>AI1</b>${esc(b.ai1)}</div>
+      <div class="turn"><b>User1 · ${esc(b.disposition ?? "—")}</b>${esc(b.user1 ?? "(발화 없음)")}</div>
+      ${b.user1_normalized && b.user1_normalized !== b.user1 ? `<div class="turn muted"><b>정규화</b>${esc(b.user1_normalized)}</div>` : ""}
+      ${b.ai2 ? `<div class="turn"><b>AI2</b>${esc(b.ai2)}</div>` : ""}
+      ${b.downstream ? `<div class="turn"><b>downstream</b>${esc(b.downstream)}</div>` : ""}
+      ${b.sidecar ? `<div class="turn"><b>sidecar · ${esc(b.sidecar.choice)}${b.sidecar.relevance_1_7 ? " · 관련도 " + esc(b.sidecar.relevance_1_7) : ""}</b>${esc(b.sidecar.free_text ?? "")}${b.sidecar.reason_text ? "\n[미전송 사유] " + esc(b.sidecar.reason_text) : ""}</div>` : ""}
+      ${b.ratings.length ? `<div class="turn"><b>평정</b>${b.ratings.map((r) => `${esc(r.item_id)}=${esc(r.value)}`).join(" · ")}</div>` : ""}
+    </div>`).join("");
+  const priv = Object.entries(data.researcher_only).map(([key, value]) =>
+    `<tr><td class="mono">${esc(key)}</td><td>${esc(value)}</td></tr>`).join("");
+  const flags = data.flags.map((f) => `<tr><td class="mono">${esc(time(f.server_ts))}</td>
+      <td class="mono">${esc(f.type)}</td><td>${esc((f.payload && f.payload.reason) || "")}</td></tr>`).join("");
+
+  app.innerHTML = `
+    <section>
+      <div class="row"><span class="pill mono">${esc(data.session.participant_no)}</span>
+        <span class="pill mono">${esc(data.session.ss_state)}</span>
+        <span class="muted mono">${esc(short(data.session.session_id))}</span>
+        <a href="#/r2/${esc(data.session.session_id)}" style="margin-left:auto">← 모니터</a></div>
+      <div class="grid">${columns}</div>
+    </section>
+    <section><h2>flag · 중단 기록</h2>
+      <table><thead><tr><th>시각</th><th>유형</th><th>사유</th></tr></thead>
+      <tbody>${flags || '<tr><td colspan="3" class="muted">없음</td></tr>'}</tbody></table></section>
+    <section><h2>researcher_only (인터뷰 참조 — 참가자 화면·AI 경로 어디에도 나가지 않음)</h2>
+      <table><tbody>${priv}</tbody></table></section>`;
+}
+
+// --------------------------------------------------------------- R4 dossier
+async function viewR4(participantNo) {
+  if (!participantNo) {
+    const data = await api("/admin/participants");
+    app.innerHTML = '<section><h2>dossier 뷰어 (§4.12 R4)</h2><div class="row">' +
+      data.participants.map((p) => `<button data-pno="${esc(p.participant_no)}">${esc(p.participant_no)}${p.dossier.dummy ? " (더미)" : ""}</button>`).join("") +
+      "</div></section>";
+    app.onclick = (event) => {
+      const button = event.target.closest("button[data-pno]");
+      if (button) location.hash = "#/r4/" + button.dataset.pno;
+    };
+    return;
+  }
+  const d = await api("/admin/dossier/" + participantNo);
+  const stimuli = d.stimuli.map((s) => `<div class="card"><h3>${esc(s.condition)}
+      <span class="muted mono">${esc(s.meta.chars)}자 · ${esc(s.meta.sentences)}문장 · 질문 ${esc(s.meta.questions)}</span></h3>
+      <div class="turn">${esc(s.text)}</div><div class="muted mono">${esc(short(s.hash))}</div></div>`).join("");
+  const layer = (title, entries) => `<section><h2>${title}</h2><table><tbody>` +
+    entries.map(([key, value]) => `<tr><td class="mono" style="width:220px">${esc(key)}</td><td>${esc(value)}</td></tr>`).join("") +
+    "</tbody></table></section>";
+
+  app.innerHTML = `
+    <section><div class="row">
+      <span class="pill mono">${esc(d.participant_no)}</span>
+      <span class="pill">${esc(d.version)}</span>
+      ${d.locked ? '<span class="pill">lock ' + esc(d.locked_at) + "</span>" : '<span class="warn">미lock</span>'}
+      ${d.dummy ? '<span class="warn">스키마 더미 — 실값 미반입 (PH-03)</span>' : ""}
+      <span class="muted mono">hash ${esc(short(d.content_hash))}</span>
+      <span class="pill mono">${d.sequence.map(esc).join(" → ")}</span>
+      <button data-back="1" style="margin-left:auto">← 목록</button>
+    </div></section>
+    ${layer("sampling", Object.entries(d.sampling))}
+    ${layer("ai_visible (AI2·checker가 볼 수 있는 유일한 사건 정보)", [
+      ["situation_summary", d.ai_visible.situation_summary],
+      ["original_request", d.ai_visible.original_request],
+      ["problematic_ai_response", d.ai_visible.problematic_ai_response],
+      ["trouble_cue.text", d.ai_visible.trouble_cue.text],
+      ["trouble_cue.form", d.ai_visible.trouble_cue.form],
+      ["prior_evidence", d.ai_visible.prior_evidence.join(" / ")],
+    ])}
+    <section><h2>AI1 자극 4종 (§5.3)</h2><div class="grid">${stimuli}</div></section>
+    ${layer("derivation", [
+      ["warranted_uptake", d.derivation.warranted_uptake],
+      ["prohibited_inference", d.derivation.prohibited_inference.join(" / ")],
+      ["residual_uncertainty", d.derivation.residual_uncertainty.text],
+      ["question_stem (C2=C4)", d.derivation.residual_uncertainty.question_stem],
+      ["focal_repair_relevant_content", d.derivation.focal_repair_relevant_content],
+      ["neutral_fallback", d.derivation.neutral_fallback],
+      ["referent_map", d.derivation.referent_map.map((r) => r.patterns.join("|") + " → " + r.proposition).join("\n")],
+    ])}
+    ${layer("researcher_only (콘솔 전용)", Object.entries(d.researcher_only))}`;
+  app.onclick = (event) => { if (event.target.closest("button[data-back]")) location.hash = "#/r4"; };
+}
+
+// --------------------------------------------------------------- 라우팅
+async function picker(view, label) {
+  const data = await api("/admin/participants");
+  const sessions = data.participants.flatMap((p) => p.sessions.map((s) => ({ p, s })));
+  app.innerHTML = `<section><h2>${esc(label)}을 고르세요</h2>` +
+    (sessions.length
+      ? `<table><thead><tr><th>번호</th><th>상태</th><th>세션</th><th></th></tr></thead><tbody>` +
+        sessions.map(({ p, s }) => `<tr><td class="mono">${esc(p.participant_no)}</td>
+          <td class="mono">${esc(s.ss_state)} · ${esc(s.status)}</td>
+          <td class="mono muted">${esc(short(s.session_id))}</td>
+          <td><button data-id="${esc(s.session_id)}">열기</button></td></tr>`).join("") +
+        "</tbody></table>"
+      : '<p class="muted">세션이 없습니다. R1에서 생성하세요.</p>') + "</section>";
+  app.onclick = (event) => {
+    const button = event.target.closest("button[data-id]");
+    if (button) location.hash = `#/${view}/` + button.dataset.id;
+  };
+}
+
+function route() {
+  if (timer) { clearTimeout(timer); timer = null; }
+  app.onclick = null;
+  const [, view, argument] = (location.hash || "#/r1").split("/");
+  const name = view || "r1";
+  document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("on", a.dataset.view === name));
+  ctx.textContent = argument ? short(argument) : "";
+  const run = { r1: viewR1, r2: viewR2, r3: viewR3, r4: viewR4 }[name] || viewR1;
+  run(argument).catch(fail);
+}
+
+window.addEventListener("hashchange", route);
+route();
+</script>
+</body>
+</html>

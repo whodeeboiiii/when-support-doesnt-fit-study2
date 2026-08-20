@@ -1,8 +1,9 @@
 """사전설문 자산 로더 (구현명세서 §4.2 · §7.1 · NT-05).
 
-자산은 `fixtures/presurvey_items_v0.json`이고 현재는 **placeholder**다 `<TODO: PH-01>`.
-구조는 확정이고 원문만 대기 중이므로, 로더·계약 테스트·저장 경로는 지금 세운다(§11.1 더미
-자산 원칙).
+자산은 `fixtures/presurvey_items_v0.json`이다. **문항 원문 초안은 착지**했고(초안 §7.4를
+문항으로 옮긴 1차 번안), 남은 것은 독립 2인차 번안·합의와 PI 확인이다 `<TODO: PH-01>`.
+승격(= `presurvey_items_v1.json`으로 파일명 변경 + 이 모듈의 `ASSET_PATH` 교체) 전까지
+모집 게이트(`core/freeze.py`)는 PH-01을 계속 보고한다 — 파일명이 곧 상태 표시다.
 
 §4.2의 렌더 규칙이 이 모듈의 핵심이다.
 
@@ -24,6 +25,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping
 
+from app.assets import screen_copy
 from app.assets.files import REPO_ROOT
 
 ASSET_PATH = REPO_ROOT / "fixtures" / "presurvey_items_v0.json"
@@ -37,7 +39,23 @@ LIKERT_MIN = 1
 LIKERT_MAX = 7
 
 #: 참가자 payload에 실릴 수 있는 필드 (NT-05). 여기 없는 것은 무엇이든 서버에 남는다.
-PARTICIPANT_FIELDS = frozenset({"position", "type", "text", "options", "scale_min", "scale_max"})
+PARTICIPANT_FIELDS = frozenset(
+    {
+        "position",
+        "type",
+        "text",
+        "options",
+        "scale_min",
+        "scale_max",
+        "scale_min_label",
+        "scale_max_label",
+    }
+)
+
+#: 척도 앵커. §4.2는 앵커를 지정하지 않지만 숫자 7칸만 그리면 문항에 답할 수 없다 —
+#: §7.3 평정과 **같은 앵커**를 쓴다(같은 1–7 척도이고, 두 화면의 표현이 갈리면 그것대로 혼란이다).
+LIKERT_MIN_LABEL = screen_copy.RATINGS_SCALE_MIN_LABEL
+LIKERT_MAX_LABEL = screen_copy.RATINGS_SCALE_MAX_LABEL
 
 #: 자산 파일이 가질 수 있는 문항 키. `_note`·`reverse`·`section`은 **연구자 메타**다.
 _ITEM_KEYS = frozenset({"id", "section", "type", "text", "options", "reverse", "_note"})
@@ -72,6 +90,8 @@ class PresurveyItem:
         else:
             view["scale_min"] = LIKERT_MIN
             view["scale_max"] = LIKERT_MAX
+            view["scale_min_label"] = LIKERT_MIN_LABEL
+            view["scale_max_label"] = LIKERT_MAX_LABEL
         return view
 
 

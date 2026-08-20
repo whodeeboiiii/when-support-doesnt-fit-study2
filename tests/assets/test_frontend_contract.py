@@ -109,6 +109,34 @@ def test_frontend_never_derives_the_next_screen_itself() -> None:
         assert len(set(states)) <= 1, f"{path.name}: 클라이언트가 상태를 나열한다 — {set(states)}"
 
 
+def test_console_page_is_not_part_of_the_participant_bundle() -> None:
+    """§2.7·NT-13 — 연구자 콘솔은 별도 정적 파일이다(빌드 대상 아님).
+
+    콘솔이 참가자 SPA 안으로 들어오면 조건 라벨·researcher_only·sidecar를 다루는 코드가
+    참가자 번들에 실린다. 경계를 파일 위치로 지킨다.
+    """
+    console = REPO_ROOT / "frontend" / "console" / "index.html"
+    assert console.is_file(), "콘솔 페이지가 없다 (§4.12 R1–R4)"
+    assert not (FRONTEND_SRC / "console").exists(), "콘솔이 참가자 빌드 트리에 있다"
+    for path in _source_files():
+        text = path.read_text(encoding="utf-8")
+        assert "/admin/" not in text, f"{path.name}: 참가자 코드가 연구자 API를 부른다"
+
+
+def test_console_page_carries_no_secrets_or_asset_text() -> None:
+    """콘솔도 값은 전부 `/admin/*` JSON에서 받는다 — 파일 자체에는 자산·비밀이 없다."""
+    text = (REPO_ROOT / "frontend" / "console" / "index.html").read_text(encoding="utf-8")
+    dossier = dossier_loader.load("P00")
+    for banned in ("OPENROUTER_API_KEY", "FERNET_KEY", "ADMIN_PASS", "sk-or-"):
+        assert banned not in text
+    for asset_text in (
+        dossier.stimulus("C1"),
+        dossier.derivation.neutral_fallback,
+        rating_items.RATING_ITEMS[0].text,
+    ):
+        assert asset_text not in text
+
+
 def test_package_json_has_no_network_analytics() -> None:
     """§9.3 — 참가자 화면에서 제3자로 나가는 경로를 만들지 않는다."""
     package = json.loads((REPO_ROOT / "frontend" / "package.json").read_text(encoding="utf-8"))

@@ -10,8 +10,12 @@
 2. **LLM 클라이언트 주입(§2.0)**: DEV_MODE면 fake LLM, 아니면 OpenRouter. 배포 구성과 동일
    코드 경로이고 분기는 이 지점과 DB URL 두 곳뿐이다.
 
-NS2까지의 라우터: `/api/health`, 참가자 API(§8.2 — `api/participant.py`·`api/branch.py`),
-연구자 세션 생성·코드 발급(`api/admin.py`). AI2 파이프라인 본체는 NS3, 콘솔 R1–R4는 NS4다.
+라우터: `/api/health`, 참가자 API(§8.2 — `api/participant.py`·`api/branch.py`), 연구자 API
+(`api/admin.py`·`api/admin_views.py`)와 콘솔 화면(`api/console.py`). DEV_MODE + 로컬 DB일 때만
+개발용 초기화 API(`api/dev.py`)가 추가로 붙는다 — 배포 구성에는 그 경로가 존재하지 않는다.
+
+미들웨어가 하나 걸려 있다: §2.8의 "서버 오류(5xx) 누적" 알림. 5xx는 개별 라우터가 아니라
+응답 경계에서만 일관되게 보이기 때문에 여기 있어야 한다.
 """
 
 from __future__ import annotations
@@ -20,12 +24,12 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 
-from app.api import admin, branch, health, participant
+from app.api import admin, admin_views, branch, console, health, participant
 from app.assets import dossier_loader, presurvey
-from app.core.config import get_settings
+from app.core.config import get_settings, is_local_db
 from app.llm import normalization, prompts
 from app.llm.fake_llm import FakeLLM
 from app.llm.gateway.client import NoClientConfigured, set_client
@@ -80,6 +84,26 @@ def _install_llm_client() -> None:
         logger.warning("LLM 클라이언트 미설정 — 호출 시 §9.1 fallback 경로로 수렴한다")
 
 
+async def _watch_server_errors(request: Request, call_next):
+    """§2.8 트리거 5 — 서버 오류(5xx) 누적 알림.
+
+    처리되지 않은 예외도 5xx로 세되(FastAPI가 500을 만들기 **전에** 여기를 지난다), 예외
+    자체는 삼키지 않고 그대로 올린다. 알림 경로가 오류를 감추면 §9.1의 복구 규율이 깨진다.
+    """
+    from app.notify import watch
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        await watch.record_server_error(f"{request.method} {request.url.path}")
+        raise
+    if response.status_code >= 500:
+        await watch.record_server_error(f"{request.method} {request.url.path} → {response.status_code}")
+    else:
+        watch.record_server_success()
+    return response
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     _install_llm_client()
@@ -100,10 +124,21 @@ def create_app() -> FastAPI:
         redoc_url=None,
         openapi_url=None,
     )
+    app.middleware("http")(_watch_server_errors)
     app.include_router(health.router)
     app.include_router(participant.router)
     app.include_router(branch.router)
     app.include_router(admin.router)
+    app.include_router(admin_views.router)
+    app.include_router(console.router)
+
+    if settings.dev_mode and is_local_db(settings.resolved_database_url):
+        # 개발용 초기화 API (§2.0 시연 구성). **배포 구성에서는 라우터를 붙이지 않는다** —
+        # 권한으로 막는 것과 경로가 없는 것은 다르다(`api/dev.py` 상단 참조).
+        from app.api import dev
+
+        app.include_router(dev.router)
+        logger.warning("DEV_MODE — 개발용 초기화 API를 연다: %s", dev.router.prefix)
 
     if FRONTEND_DIST.is_dir():
         # SPA 정적 서빙 (§2.0). 빌드 산출물이 없으면(API 전용 개발) 그냥 건너뛴다.

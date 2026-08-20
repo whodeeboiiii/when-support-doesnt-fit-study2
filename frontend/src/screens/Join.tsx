@@ -10,13 +10,21 @@
 
 import { useState } from 'react'
 import { ApiError, AppState, api } from '../api'
+import { DevPrefill } from '../components/DevBar'
 import { SubmitBar } from '../components/Inputs'
 import { JOIN_CODE_LABEL, JOIN_PARTICIPANT_LABEL, JOIN_SUBMIT, JOIN_TITLE } from '../copy'
 import { ScreenTitle } from './common'
 
-export default function Join({ onState }: { onState: (next: AppState) => void }) {
-  const [participantNo, setParticipantNo] = useState('')
-  const [code, setCode] = useState('')
+export default function Join({
+  onState,
+  prefill,
+}: {
+  onState: (next: AppState) => void
+  /** DEV_MODE 초기화가 방금 발급한 번호·코드. 채워만 두고 접속은 사람이 누른다. */
+  prefill?: DevPrefill | null
+}) {
+  const [participantNo, setParticipantNo] = useState(prefill?.participantNo ?? '')
+  const [code, setCode] = useState(prefill?.accessCode ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 

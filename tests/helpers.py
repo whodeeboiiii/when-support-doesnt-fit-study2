@@ -16,6 +16,46 @@ from tests.conftest import ADMIN_PASS, ADMIN_USER
 
 ADMIN_AUTH = (ADMIN_USER, ADMIN_PASS)
 
+#: §2.8 알림을 부르는 모듈들. `from … import notify`로 들여왔으므로 **호출부마다** 갈아끼운다.
+NOTIFY_CALL_SITES = (
+    "app.api.admin",
+    "app.llm.ai2_pipeline",
+    "app.llm.checker",
+    "app.notify.watch",
+)
+
+
+def route_table(app) -> list[tuple[str, tuple[str, ...]]]:
+    """앱이 실제로 여는 (경로, 메서드) 목록.
+
+    FastAPI 0.141의 `include_router`는 하위 라우터를 `_IncludedRouter`로 감싸므로
+    `app.routes`를 그냥 훑으면 개별 경로가 보이지 않는다 — `original_router`로 들어간다.
+    """
+    routes: list[tuple[str, tuple[str, ...]]] = []
+    for route in app.routes:
+        original = getattr(route, "original_router", None)
+        candidates = original.routes if original is not None else [route]
+        for candidate in candidates:
+            methods = getattr(candidate, "methods", None)
+            if methods:
+                routes.append((candidate.path, tuple(sorted(methods))))
+    return sorted(set(routes))
+
+
+def capture_notifications(monkeypatch) -> list[tuple[str, dict[str, Any]]]:
+    """§2.8 트리거 발화를 가로챈다 (전송은 하지 않는다). 반환 리스트에 (event, fields)가 쌓인다."""
+    import importlib
+
+    captured: list[tuple[str, dict[str, Any]]] = []
+
+    async def _record(event, summary: str, **fields: Any) -> bool:
+        captured.append((str(event), {"summary": summary, **fields}))
+        return True
+
+    for module_name in NOTIFY_CALL_SITES:
+        monkeypatch.setattr(importlib.import_module(module_name), "notify", _record)
+    return captured
+
 #: 평정 12문항 전부에 같은 값을 넣는 payload (§4.9 — 값 자체는 이 테스트들의 관심사가 아니다).
 def ratings_payload(value: int = 4) -> dict[str, Any]:
     return {"items": [{"position": position, "value": value} for position in range(1, 13)]}

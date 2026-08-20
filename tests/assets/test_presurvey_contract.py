@@ -126,6 +126,63 @@ def test_contract_violations_fail_loudly(tmp_path, monkeypatch) -> None:
         presurvey.reset_cache()
 
 
+def test_no_placeholder_tokens_remain_in_participant_facing_text() -> None:
+    """문항 원문 초안이 착지했다 — 참가자가 보는 문자열에 `<TODO>`가 남아 있으면 안 된다.
+
+    연구자 메타(`_note`)에는 남아 있어도 된다(출처·번안 이력을 적는 자리다).
+    """
+    for item in presurvey.load().items:
+        assert "<TODO" not in item.text, f"{item.item_id}: 문항 원문이 아직 placeholder다"
+        for option in item.options:
+            assert "<TODO" not in option.label, f"{item.item_id}: 선택지가 아직 placeholder다"
+
+
+def test_ddi_excerpt_keeps_the_instrument_reverse_keying() -> None:
+    """DDI 발췌 4문항 중 역채점은 2문항이다 (Kahn & Hessling 2001의 해당 문항).
+
+    역채점 표시가 어긋나면 기술 통계가 조용히 뒤집힌다 — 자산에서 고정한다.
+    """
+    ddi = {item.item_id: item for item in presurvey.load().items if item.section == "ddi_excerpt"}
+    assert {item_id for item_id, item in ddi.items() if item.reverse} == {"ddi_2", "ddi_4"}
+
+
+def test_frequency_items_share_one_option_set() -> None:
+    """§7.4 — 전반·영역별 빈도는 같은 척도로 비교한다."""
+    items = [item for item in presurvey.load().items if item.section == "ai_use_frequency"]
+    assert len(items) == 5
+    option_sets = {tuple((option.value, option.label) for option in item.options) for item in items}
+    assert len(option_sets) == 1, "빈도 문항의 보기가 서로 다르다"
+
+
+def test_misfit_options_are_the_five_spec_behaviours() -> None:
+    """§4.2 ② — 같은 대화 재설명 / 새 채팅 / 다른 AI / 사람 / 중단."""
+    item = next(item for item in presurvey.load().items if item.section == "misfit_response")
+    assert [option.value for option in item.options] == [
+        "re_explain_same_chat",
+        "new_chat",
+        "other_ai",
+        "human",
+        "stop",
+    ]
+
+
+def test_likert_items_carry_scale_anchors() -> None:
+    """숫자 7칸만 그리면 문항에 답할 수 없다 — 앵커가 payload에 실린다."""
+    for view in presurvey.load().participant_payload():
+        if view["type"] in presurvey.LIKERT_TYPES:
+            assert view["scale_min_label"] and view["scale_max_label"]
+
+
+def test_presurvey_copy_avoids_normative_disclosure_language() -> None:
+    """§7.8 중립성 — '말했어야 한다'·'빠뜨린 정보' 류 규범적 어휘를 쓰지 않는다."""
+    text = " ".join(
+        [item.text for item in presurvey.load().items]
+        + [option.label for item in presurvey.load().items for option in item.options]
+    )
+    for banned in ("했어야", "빠뜨", "알려줬어야", "제대로 말"):
+        assert banned not in text, f"규범적 어휘: {banned}"
+
+
 def test_excluded_instruments_are_not_present() -> None:
     """§7.1 — Mind Perception·reactance·perceived stress·Brief COPE는 **포함하지 않는다**."""
     serialized = json.dumps(ASSET, ensure_ascii=False).lower()

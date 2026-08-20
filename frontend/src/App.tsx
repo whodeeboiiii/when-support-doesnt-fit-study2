@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, AppState, api } from './api'
 import { DESKTOP_ONLY, MIN_VIEWPORT_WIDTH, RESTORING } from './copy'
+import DevBar, { DevPrefill } from './components/DevBar'
 import { Chat, Ai2, Downstream, Ratings, Reentry, Sidecar } from './screens/Branch'
 import { Checkpoint, Consent, Presurvey } from './screens/Intro'
 import Join from './screens/Join'
@@ -38,6 +39,8 @@ function useViewportGuard(): boolean {
 export default function App() {
   const [state, setState] = useState<AppState | null>(null)
   const [loading, setLoading] = useState(true)
+  // DEV_MODE 초기화가 발급한 접속 코드 — P0 입력칸을 채우는 용도뿐이다(자동 접속 아님).
+  const [devPrefill, setDevPrefill] = useState<DevPrefill | null>(null)
   const tooNarrow = useViewportGuard()
 
   const restore = useCallback(async () => {
@@ -64,9 +67,38 @@ export default function App() {
 
   if (tooNarrow) return <DesktopGuard />
   if (loading) return <div className="screen">{RESTORING}</div>
-  if (!state) return <Join onState={setState} />
 
-  const props = { state, onState: setState }
+  // 배포 구성에서는 `/api/dev/status`가 404라서 이 컴포넌트가 아무것도 그리지 않는다.
+  const devBar = (
+    <DevBar
+      onReset={(prefill) => {
+        setDevPrefill(prefill)
+        // 세션이 지워졌으므로 P0으로 — 다음 회차도 접속부터 정상 경로를 밟는다.
+        setState(null)
+      }}
+    />
+  )
+
+  if (!state)
+    return (
+      <>
+        {/* 코드가 바뀌면 입력칸을 새로 만든다(이미 P0에 있을 때도 채워지도록). */}
+        <Join key={devPrefill?.accessCode ?? 'join'} onState={setState} prefill={devPrefill} />
+        {devBar}
+      </>
+    )
+
+  return (
+    <>
+      <Screen state={state} onState={setState} />
+      {devBar}
+    </>
+  )
+}
+
+/** 상태 → 화면. 전이는 서버가 정하고 여기서는 받은 화면 ID를 그리기만 한다(§1.3). */
+function Screen({ state, onState }: { state: AppState; onState: (next: AppState) => void }) {
+  const props = { state, onState }
   switch (state.screen) {
     case 'P1':
       return <Consent {...props} />
