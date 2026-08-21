@@ -57,7 +57,7 @@ export default function DevBar({ onReset }: { onReset: (prefill: DevPrefill) => 
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 w-72 rounded-lg border border-amber-400 bg-amber-50 p-3 text-xs text-amber-900 shadow-lg">
+    <div className="fixed bottom-4 right-4 z-50 w-72 rounded-lg border border-violet-400 bg-violet-50 p-3 text-xs text-violet-900 shadow-lg">
       <div className="flex items-center justify-between font-semibold">
         <span>DEV_MODE</span>
         <span className="font-normal">개발 전용 · 배포에는 없음</span>
@@ -66,7 +66,7 @@ export default function DevBar({ onReset }: { onReset: (prefill: DevPrefill) => 
         <select
           value={target}
           onChange={(event) => setTarget(event.target.value)}
-          className="h-8 flex-1 rounded border border-amber-300 bg-white px-2"
+          className="h-8 flex-1 rounded border border-violet-300 bg-white px-2"
         >
           {status.participants.map((participant) => (
             <option key={participant} value={participant}>
@@ -78,7 +78,7 @@ export default function DevBar({ onReset }: { onReset: (prefill: DevPrefill) => 
           type="button"
           onClick={reset}
           disabled={busy || !target}
-          className="h-8 rounded bg-amber-600 px-3 font-semibold text-white disabled:opacity-50"
+          className="h-8 rounded bg-violet-600 px-3 font-semibold text-white disabled:opacity-50"
         >
           {busy ? '초기화 중…' : '세션 초기화'}
         </button>

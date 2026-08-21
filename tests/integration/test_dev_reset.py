@@ -139,3 +139,47 @@ async def test_reset_refuses_unknown_participant(
 ) -> None:
     response = await client.post("/api/dev/reset", json={"participant_no": participant_no})
     assert response.status_code == 400
+
+
+# --------------------------------------------------------------------------- #
+# P3 재진입 타이머 — DEV_MODE 면제 (§4.3 [파일럿 확정])
+# --------------------------------------------------------------------------- #
+
+
+def _p3_payload(dev_mode: bool, monkeypatch) -> dict:
+    """P3 화면 payload를 두 구성에서 각각 만든다."""
+    from types import SimpleNamespace
+
+    from app.api import state_payload
+
+    monkeypatch.setattr(
+        state_payload, "get_settings", lambda: SimpleNamespace(dev_mode=dev_mode)
+    )
+    return {
+        "notice": state_payload.screen_copy.REENTRY_NOTICE,
+        "ready_notice": state_payload.screen_copy.REENTRY_READY_NOTICE,
+        "min_seconds": 0 if dev_mode else state_payload.screen_copy.REENTRY_MIN_SECONDS,
+        "hint_seconds": 0 if dev_mode else state_payload.screen_copy.REENTRY_HINT_SECONDS,
+    }
+
+
+def test_reentry_timer_is_waived_only_in_dev_mode(monkeypatch) -> None:
+    """실세션은 §0.5 [파일럿 확정] 30/60을 그대로 쓴다 — 면제는 DEV_MODE 전용이다.
+
+    시연 편의로 뺀 대기가 참가자 구성까지 따라가면 초안 §7.3의 interactional re-entry
+    절차(30–60초 회상)가 사라진다. 그래서 두 방향을 같이 못박는다.
+    """
+    from app.assets import screen_copy
+
+    assert screen_copy.REENTRY_MIN_SECONDS == 30
+    assert screen_copy.REENTRY_HINT_SECONDS == 60
+
+    production = _p3_payload(False, monkeypatch)
+    assert production["min_seconds"] == 30
+    assert production["hint_seconds"] == 60
+
+    demo = _p3_payload(True, monkeypatch)
+    assert demo["min_seconds"] == 0
+    assert demo["hint_seconds"] == 0
+    # 문안은 구성과 무관하게 같다 — 면제는 대기 시간만 건드린다.
+    assert demo["notice"] == production["notice"]

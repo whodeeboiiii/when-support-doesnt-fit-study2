@@ -237,6 +237,240 @@ P00 세션을 SS00 → SS10 완주했다.
 
 ---
 
+## 참가자 UI 디자인 시스템 (D-39, 2026-08-21)
+
+전 화면에 통일 디자인을 입혔다. 색은 **흰 배경 + 세 층**이다.
+
+| 층 | 색 | 쓰는 곳 |
+|---|---|---|
+| 시스템이 요구하는 것 | 파랑 accent | 1차 버튼(채움), 선택 상태(테두리+연파랑), 사건 카드 |
+| 연구자가 건네는 말 | 노랑 guide `#FEF7E6`/`#D97706` | 화면 상단 지시문 블록(`.callout`) **전용** |
+| 자극 | 무채색 `#F2F2F2` (R=G=B) | AI 말풍선 |
+
+**AI 버블 색조 금지**를 테스트 2건으로 고정했다. `test_ai_bubbles_have_no_color_tint`는
+`.bubble-ai`에 accent·guide·yellow·blue가 들어오면 실패하고,
+`test_ai_bubble_fill_is_achromatic`은 채움색의 **R=G=B**를 검사한다.
+
+처음에 버블을 흰색으로 뒀다가 되돌렸다. 제약은 **색상(hue)이지 명도가 아니다** — 회색은
+hue가 0이라 따뜻함 지각과 무관한데, 흰색으로 잡는 바람에 흰 카드 위 흰 버블이 되어 P10에서
+말풍선이 카드 안에 묻혔다. `#F2F2F2` 채움으로 바꿨다. 숫자로 잡히는 경계라
+`#F2F0EE`(살짝 따뜻한 회색)를 넣으면 테스트가 실패하는 것까지 확인했다.
+같은 이유로 Likert 1–7 버튼도 흰색 → `bg-gray-50`.
+
+**새 응답 하이라이트** — focal AI1 · 대안 AI1 3종 · AI2에 완전히 같은 표시가 붙는다. 말풍선
+바깥에 옅은 파랑 링이 한 번 번졌다 남는다(버블 자체는 칠하지 않는다). 정의는 `.bubble-new`
+한 곳뿐이고 화면은 boolean `isNew`만 넘긴다 — className을 넘길 수 있으면 호출부마다 갈리므로
+prop 타입으로 막았다. 화면당 하이라이트는 **지금 판단 대상인 AI 응답 하나**뿐이다
+(P4=focal AI1, P6·P7=AI2, P9=해당 대안). `test_new_response_highlight_is_defined_in_exactly_one_place`.
+
+**모션** — 화면 전환 220ms·말풍선 등장 200ms CSS 애니메이션. **beacon 타이밍은 그대로다**:
+마운트도 effect도 미루지 않으므로 `screen_enter`·`render_complete` 발화 시점이 안 바뀐다.
+전환을 위해 렌더를 지연시키는 코드를 넣지 말라고 `App.tsx`에 주석으로 못박았다.
+`prefers-reduced-motion: reduce`에서 모션은 끄되 하이라이트 표시 자체는 정적으로 남긴다.
+
+**Likert** — 라디오 원 → 누를 수 있는 숫자 버튼 7개(h-12, 16px). 양 끝 앵커를 문항마다 반복
+고정한다(블록 상단 1회면 스크롤 뒤에 7의 방향을 기억에 의존하게 된다). 선택은 파랑 테두리 +
+연파랑 배경.
+
+**P2 인라인 수정** — 별도 목록 5개를 없애고 버블·카드를 직접 고치게 했다. hover(및 focus)에서
+"✎ 수정"이 뜨고, 누르면 그 자리가 원문이 채워진 편집창으로 바뀌며, 저장하면 "수정됨" 배지가
+붙는다. 명세 §4.2 [제안]의 "해당 segment가 편집창으로 바뀜"에 오히려 더 맞다.
+**배지는 P2에서만** 뜬다 — 이후 화면에서 "당신이 고친 문장"이라고 계속 상기시키면 그 자체가
+자극이 된다. 구조로 막았다: 배지는 `edit` prop이 있을 때만 그려지고 그 prop은 P2만 넘기며,
+`test_edited_badge_is_confined_to_the_checkpoint_edit_screen`이 다른 화면 유출을 잡는다.
+
+**P10·P11 두 열** — 폭 동일(`grid-cols-2`), 높이 맞춤(`items-stretch`), A/B 헤더 sticky,
+**열 내부 스크롤 없음**. 한쪽 열만 스크롤되면 두 응답을 같은 조건에서 읽지 못해 비교가
+비대칭이 된다.
+
+**진행 표시 없음** — `ProgressBar`를 삭제했다(어디서도 안 쓰고 있었다).
+`test_no_progress_indicator_component`가 부활을 막는다. §4.9의 "다른 응답 1/2/3"과 §4.10의
+pair 위치는 명세가 정한 화면 라벨이라 그대로 뒀다 — 진행 표시가 아니다.
+
+### 명세에 없어 내가 정한 것
+
+| 결정 | 근거 | 되돌리기 |
+|---|---|---|
+| 노랑 = 지시문 블록 전용 | "보조색 노랑"인데 버튼 금지라 남는 자리가 지시문이다. 연파랑 사건 카드와 뜻이 갈린다 | `.callout` 색 2줄 |
+| 하이라이트 = 파랑 링(노랑 아님) | 노랑을 쓰면 지시문 블록과 같은 색이 된다. 링은 버블 바깥이라 색조 금지와 충돌하지 않는다 | `@keyframes ring-settle` |
+| DEV 도구 색 amber → violet | 노랑이 참가자 지시문 색이 되어 시연 중 둘이 헷갈린다 | DevNote·DevBar 클래스 |
+| 선택 상태 검정 → 파랑 윤곽 | 구 주석은 "선택=검정"으로 1차 버튼과 갈랐지만, 검정 채움이 참가자 말풍선과 같은 색이었다. **채움/윤곽** 구분으로 바꿨다 | `.is-selected` |
+| `test_no_mobile_css_rules`의 `@media` 통짜 금지 → 폭 기반 질의 금지 | `prefers-reduced-motion`은 반응형이 아니라 D-12와 무관한데 통짜 금지가 막고 있었다 | 테스트 1건 |
+
+### 잡은 결함 — 하이라이트가 실행되지 않고 있었다
+
+첫 적용에서 **링이 아예 안 보였다**. 원인은 CSS 레이어 충돌이다.
+
+- 말풍선에 `animate-bubble-in`(utilities 레이어)을 붙이고 `.bubble-new`(components 레이어)에
+  링을 두었다. 둘 다 `animation` **shorthand**에 명시도도 같다.
+- Tailwind는 components를 먼저, utilities를 나중에 낸다 → 소스 순서로 utilities가 이긴다.
+  빌드 CSS에서 `.bubble-new{animation:ring-settle...}`은 byte 6310, `.animate-bubble-in`은
+  byte 9001이었다. 링은 정의되어 있었지만 한 번도 실행되지 않았다.
+- 게다가 `bubble-in`은 `both`라 끝 상태에 box-shadow가 없다 — 잔여 링도 남지 않는다.
+
+빌드도 통과하고 CSS도 존재해서 **눈으로 보기 전에는 안 잡히는** 종류였다. 고친 방식:
+등장 애니메이션을 `.bubble`로 내리고 `.bubble-new`가 두 애니메이션을 **한 선언에서** 합성한다.
+말풍선에서 `animate-*` 유틸리티를 걷어냈다(번들에서 `animate-bubble-in`이 사라진 것으로 확인).
+
+회귀 테스트 2건 — 소스 층(`.bubble-new`가 두 애니메이션을 합성 + 말풍선 className에
+`animate-` 없음)과 **빌드 산출물 층**(컴파일된 `.bubble-new`에 `ring-settle`이 남아 있는지).
+레이어 순서는 컴파일 후에야 확정되므로 소스만 봐서는 부족하다. 버그를 되돌려 두 테스트가
+실제로 실패하는 것까지 확인했다.
+
+**그리고 그 수정이 두 번째 조용한 실패를 만들었다.** `@apply animate-ring-settle`을
+raw `animation: ring-settle ...`으로 바꾸자 빌드 CSS에서 `@keyframes ring-settle`이
+**사라졌다**(grep 0건). Tailwind는 config의 `keyframes`를 대응 `animate-*` 유틸리티가
+소스에서 발견될 때만 내보내는데, 컴포넌트 클래스의 raw 참조는 JIT가 보지 못한다. 선언은
+남고 정의만 없어지니 브라우저는 조용히 아무것도 하지 않는다.
+
+최종 형태: **keyframes 3종을 `index.css`의 레이어 밖 평범한 CSS로** 옮겼다(Tailwind가 그대로
+통과시키므로 JIT 탐지에 의존하지 않는다). `tailwind.config.js`의 `keyframes`·`animation`
+확장은 삭제했고, 화면 전환도 `animate-screen-in` 유틸리티 대신 `.screen-in` 컴포넌트
+클래스로 통일해 같은 함정을 두 번 밟지 않게 했다.
+
+회귀 테스트 3건 — ① `.bubble-new`가 두 애니메이션을 합성 + 말풍선 className에 `animate-` 없음
+② 빌드 CSS의 `.bubble-new`에 `ring-settle`이 남아 있음 ③ **빌드 CSS에서 참조된 모든
+애니메이션 이름에 `@keyframes` 정의가 존재함**. ③이 이번 부류를 통째로 잡는다 —
+`@keyframes ring-settle`만 지우고 빌드해서 실제로 실패하는 것까지 확인했다.
+
+교훈 둘.
+- **레이어가 다른 두 클래스가 같은 shorthand를 쓰면 소스 순서가 이긴다.** `@layer components`에
+  둔 규칙은 유틸리티 한 개로 조용히 무력화된다.
+- **클래스가 있다 ≠ 동작한다.** 두 번 다 "클래스도 선언도 빌드 CSS에 있다"를 확인하고
+  적용됐다고 보고했지만 둘 다 틀렸다. 참조와 정의를 **연결해서** 봐야 한다.
+
+713 → 724 green. 디자인 계약 테스트 12건 추가.
+
+---
+
+## P7 채팅 맥락 복원 (2026-08-21)
+
+P7이 AI2 말풍선 하나만 그리고 있었다. §4.7 지시문은 "AI의 답변을 **보셨습니다**. 실제
+상황이라면 지금 어떻게 하시겠어요?"인데, 무엇에 대한 판단인지가 화면에서 사라진 상태였다 —
+참가자가 직전 화면(P6)에서 본 대화를 기억에 의존해 답하게 된다.
+
+- 서버: P7 payload에 `checkpoint`·`ai1`·`user1`·`user2` 추가. P6와 같은 `checkpoint_chat`·
+  `dossier.assemble`을 쓰므로 두 화면이 어긋날 수 없다.
+- 화면: `FocalTranscript`(effective checkpoint → AI1 → User1 → AI2 → User2)를 P6·P7이
+  공유한다. P7 제출 후 화면(F5)에도 같은 것을 그린다 — 답장을 보냈으면 그 답장까지 기록이다.
+- 지시문은 그 아래에 그대로 둔다. 문안은 §4.7 [제안] 원문 그대로 변경 없음.
+
+AI3는 여전히 없다(D-33) — User2 뒤에 AI 말풍선을 두지 않는다.
+회귀 테스트 2건(`test_p7_carries_the_same_transcript_as_p6` ·
+`test_p7_shows_user2_after_reply`). 711 → 713 green.
+
+---
+
+## P3 재진입 타이머 — DEV_MODE 면제 (2026-08-21)
+
+시연 중 화면을 넘길 때마다 30초를 기다려야 해서 워크스루가 성립하지 않았다.
+`state_payload`의 P3 분기에서 `DEV_MODE=true`면 `min_seconds`·`hint_seconds`를 0으로 내린다.
+클라이언트는 서버가 준 값을 쓸 뿐이라 "지금이 개발이다" 플래그가 프런트에 생기지 않는다
+(DevBar·DevNote와 같은 규율).
+
+**실세션(DEV_MODE=false)은 30/60 그대로다.** §0.5·§4.3의 [파일럿 확정] 값이고 초안 §7.3의
+interactional re-entry 절차(verification 이후 30–60초 회상) 자체라, 시연 편의가 참가자
+구성까지 따라가면 안 된다. `test_reentry_timer_is_waived_only_in_dev_mode`가 두 방향을
+같이 못박는다 — 면제가 실세션으로 새거나 [파일럿 확정] 값이 바뀌면 실패한다. 709 → 710 green.
+
+⚠ **PI 확인 대기**: "타이머를 걸지 마"가 실세션까지인지는 확인하지 않았다. 실세션에서도
+빼려면 `screen_copy.REENTRY_MIN_SECONDS`를 0으로 두고 §0.5 확정 파라미터 표·§4.3·초안 §7.3을
+함께 고쳐야 한다(결정 ID 신규 발급). 지금은 DEV 전용이다.
+
+---
+
+## DEV_MODE 설명 레이블 (2026-08-21, 명세 범위 밖 도구)
+
+팀원에게 화면을 설명할 때 "이 박스가 초안의 무엇인가"를 화면 위에서 가리키기 위한 것이다.
+`frontend/src/components/DevNote.tsx` — `DevNote`(알약) · `DevAside`(박스 옆) ·
+`DevScreenNote`(화면 상단 배너). 문안은 `docs/연구 7 초안 - 섹션 6, 7.md` 용어 그대로다.
+
+**DevBar와 같은 규율에 묶었다**: 존재 여부는 `/api/dev/status`가 정한다(404 = 미표시).
+`import.meta.env` 같은 빌드 플래그로 켜지 않는다 — §4.10(construct label 참가자 비공개)이
+빌드 설정 하나로 깨지는 경로를 만들지 않기 위해서다. 계약 테스트 2건으로 고정
+(`test_dev_labels_are_gated_by_the_server_not_a_build_flag` ·
+`test_dev_label_components_render_nothing_without_dev_mode`). 707 → 709 green.
+
+`/api/dev/status`는 모듈 수준 promise로 창 수명당 1회만 호출한다 — 레이블이 화면마다 여러
+개라 각자 fetch하면 화면 전환마다 요청이 수십 건이 된다.
+
+**적용 현황** — 두 층으로 나눴다.
+- **화면 배너(`DevScreenNote`)**: P0–P12 + 종료 화면 **전부**. 화면 맨 위 한 줄에 Pn +
+  초안·명세 용어 + 한 줄 설명. `test_dev_screen_notes_cover_every_screen`이 누락을 막는다.
+- **component 레이블(`DevNote`·`DevAside`)**: **P2에서만**. `CheckpointCard`는 P4·P6·P10에도
+  쓰이지만 `devLabels` prop이 꺼져 있다 — AI2 화면에서 카드에 알약 5개가 붙으면 정작 봐야
+  할 AI2가 묻힌다.
+
+배너를 손으로 넣다가 P7·P11이 각각 **다른 화면 안에** 들어간 적이 있다. 원인은 anchor로 쓴
+`    <div className="screen">`가 6칸 들여쓴 줄과 wide 변형(`maxWidth: 1100px`)에 각각
+어긋나 잡힌 것이다. 커버리지 테스트는 존재만 보므로, 위치는 QA 워크스루에서 배너의 `screen`
+값과 화면 제목을 눈으로 대조한다(§10.2).
+
+| 박스 | 레이블 | 출처 |
+|---|---|---|
+| 화면 상단 | Interactional Re-entry | §7.3 |
+| 상황 요약 카드 | AI-visible Layer · 최소 context | §7.4 · §7.3 |
+| 목록 3줄 → 2줄 | Prior Evidence | §7.4 |
+| 말풍선 1 | Original Request | §7.3 |
+| 말풍선 2 | Problematic AI-response | §7.3 · §7.5 |
+| 말풍선 3 | AI-visible Trouble Turn | §6.2 |
+| 수정 UI | Editable Segments (5종) | §4.2 · §7.9 |
+
+---
+
+## proto_v2 검증 — P2 상황 카드 (2026-08-21)
+
+**색**: 상황 요약 카드를 `bg-gray-50` → `border-accent bg-accent-soft`(#E0F2FE)로 바꿨다.
+채팅 말풍선과 다른 층(사건 재구성 vs 발화 기록)임을 색으로 분리한다. tailwind 토큰 주석의
+"accent.soft는 배경 전용 / 파랑 = 안내" 규칙 안에 있다. `CheckpointCard`는 공용이라 P2뿐
+아니라 P4·AI2·pairwise의 checkpoint 카드에 모두 적용된다(의도).
+
+**`prior_evidence` 중복**: P00에서 3줄이 같은 화면의 다른 텍스트와 전부 중복이었다 —
+①② `situation_summary` 3번째 문장의 재진술, ③ `original_request` 말풍선의 재진술.
+필드 자체는 초안 §7.4 AI-visible layer("AI가 접근할 수 있었던 information")의 구현이고
+§4.2 편집 segment·부록 A.1 AI2 렌더·evidence firewall이 여기 걸려 있어 폐기하지 않았다.
+대신 **P00 문안만** 고쳤다(PI 선택):
+- `situation_summary` → "이직을 할지 말지 AI와 상의하는 대화다." (명세 §5.2 "사건 이해에
+  필요한 최소 context"로 환원 — evidence는 `prior_evidence`가 진다)
+- `prior_evidence` 3줄 → 2줄 (`original_request` 중복분 제거)
+
+교훈: **`situation_summary`에 evidence를 다시 쓰면 화면과 AI2 프롬프트가 같이 중복된다.**
+P01–P24 실값 착지 때 같은 실수가 반복되기 쉬운 자리다 — 자산 작성 지침에 반영할 것.
+
+---
+
+## proto_v2 검증 — 데스크톱 가드 임계값 (D-38, 2026-08-21)
+
+**증상**: "이 연구는 데스크톱(노트북) 브라우저에서만 진행할 수 있습니다."가 정상적인 데스크톱
+사용에서 떴다. 종전 임계값은 폭 < 1024px 단독(`copy.ts` · `screen_copy.py`)이라 Zoom 화면공유 중
+1920 모니터를 좌우로 나누면(960px) 즉시 차단됐다. 가드는 앱 셸 최상단이라 진행이 통째로 멈춘다.
+
+**검증에서 나온 것**: 1024px은 자신이 내세운 근거와도 맞지 않았다. `App.tsx` 주석은 "자극 표시
+조건이 참가자마다 달라진다"를 근거로 들지만, 2단 비교 화면(`Exposure.tsx`·`Wrap.tsx`)의
+max-width는 **1100px**이다. 1024–1100 구간은 가드를 통과하면서 열 폭이 472px↔510px로 갈린다.
+단일 컬럼(`.screen` max-width **760px**)과도, 2단(1100px)과도 무관한 값이었다.
+
+**변경**: 폭 < 768 **또는** 높이 < 600이면 차단.
+- 폭 768 — `.screen` max-width 760px의 포화점. 768px부터 P0–P10 본문 폭이 큰 모니터와 동일하다.
+  세로 모드 휴대폰(최대 ~430px)은 계속 전부 걸린다.
+- 높이 600 — 폭만 낮추면 가로 모드 휴대폰(956×440 등)이 데스크톱으로 통과해 D-12가 뚫린다.
+  그 기기들의 판별자는 폭이 아니라 높이(390–440px)다.
+
+**대가**: 통과 범위가 넓어져 2단 비교 화면의 열 폭 편차가 커진다(768px에서 344px ↔ 1100px+에서
+510px). 균일성을 차단으로 강제하지 않고 §4.0의 viewport 기록으로 사후 확인하는 쪽을 택했다.
+`GET /api/dev/status`가 아니라 events에 남는 값이라 분석 단계에서 봐야 한다.
+
+**테스트**: NT-19 정적 층 3건으로 교체·추가 — 임계값 일치(서버↔클라이언트), 임계값 ≥ `.screen`
+max-width(둘이 따로 움직이면 실패), 가로 모드 휴대폰 차단 + 1280×720·960×1040 통과.
+705 → 707 green.
+
+**남은 결정 1건**: 2단 비교 화면을 768–1100px에서 어떻게 다룰지는 정하지 않았다. 선택지는
+① 현행 유지(열이 좁아짐) ② 좁으면 세로로 쌓기 ③ 비교 화면에만 별도 상위 게이트.
+①로 두었다 — ②는 D-12의 "모바일 대응 CSS 금지"와 부딪히고, ③은 화면별 가드라 §2.10 단일
+임계 구조를 깬다. PI 확인 후 바꾸는 편이 낫다.
+
+---
+
 ## 이번 전환에서 잡은 결함 1건
 
 **`write_csv`가 첫 행 기준으로 열을 잡았다.** `pairwise.csv`는 contrast마다 문항이 다르므로
@@ -316,8 +550,8 @@ P00 세션을 SS00 → SS10 완주했다.
 
 ## 한계로 남긴 것
 
-- **NT-19(데스크톱 가드)는 정적 검사만**이다 — 임계값 1024·문안 일치·가드가 화면 선택보다
-  앞이라는 것까지 본다. 렌더 동작 검증에는 JS 러너가 필요한데 이 리포의 테스트는
+- **NT-19(데스크톱 가드)는 정적 검사만**이다 — 임계값 768×600(D-38)·`.screen` max-width와의
+  관계·문안 일치·가드가 화면 선택보다 앞이라는 것까지 본다. 렌더 동작 검증에는 JS 러너가 필요한데 이 리포의 테스트는
   pytest다(CLAUDE.md). **vitest 도입은 미결**이고, 지금은 §10.2 워크스루에서 사람이 확인한다
   (리허설 수동 항목 D1-5c).
 - **실모델 1회 미실행** — `scripts/run_fixtures.py --real`이 준비돼 있고 실키·[확인 4] 비용

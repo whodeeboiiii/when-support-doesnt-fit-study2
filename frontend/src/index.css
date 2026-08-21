@@ -2,14 +2,56 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 공통 레이아웃 규칙 — 화면 구현(NS2: P0–P11)이 이 위에 올라간다.
-   **데스크톱 전용**이다(D-12·§2.10): 뷰포트 폭 < 1024px 진입 차단은 P0 가드가 맡고,
-   여기에는 모바일 대응(터치 타깃·키보드 회피·safe-area) 규칙을 두지 않는다. */
+/* ⚠ keyframes는 **여기**(레이어 밖 평범한 CSS)에 둔다. tailwind.config의 `keyframes`는
+   대응하는 `animate-*` 유틸리티가 소스에서 발견될 때만 빌드에 실린다 — 컴포넌트 클래스에서
+   raw `animation:`으로만 참조하면 JIT가 그 사용을 못 보고 통째로 지운다. 그러면 CSS에는
+   `animation: ring-settle ...`이 남는데 정의가 없어 아무 일도 일어나지 않는다(브라우저는
+   조용하다). 레이어 밖 CSS는 Tailwind가 그대로 통과시키므로 이 함정이 없다. */
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* 새 응답 표시 — 링이 한 번 번졌다가 아주 옅게 남는다("여기를 봐라"). */
+@keyframes ring-settle {
+  0% {
+    box-shadow: 0 0 0 0 rgba(3, 105, 161, 0.45);
+  }
+  60% {
+    box-shadow: 0 0 0 9px rgba(3, 105, 161, 0.18);
+  }
+  100% {
+    box-shadow: 0 0 0 3px rgba(3, 105, 161, 0.22);
+  }
+}
+
+/* 공통 레이아웃·디자인 시스템 (§2.10 · D-39). 색의 뜻은 `tailwind.config.js` 주석에 있다.
+
+   **데스크톱 전용**이다(D-12·§2.10): 뷰포트 768×600 미만 진입 차단은 P0 가드가 맡고(D-38),
+   여기에는 모바일 대응(터치 타깃·키보드 회피·safe-area) 규칙을 두지 않는다.
+
+   본문은 16px 밑으로 내려가지 않는다 — 세션은 Zoom 화면공유 중에 진행되고, 공유 화면은
+   한 번 더 축소되어 상대에게 도달한다. 보조 텍스트도 14px에서 멈춘다. */
 @layer base {
   body {
     @apply bg-white text-ink;
     font-size: 16px;
-    line-height: 1.6;
+    line-height: 1.65;
   }
   /* 키보드 참여 최소선 — 배경색 있는 버튼 위에서 브라우저 기본 링이 묻힌다. */
   :focus-visible {
@@ -24,15 +66,103 @@
     @apply mx-auto w-full px-8 py-10;
     max-width: 760px;
   }
+  .screen-in {
+    animation: screen-in 220ms ease-out both;
+  }
   .screen-title {
     @apply mb-4 text-xl font-semibold;
   }
-  /* 섹션 카드 — 배경 틴트 없이 테두리만으로 긴 화면(P2 사전설문·P9 평정)을 덩어리로 나눈다. */
+
+  /* 섹션 카드 — 배경 틴트 없이 테두리만으로 긴 화면(P8 평정)을 덩어리로 나눈다. */
   .sec {
     @apply rounded-xl border border-hair p-4;
   }
-  /* 안내 블록 — 놓치면 되돌릴 수 없는 고지 전용. 화면당 1개를 넘기지 않는다. */
+
+  /* 참가자 지시문 — **연구자가 참가자에게 건네는 말** 전용이다(노랑).
+     연파랑 상황 카드(재구성된 사건)와 색으로 갈린다: 지시문은 "지금 무엇을 하라"이고
+     상황 카드는 "그때 무슨 일이 있었나"다. 화면당 1개를 넘기지 않는다. */
   .callout {
-    @apply rounded-r-lg border-l-4 border-accent bg-accent-soft px-4 py-3;
+    @apply rounded-r-lg border-l-4 px-4 py-3;
+    border-left-color: theme('colors.guide.line');
+    background-color: theme('colors.guide.soft');
+  }
+
+  /* --- 채팅 (§2.10 참가자 우측·AI 좌측) --------------------------------- */
+  .chat {
+    @apply space-y-4;
+  }
+  .chat-row {
+    @apply flex;
+  }
+  /* 등장 애니메이션은 **여기**에 둔다. `animate-bubble-in` 유틸리티를 말풍선에 직접 붙이면
+     utilities 레이어가 components 레이어보다 뒤에 와서 `.bubble-new`의 `animation`을
+     통째로 덮어쓴다(같은 shorthand·같은 명시도 → 소스 순서 승). 그러면 새 응답 링이
+     아예 실행되지 않는다. 두 애니메이션은 반드시 **한 선언 안에서** 합성한다. */
+  .bubble {
+    @apply whitespace-pre-wrap rounded-2xl px-4 py-3;
+    animation: bubble-in 200ms ease-out both;
+  }
+  /* AI 말풍선 — **무채색 고정**. 색조를 넣지 않는다(교락 방지, tailwind 주석 참조).
+     흰 카드 위에서 말풍선이 묻히지 않도록 흰색이 아니라 회색으로 채운다 — R=G=B라
+     hue가 없으므로 따뜻함 지각과 무관하다. */
+  .bubble-ai {
+    @apply border text-ink;
+    background-color: theme('colors.stim.fill');
+    border-color: theme('colors.stim.line');
+  }
+  .bubble-user {
+    @apply bg-ink text-white;
+  }
+  /* 새 응답 표시 — focal AI1 · 대안 AI1 3종 · AI2에 **똑같이** 붙는다.
+     버블 자체는 칠하지 않는다(색조 금지) — 링만 바깥에 남는다.
+     `.bubble`의 등장 애니메이션을 함께 적어야 한다(위 주석 참조). */
+  .bubble-new {
+    animation:
+      bubble-in 200ms ease-out both,
+      ring-settle 900ms ease-out both;
+  }
+
+  /* 입력 composer — 테두리 하나가 textarea와 보내기 버튼을 함께 감싼다. */
+  .composer {
+    @apply rounded-2xl border border-edge bg-white p-2;
+  }
+  .composer:focus-within {
+    border-color: theme('colors.accent.DEFAULT');
+  }
+  .composer textarea {
+    @apply w-full resize-none bg-transparent px-2 py-1.5 text-base outline-none;
+  }
+
+  /* --- 버튼 위계 -------------------------------------------------------- */
+  /* 1차: 진행·보내기. 화면에서 "다음으로 간다"는 뜻을 가진 유일한 요소다. */
+  .btn-primary {
+    @apply h-11 rounded-lg bg-accent-deep px-5 font-medium text-white;
+    @apply disabled:bg-gray-200 disabled:text-gray-500;
+  }
+  /* 2차: 취소·수정. 흰 배경 + 테두리. */
+  .btn-secondary {
+    @apply h-11 rounded-lg border border-edge bg-white px-5 text-ink disabled:text-gray-400;
+  }
+  /* 선택 상태(카드·Likert) — 파랑 테두리 + 연파랑 배경. 1차 버튼은 **채움**이라 겹치지 않는다. */
+  .is-selected {
+    border-color: theme('colors.accent.DEFAULT');
+    background-color: theme('colors.accent.soft');
+    color: theme('colors.accent.deep');
+  }
+}
+
+/* 애니메이션을 끄고 싶다는 요청은 시스템 설정으로 온다. 전환은 장식이므로 전부 없앤다 —
+   다만 **표시 자체**는 남는다(`.bubble-new`의 잔여 링은 아래에서 정적으로 다시 준다).
+   ⚠ 이 블록은 접근성 규칙이다. 모바일 대응 @media를 여기에 추가하지 마라(D-12). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .bubble-new {
+    box-shadow: 0 0 0 3px rgba(3, 105, 161, 0.22);
   }
 }

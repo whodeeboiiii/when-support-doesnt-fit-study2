@@ -15,6 +15,7 @@ import { api } from '../api'
 import { Bubble } from '../components/Chat'
 import { SubmitBar } from '../components/Inputs'
 import { DONE_NOTICE, NEXT } from '../copy'
+import { DevScreenNote } from '../components/DevNote'
 import { ScreenProps, ScreenTitle, useSubmit } from './common'
 
 interface PairView {
@@ -29,16 +30,24 @@ export function InterviewHold({ state, onState }: ScreenProps) {
 
   return (
     <div className="screen" style={{ maxWidth: '1100px' }}>
+      <DevScreenNote
+        screen="P11"
+        term="Contrastive Interview 대기"
+        detail="§4.11 — 세 pair를 제시 순서·좌우 그대로 읽기 전용 재배치. 문항·응답값은 재표시하지 않는다. 인터뷰는 Zoom 구두(부록 D.3)."
+      />
       <ScreenTitle>비교한 응답들</ScreenTitle>
       <div className="space-y-10">
         {pairs.map((pair) => (
           <section key={pair.position}>
             <h2 className="mb-3 text-sm font-semibold text-gray-600">{pair.label}</h2>
-            <div className="grid grid-cols-2 gap-4">
+            {/* P10과 같은 열 규칙 — 폭 동일, 높이 맞춤, 열 내부 스크롤 없음(§4.11). */}
+            <div className="grid grid-cols-2 gap-5">
               {pair.sides.map((side) => (
-                <div key={side.label} className="sec">
-                  <p className="mb-3 text-sm text-gray-600">{side.label}</p>
-                  <Bubble role="ai" text={side.ai1} />
+                <div key={side.label} className="sec flex flex-col">
+                  <p className="mb-3 text-sm font-semibold text-gray-600">{side.label}</p>
+                  <div className="chat">
+                    <Bubble role="ai" text={side.ai1} wide />
+                  </div>
                 </div>
               ))}
             </div>
@@ -59,6 +68,11 @@ export function Debrief({ state, onState }: ScreenProps) {
   const { busy, error, run } = useSubmit(onState)
   return (
     <div className="screen">
+      <DevScreenNote
+        screen="P12"
+        term="디브리핑"
+        detail="§4.12 — 필수 공개 7항목. 문안 전체가 IRB 착지 대기다(PH-IRB-2)."
+      />
       <ScreenTitle>디브리핑</ScreenTitle>
       <div className="callout whitespace-pre-wrap">{state.data.notice}</div>
       <SubmitBar
@@ -76,6 +90,11 @@ export function Ended({ state }: { state: { screen: string; data: Record<string,
   const message = state.screen === 'ABORTED' ? state.data.message : DONE_NOTICE
   return (
     <div className="screen">
+      <DevScreenNote
+        screen="—"
+        term="세션 종료"
+        detail="§9.1 — 정상 종료·중단의 종착 화면. 모든 오류 경로가 여기로 수렴한다."
+      />
       <p>{message}</p>
     </div>
   )

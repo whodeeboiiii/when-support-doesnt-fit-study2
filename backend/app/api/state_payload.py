@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import store
 from app.assets import dossier_loader, pairwise_items, rating_items, screen_copy
 from app.core import assignment
+from app.core.config import get_settings
 from app.core.state_machine import (
     ALT_POSITIONS,
     FState,
@@ -250,11 +251,16 @@ async def _screen_data(
         effective = dossier_loader.build_effective(dossier.ai_visible, edits)
         return _checkpoint_edit_view(effective, edits)
     if screen == "P3":
+        # §4.3 [파일럿 확정] 30초 비활성 · 60초 보조문. **DEV_MODE에서만** 대기를 0으로 둔다 —
+        # 시연·QA에서 화면을 넘길 때마다 30초를 기다리면 워크스루가 성립하지 않는다.
+        # 임계값을 서버가 내려주는 구조라 클라이언트에는 "지금이 개발이다" 플래그가 없다
+        # (DevBar·DevNote와 같은 규율). 참가자 구성(DEV_MODE=false)은 30/60 그대로다.
+        waived = get_settings().dev_mode
         return {
             "notice": screen_copy.REENTRY_NOTICE,
             "ready_notice": screen_copy.REENTRY_READY_NOTICE,
-            "min_seconds": screen_copy.REENTRY_MIN_SECONDS,
-            "hint_seconds": screen_copy.REENTRY_HINT_SECONDS,
+            "min_seconds": 0 if waived else screen_copy.REENTRY_MIN_SECONDS,
+            "hint_seconds": 0 if waived else screen_copy.REENTRY_HINT_SECONDS,
         }
 
     # --- SS04 focal (P4–P7) -------------------------------------------------
@@ -305,10 +311,21 @@ async def _screen_data(
             }
         if screen == "P7":
             ai2 = await store.turn(db, run.id, "ai2")
+            user1 = await store.turn(db, run.id, "user1")
+            user2 = await store.turn(db, run.id, "user2")
             action = await store.downstream(db, run.id)
             return {
+                # P6와 **같은** 채팅 맥락을 그대로 내린다(effective checkpoint → AI1 → User1
+                # → AI2). 참가자가 "실제 상황이라면 어떻게 하겠는가"를 답하려면 직전 화면에서
+                # 보던 대화가 눈앞에 남아 있어야 한다 — AI2 한 말풍선만 두면 무엇에 대한
+                # 판단인지의 근거가 화면에서 사라진다.
+                "checkpoint": checkpoint_chat(effective),
+                "ai1": focal_ai1,
+                "user1": _decrypt(user1.text) if user1 else None,
                 "instruction": screen_copy.DOWNSTREAM_INSTRUCTION,
                 "ai2": _decrypt(ai2.text) if ai2 else None,
+                # F5 — 답장을 보냈다면 그 답장도 기록의 일부다(AI 응답은 없다 — D-33).
+                "user2": _decrypt(user2.text) if user2 else None,
                 "reply_label": screen_copy.DOWNSTREAM_REPLY_LABEL,
                 "end_label": screen_copy.DOWNSTREAM_END_LABEL,
                 "send_button": screen_copy.SEND_BUTTON,

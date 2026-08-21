@@ -12,7 +12,20 @@
 
 /** §2.10·§4.0 데스크톱 가드 — 서버 `screen_copy.DESKTOP_ONLY`와 같은 문장이다. */
 export const DESKTOP_ONLY = '이 연구는 데스크톱(노트북) 브라우저에서만 진행할 수 있습니다.'
-export const MIN_VIEWPORT_WIDTH = 1024
+
+/**
+ * §2.10 데스크톱 가드 임계값 (D-38 — 1024 → 768/600).
+ *
+ * 폭 768: `.screen`의 max-width가 760px이므로 768px부터는 단일 컬럼 화면(P0–P10)이
+ * 큰 모니터와 **동일하게** 렌더된다. 자극 표시 조건 불변이 실제로 성립하는 최소값이고,
+ * 세로 모드 휴대폰(최대 ~430px)은 여전히 전부 걸린다.
+ *
+ * 높이 600: 폭만 보면 가로 모드 휴대폰(예: 956×440)이 통과한다 — D-12(모바일 미지원)가
+ * 뚫린다. 그 기기들의 공통점은 폭이 아니라 **높이**(390–440px)다. 데스크톱 창은 세로를
+ * 일부러 줄이지 않는 한 600px 밑으로 가지 않는다.
+ */
+export const MIN_VIEWPORT_WIDTH = 768
+export const MIN_VIEWPORT_HEIGHT = 600
 
 /** §4.0 P0 입력 라벨 */
 export const JOIN_TITLE = '연구 참여'

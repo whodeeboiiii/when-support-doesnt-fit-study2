@@ -20,6 +20,7 @@ import { AutoTextArea, Cards, SubmitBar } from '../components/Inputs'
 import { LikertList } from '../components/Likert'
 import Loading from '../components/Loading'
 import { NEXT, START, SUBMIT } from '../copy'
+import { DevScreenNote } from '../components/DevNote'
 import { CheckpointCard } from './Intro'
 import { ScreenProps, ScreenTitle, useSubmit } from './common'
 
@@ -41,6 +42,11 @@ export function Reentry({ state, onState }: ScreenProps) {
 
   return (
     <div className="screen">
+      <DevScreenNote
+        screen="P3"
+        term="Incident-Grounded Interactional Re-entry"
+        detail="§7.3 — verification 이후 30–60초 회상. DEV_MODE에서는 대기 없이 바로 진행된다(실세션은 30초 비활성·60초 보조문). 특정 감정·선호·전략은 묻지 않는다."
+      />
       <ScreenTitle>잠시 떠올려 주세요</ScreenTitle>
       {/* 감정·선호·correction 전략을 묻는 문구를 두지 않는다(§4.3 · 초안 §7.3). */}
       <p className="whitespace-pre-wrap">{state.data.notice}</p>
@@ -91,31 +97,36 @@ export function Chat({ state, onState }: ScreenProps) {
 
   return (
     <div className="screen">
+      <DevScreenNote
+        screen="P4"
+        term="Focal Enactment — AI1 + User1"
+        detail="§4.4·초안 §7.7 — locked focal AI1(R/U/Q 조립문) 표시 후 실제 보낼 답장을 작성한다. 조건은 참가자당 하나다(between). User1은 필수(D-32)."
+      />
       <CheckpointCard checkpoint={state.data.checkpoint} />
-      <div className="mt-3">
-        {shown ? <Bubble role="ai" text={state.data.ai1} /> : <TypingIndicator />}
+      <div className="chat mt-4">
+        {/* focal AI1 — 이 화면의 새 응답. 대안 AI1·AI2와 **같은** `isNew`를 쓴다(D-39). */}
+        {shown ? <Bubble role="ai" text={state.data.ai1} isNew /> : <TypingIndicator />}
       </div>
       {shown && (
-        <div className="mt-8 border-t border-hair pt-4">
+        <div className="mt-8 border-t border-hair pt-5">
           {/* [정본, 초안 §7.7] — 입력창 위 고정 표시. 윤문 금지. */}
-          <p className="mb-3 whitespace-pre-wrap">{state.data.instruction}</p>
-          <ChatInput value={text} onChange={setText} disabled={busy} />
+          <p className="callout mb-4 whitespace-pre-wrap">{state.data.instruction}</p>
+          {/* **보내기 하나뿐이다** — no_reply·end 버튼은 v2에 없다(D-32). */}
+          <ChatInput
+            value={text}
+            onChange={setText}
+            disabled={busy}
+            send={{
+              label: state.data.send_button,
+              disabled: busy || !text.trim(),
+              onClick: send,
+            }}
+          />
           {error && (
             <p role="alert" className="mt-2 text-sm text-red-600">
               {error}
             </p>
           )}
-          {/* **보내기 하나뿐이다** — no_reply·end 버튼은 v2에 없다(D-32). */}
-          <div className="mt-3 flex">
-            <button
-              type="button"
-              disabled={busy || !text.trim()}
-              onClick={send}
-              className="h-11 flex-1 rounded-lg bg-accent-deep px-4 font-medium text-white disabled:bg-gray-200 disabled:text-gray-500"
-            >
-              {state.data.send_button}
-            </button>
-          </div>
         </div>
       )}
     </div>
@@ -156,6 +167,11 @@ export function Sidecar({ state, onState }: ScreenProps) {
 
   return (
     <div className="screen">
+      <DevScreenNote
+        screen="P5"
+        term="Private Sidecar"
+        detail="§4.5·초안 §7.8 — AI에 전달되지 않는 3단 질문. withholding과 prompt-evoked reflection을 구분한다. 어떤 값도 AI2 payload에 들어가지 않는다(NT-01)."
+      />
       <div className="callout">{state.data.transition}</div>
 
       {/* 1단 [정본, 초안 §7.8] */}
@@ -214,6 +230,35 @@ export function Sidecar({ state, onState }: ScreenProps) {
 // P6 — AI2 로딩·표시 (§4.6 · F3)
 // --------------------------------------------------------------------------- //
 
+/**
+ * focal 채팅 맥락 — effective checkpoint → AI1 → User1 → AI2 (→ User2).
+ *
+ * P6와 P7이 **같은 것을** 그린다(§4.6·§4.7). P7에서 AI2 말풍선만 남기면 참가자가 "실제
+ * 상황이라면 어떻게 하겠는가"를 판단할 근거가 화면에서 사라진다 — 직전 화면과 이어져 보여야
+ * 한다. 조건명·branch 번호 같은 배지는 여기에도 붙이지 않는다(§4.10).
+ */
+function FocalTranscript({
+  data,
+  ai2,
+}: {
+  data: Record<string, any>
+  ai2: string | null
+}) {
+  return (
+    <>
+      <CheckpointCard checkpoint={data.checkpoint} />
+      <div className="chat mt-4">
+        {data.ai1 && <Bubble role="ai" text={data.ai1} />}
+        {data.user1 && <Bubble role="user" text={data.user1} />}
+        {/* 이 화면의 **새 응답**은 AI2다. AI1은 이미 P4에서 본 것이라 표시하지 않는다 —
+            화면마다 하이라이트는 지금 판단 대상인 AI 응답 하나뿐이다(D-39). */}
+        {ai2 && <Bubble role="ai" text={ai2} isNew />}
+        {data.user2 && <Bubble role="user" text={data.user2} />}
+      </div>
+    </>
+  )
+}
+
 export function Ai2({ state, onState }: ScreenProps) {
   const text: string | null = state.data.ai2 ?? null
   const { busy, error, run } = useSubmit(onState)
@@ -236,13 +281,13 @@ export function Ai2({ state, onState }: ScreenProps) {
 
   return (
     <div className="screen">
+      <DevScreenNote
+        screen="P6"
+        term="Common-Policy AI2"
+        detail="§4.6·초안 §7.9 — 실시간 생성. 입력은 effective checkpoint + focal AI1 + User1 3종뿐(§1.2). 정상·재생성·fallback은 참가자에게 구분되지 않는다."
+      />
       {/* 채팅 맥락(effective checkpoint → AI1 → User1) 위에 AI2를 얹는다(§4.6). */}
-      <CheckpointCard checkpoint={state.data.checkpoint} />
-      <div className="mt-3 space-y-3">
-        {state.data.ai1 && <Bubble role="ai" text={state.data.ai1} />}
-        {state.data.user1 && <Bubble role="user" text={state.data.user1} />}
-        <Bubble role="ai" text={text} />
-      </div>
+      <FocalTranscript data={state.data} ai2={text} />
       {/* AI3는 없다 — 추가 입력창을 두지 않는다(§4.6 · D-33). */}
       <SubmitBar
         label={NEXT}
@@ -269,7 +314,12 @@ export function Downstream({ state, onState }: ScreenProps) {
   if (state.data.submitted) {
     return (
       <div className="screen">
-        {state.data.ai2 && <Bubble role="ai" text={state.data.ai2} />}
+        <DevScreenNote
+          screen="P7"
+          term="Downstream Action — 제출 후(F5)"
+          detail="§4.7 — 종료 안내를 읽고 진행한다. AI3는 없다(D-33)."
+        />
+        <FocalTranscript data={state.data} ai2={state.data.ai2 ?? null} />
         {state.data.closed_notice && (
           <div className="callout mt-6 whitespace-pre-wrap">{state.data.closed_notice}</div>
         )}
@@ -302,8 +352,14 @@ export function Downstream({ state, onState }: ScreenProps) {
 
   return (
     <div className="screen">
-      {state.data.ai2 && <Bubble role="ai" text={state.data.ai2} />}
-      <p className="mb-6 mt-8 whitespace-pre-wrap">{state.data.instruction}</p>
+      <DevScreenNote
+        screen="P7"
+        term="Downstream Action"
+        detail="§4.7·D-26 — 답장 이어쓰기 또는 종료(이탈 유형 6코드 + 이유). User2에 대한 AI 응답은 없다(D-33)."
+      />
+      {/* 직전 화면(P6)과 같은 채팅 맥락을 그대로 두고, 그 아래에서 묻는다(§4.7). */}
+      <FocalTranscript data={state.data} ai2={state.data.ai2 ?? null} />
+      <p className="callout mb-6 mt-8 whitespace-pre-wrap">{state.data.instruction}</p>
 
       {/* 두 갈래는 좌우 고정이다(§4.7). */}
       <div className="flex gap-3">
@@ -318,8 +374,10 @@ export function Downstream({ state, onState }: ScreenProps) {
             type="button"
             aria-pressed={branch === value}
             onClick={() => setBranch(value)}
-            className={`h-11 flex-1 rounded-lg border bg-white px-4 ${
-              branch === value ? 'border-ink ring-2 ring-ink font-medium' : 'border-edge'
+            className={`h-12 flex-1 rounded-xl border px-4 transition-colors ${
+              branch === value
+                ? 'is-selected font-medium ring-1 ring-accent'
+                : 'border-hair bg-white hover:border-edge hover:bg-gray-50'
             }`}
           >
             {label}
@@ -328,7 +386,7 @@ export function Downstream({ state, onState }: ScreenProps) {
       </div>
 
       {branch === 'reply' && (
-        <div className="sec mt-6">
+        <div className="mt-6">
           <ChatInput value={text} onChange={setText} disabled={busy} />
         </div>
       )}
@@ -386,22 +444,27 @@ export function Ratings({ state, onState }: ScreenProps) {
 
   return (
     <div className="screen">
+      <DevScreenNote
+        screen="P8"
+        term="Focal Measures + Manipulation Check"
+        detail="§4.8·초안 §7.11 — 블록1 focal experiential 5 construct → 블록2 MC 2문항. MC가 battery 마지막이고 referent는 첫 번째 AI 응답이다(D-37). 합산 금지."
+      />
       <ScreenTitle>방금 경험한 대화에 대한 평정</ScreenTitle>
-      <p className="mb-6 text-sm text-gray-600">
-        {scale.min}({scale.min_label}) – {scale.max}({scale.max_label})
-      </p>
-      <div className="space-y-10">
+      <div className="space-y-12">
         {/* 블록 순서는 서버가 정한다 — MC가 **마지막**이다(§0.4 D-37). */}
         {blocks.map((block) => (
           <section key={block.scope}>
-            {/* §4.8 — MC 블록 상단에 focal AI1 원문을 회색 카드로 재표시(앵커). */}
+            {/* §4.8 — MC 블록 상단에 focal AI1 원문을 카드로 재표시(앵커).
+                자극의 재표시이므로 채팅과 같은 무채색이다 — 색조를 넣지 않는다. */}
             {block.ai1_card && (
-              <div className="sec mb-4 whitespace-pre-wrap bg-gray-50">{block.ai1_card}</div>
+              <div className="bubble bubble-ai mb-5 max-w-none">{block.ai1_card}</div>
             )}
             <LikertList
               instruction={block.instruction}
               min={scale.min}
               max={scale.max}
+              minLabel={scale.min_label}
+              maxLabel={scale.max_label}
               items={block.items.map((item) => ({ id: String(item.position), text: item.text }))}
               values={values}
               onChange={(id, value) => setValues((prev) => ({ ...prev, [id]: value }))}

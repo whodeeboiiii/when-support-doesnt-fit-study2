@@ -473,3 +473,53 @@ async def test_participant_outside_the_assignment_cannot_start(client: AsyncClie
     )
     assert response.status_code == 409
     assert "배정표" in response.text
+
+
+# --------------------------------------------------------------------------- #
+# P7 채팅 맥락 — §4.7 지시문은 "본 것"을 가리킨다
+# --------------------------------------------------------------------------- #
+
+
+async def test_p7_carries_the_same_transcript_as_p6(client: AsyncClient, llm) -> None:
+    """P7이 P6와 **같은** 채팅 맥락을 내려야 한다.
+
+    §4.7 지시문은 "AI의 답변을 보셨습니다. 실제 상황이라면 지금 어떻게 하시겠어요?"다 —
+    무엇에 대한 판단인지가 화면에 남아 있어야 성립한다. AI2 말풍선만 남기면 참가자는
+    직전 화면에서 본 대화를 기억에 의존해 답하게 된다.
+    """
+    await helpers.reach_focal(client)
+    await client.post("/api/focal/user1", json={"text": "장기 계획 말고 비교만 해줘"})
+    await client.post("/api/focal/sidecar", json={"has_more": False})
+    await client.post("/api/focal/ai2")
+
+    p6 = (await client.get("/api/state")).json()
+    assert p6["screen"] == "P6"
+    await helpers.advance(client, "P6")
+    p7 = (await client.get("/api/state")).json()
+    assert p7["screen"] == "P7"
+
+    for field in ("checkpoint", "ai1", "user1", "ai2"):
+        assert p7["data"].get(field), f"P7에 {field}가 없다"
+        assert p7["data"][field] == p6["data"][field], f"{field}가 P6와 다르다"
+
+    assert p7["data"]["instruction"] == (
+        "AI의 답변을 보셨습니다. 실제 상황이라면 지금 어떻게 하시겠어요?"
+    )
+
+
+async def test_p7_shows_user2_after_reply(client: AsyncClient, llm) -> None:
+    """답장을 보냈으면 그 답장도 기록의 일부다 — AI 응답은 여전히 없다(D-33)."""
+    await helpers.reach_focal(client)
+    await client.post("/api/focal/user1", json={"text": "비교만 해줘"})
+    await client.post("/api/focal/sidecar", json={"has_more": False})
+    await client.post("/api/focal/ai2")
+    await helpers.advance(client, "P6")
+    await client.post(
+        "/api/focal/downstream", json={"disposition": "reply", "text": "그럼 안정성 쪽으로"}
+    )
+
+    data = (await client.get("/api/state")).json()["data"]
+    assert data["submitted"] is True
+    assert data["user2"] == "그럼 안정성 쪽으로"
+    assert data["ai2"], "AI2도 계속 보여야 한다"
+    assert "ai3" not in data

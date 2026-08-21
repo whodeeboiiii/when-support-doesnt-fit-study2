@@ -19,6 +19,7 @@ import { Bubble, TypingIndicator } from '../components/Chat'
 import { SubmitBar } from '../components/Inputs'
 import { LikertList } from '../components/Likert'
 import { SUBMIT } from '../copy'
+import { DevScreenNote } from '../components/DevNote'
 import { CheckpointCard } from './Intro'
 import { ScreenProps, ScreenTitle, useSubmit } from './common'
 
@@ -48,6 +49,11 @@ export function AltExposure({ state, onState }: ScreenProps) {
 
   return (
     <div className="screen">
+      <DevScreenNote
+        screen="P9"
+        term="Alternative Exposure ×3"
+        detail="§4.9·초안 §7.10 — 나머지 세 AI1을 차례로 본다(focal은 재노출 없음). 입력창 없음. 대안은 focal 측정(SS05) 완료 전에는 어떤 payload에도 실리지 않는다(NT-31)."
+      />
       {/* 첫 대안 진입 시 1회 안내(§4.9). */}
       {state.data.intro && (
         <div className="callout mb-6 whitespace-pre-wrap">{state.data.intro}</div>
@@ -55,8 +61,10 @@ export function AltExposure({ state, onState }: ScreenProps) {
       <ScreenTitle>{state.data.label}</ScreenTitle>
 
       <CheckpointCard checkpoint={state.data.checkpoint} />
-      <div className="mt-3">
-        {shown ? <Bubble role="ai" text={state.data.ai1} /> : <TypingIndicator />}
+      <div className="chat mt-4">
+        {/* 대안 AI1 — focal AI1(P4)·AI2(P6)와 **완전히 같은** `isNew`다(D-39).
+            하이라이트가 조건마다 다르면 그 자체가 조작이 된다. */}
+        {shown ? <Bubble role="ai" text={state.data.ai1} isNew /> : <TypingIndicator />}
       </div>
 
       {/* 입력창 없음 — 답장을 작성하지 않는다(§4.9). */}
@@ -91,10 +99,15 @@ export function Pairwise({ state, onState }: ScreenProps) {
 
   return (
     <div className="screen" style={{ maxWidth: '1100px' }}>
+      <DevScreenNote
+        screen="P10"
+        term="Contrastive Evaluation ×3"
+        detail="§4.10·초안 §7.11 — 「응답 A」/「응답 B」 좌우 비교(좌우는 배정표가 정한다). 어느 쪽이 focal이었는지 라벨링하지 않는다."
+      />
       <ScreenTitle>
         두 응답 비교 ({position}/{state.data.total ?? 3})
       </ScreenTitle>
-      <p className="mb-6 whitespace-pre-wrap">{state.data.intro}</p>
+      <p className="callout mb-6 whitespace-pre-wrap">{state.data.intro}</p>
 
       {/* 상단 effective checkpoint 접이식 카드 — **기본 접힘**(§4.10). */}
       <div className="mb-6">
@@ -102,7 +115,7 @@ export function Pairwise({ state, onState }: ScreenProps) {
           type="button"
           onClick={() => setOpenCheckpoint((open) => !open)}
           aria-expanded={openCheckpoint}
-          className="h-10 rounded-lg border border-edge bg-white px-4 text-sm"
+          className="btn-secondary h-10 text-sm"
         >
           {state.data.checkpoint_toggle} {openCheckpoint ? '▲' : '▼'}
         </button>
@@ -113,12 +126,20 @@ export function Pairwise({ state, onState }: ScreenProps) {
         )}
       </div>
 
-      {/* 두 열 — 좌우는 배정표가 정한다. focal 여부는 표시하지 않는다(§4.10). */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* 두 열 — 좌우는 배정표가 정한다. focal 여부는 표시하지 않는다(§4.10).
+          `grid-cols-2`는 폭이 정확히 같고, 기본 `items-stretch`라 두 열 높이가 맞는다.
+          **열 안에 스크롤을 두지 않는다** — 긴 응답은 페이지가 통째로 늘어나야 두 응답을
+          같은 조건에서 읽는다(한쪽만 스크롤되면 비교 자체가 비대칭이 된다). */}
+      <div className="grid grid-cols-2 gap-5">
         {sides.map((side) => (
-          <section key={side.label} className="sec">
-            <h2 className="mb-3 text-sm font-semibold text-gray-600">{side.label}</h2>
-            <Bubble role="ai" text={side.ai1} />
+          <section key={side.label} className="sec flex flex-col">
+            {/* 헤더 고정 — 긴 응답을 스크롤하는 동안에도 A/B가 어느 쪽인지 남아야 한다. */}
+            <h2 className="sticky top-0 z-10 -mx-4 -mt-4 mb-4 rounded-t-xl border-b border-hair bg-white px-4 py-3 text-sm font-semibold text-gray-600">
+              {side.label}
+            </h2>
+            <div className="chat">
+              <Bubble role="ai" text={side.ai1} wide />
+            </div>
           </section>
         ))}
       </div>

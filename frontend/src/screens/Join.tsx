@@ -11,6 +11,7 @@
 import { useState } from 'react'
 import { ApiError, AppState, api } from '../api'
 import { DevPrefill } from '../components/DevBar'
+import { DevScreenNote } from '../components/DevNote'
 import { SubmitBar } from '../components/Inputs'
 import { JOIN_CODE_LABEL, JOIN_PARTICIPANT_LABEL, JOIN_SUBMIT, JOIN_TITLE } from '../copy'
 import { ScreenTitle } from './common'
@@ -42,6 +43,11 @@ export default function Join({
 
   return (
     <div className="screen">
+      <DevScreenNote
+        screen="P0"
+        term="접속"
+        detail="§4.0 — 참가자 번호 + 6자리 일회용 코드(TTL 24h). 데스크톱 가드(768×600)가 이 화면보다 앞에 선다."
+      />
       <ScreenTitle>{JOIN_TITLE}</ScreenTitle>
       <div className="sec space-y-4">
         <label className="block">
@@ -50,7 +56,7 @@ export default function Join({
             value={participantNo}
             onChange={(event) => setParticipantNo(event.target.value)}
             autoComplete="off"
-            className="mt-1 h-11 w-full rounded-lg border border-edge px-3"
+            className="mt-1 h-11 w-full rounded-lg border border-edge px-3 text-base focus:border-accent"
           />
         </label>
         <label className="block">
@@ -60,7 +66,7 @@ export default function Join({
             onChange={(event) => setCode(event.target.value)}
             autoComplete="off"
             maxLength={8}
-            className="mt-1 h-11 w-full rounded-lg border border-edge px-3 tracking-widest"
+            className="mt-1 h-11 w-full rounded-lg border border-edge px-3 text-base tracking-widest focus:border-accent"
           />
         </label>
       </div>
