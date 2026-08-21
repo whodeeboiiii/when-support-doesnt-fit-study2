@@ -1,0 +1,38 @@
+# 빌드 컨텍스트에서 제외 — 이미지 크기와 **비밀정보 유입**을 함께 막는다.
+# ⚠ `.env`·실값 dossier·배정표는 이미지에 절대 들어가면 안 된다(§2.9). 이미지는 레지스트리에
+#    남고 레이어는 되짚을 수 있다 — 비밀정보는 플랫폼 환경변수로만 주입한다.
+
+# 비밀정보
+.env
+.env.*
+!.env.example
+
+# 로컬 DB (배포는 볼륨의 파일을 쓴다)
+dev_local.db*
+*.sqlite3
+
+# Python
+.venv/
+backend/.venv/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Frontend — 이미지 안에서 다시 빌드한다
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# 런타임에 쓰지 않는 것 (Dockerfile이 COPY하지도 않는다 — 컨텍스트 전송만 줄인다)
+.git/
+.github/
+docs/
+tests/
+reports/
+exports/
+*.docx
+
+# macOS
+.DS_Store
