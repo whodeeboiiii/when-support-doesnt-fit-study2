@@ -89,7 +89,8 @@ def blockers() -> list[Blocker]:
                 Blocker("PH-03", f"배정표 참가자의 dossier 없음 — {', '.join(missing)} (§9.1)")
             )
 
-    # PH-06 · PH-07 — 문항 문면 PI 승인.
+    # PH-06 · PH-07 — 문항 문면. 2026-08-24 `_v1` 착지로 통과 상태다. **검사는 남긴다** —
+    # `_v1`이 사라지면 로더가 `_v0`으로 내려가는데, 그 회귀를 잡는 것이 이 두 줄이다.
     if rating_items.load().is_placeholder:
         found.append(
             Blocker("PH-06", f"focal 문항 원문 미착지 — {rating_items.asset_path().name} (§4.8)")
@@ -101,11 +102,14 @@ def blockers() -> list[Blocker]:
             )
         )
 
-    # PH-IRB-1 · PH-IRB-2 — 동의서·디브리핑 정본.
+    # PH-IRB-1 · PH-IRB-2 — 동의서·디브리핑 정본. 초안 문안이 착지해도 표식은 남는다
+    # (승인은 IRB가 한다) — `screen_copy`의 P1·P12 주석 참조.
     consent_text = screen_copy.CONSENT_TODO + screen_copy.DEBRIEF_TODO
     for tag in IRB_TAGS:
         if tag in consent_text:
-            found.append(Blocker(tag, "문안 미착지 — 동의서·디브리핑 정본 필요 (§4.1·§4.12)"))
+            found.append(
+                Blocker(tag, "IRB 승인 대기 — 초안 문안 착지본 사용 중 (§4.1·§4.12)")
+            )
 
     settings = get_settings()
     if not settings.dev_mode and not (settings.main_model_id and settings.validator_model_id):

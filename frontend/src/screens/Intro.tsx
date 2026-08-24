@@ -40,10 +40,10 @@ export function Consent({ state, onState }: ScreenProps) {
       <DevScreenNote
         screen="P1"
         term="동의"
-        detail="§4.1 — 항목별 복수 체크 6종(대안 노출 고지 포함). 문안 전체가 IRB 착지 대기다(PH-IRB-1)."
+        detail="§4.1 — 항목별 복수 체크 6종(대안 노출 고지 포함). 문안은 IRB 초안 착지본이고 승인 대기다(PH-IRB-1)."
       />
       <ScreenTitle>연구 소개와 동의</ScreenTitle>
-      <div className="callout">{state.data.notice}</div>
+      <div className="callout whitespace-pre-wrap">{state.data.notice}</div>
       <div className="sec mt-6">
         <Checks
           items={items}
@@ -51,6 +51,10 @@ export function Consent({ state, onState }: ScreenProps) {
           onChange={(field, value) => setValues((prev) => ({ ...prev, [field]: value }))}
         />
       </div>
+      {/* §4.1 하단 고정 — PII 입력 금지. 체크 대상이 아니라 안내다. */}
+      {state.data.footnote && (
+        <p className="mt-3 text-sm text-gray-500">{state.data.footnote}</p>
+      )}
       <SubmitBar
         label={state.data.button ?? NEXT}
         busy={busy}

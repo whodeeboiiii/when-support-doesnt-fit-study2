@@ -35,7 +35,7 @@ export DEV_MODE=true DATABASE_URL="sqlite+aiosqlite:///./dev_local.db" \
 ./backend/.venv/bin/python scripts/run_qa_rehearsal.py --out reports/qa_rehearsal.md
 #   자동 34 · 수동 2 · 실패 0
 ./backend/.venv/bin/python scripts/freeze_study_version.py --check
-#   모집 게이트 6건: PH-03 · PH-08 · PH-06 · PH-07 · PH-IRB-1 · PH-IRB-2
+#   모집 게이트 4건: PH-03 · PH-08 · PH-IRB-1 · PH-IRB-2   (PH-06·07은 `_v1` 착지로 소멸)
 ./backend/.venv/bin/python scripts/make_assignment.py --self-test   # 20/20 (NT-32)
 ./backend/.venv/bin/python analysis/export_trajectory.py --actor <이름> --out exports/
 
@@ -219,7 +219,7 @@ R-1의 대조 대상도 갱신했다: researcher_only · sidecar · **checkpoint
   alt_exposure · generation_integrity · events · **dossier_provenance**(§7.7 구성비).
   자유 텍스트는 `--include-text`의 `free_text.csv`에만. `--latency`가 §2.11의 유일한 파생
   변수 산출 지점이다.
-- **freeze**: 모집 게이트가 PH-03 · PH-08 · PH-06 · PH-07 · PH-IRB-1 · PH-IRB-2를 본다
+- **freeze**: 모집 게이트가 PH-03 · PH-08 · PH-06 · PH-07 · PH-IRB-1 · PH-IRB-2를 본다 (PH-06·07은 2026-08-24 `_v1` 착지로 통과 — 검사 자체는 회귀 감지용으로 남는다)
   (부록 H.2 목록 그대로). `assets_hash` = dossier 25 + assignment + 문항 2종 + consent.
 
 ### 실서버 확인 (DEV_MODE, `localhost:8011`)
@@ -564,19 +564,135 @@ max-width(둘이 따로 움직이면 실패), 가로 모드 휴대폰 차단 + 1
 
 ---
 
+## IRB 문안 초안 착지 (2026-08-24) — PH-IRB-1·2
+
+`docs/IRB_문안_정본_초안_v1.md`(심의용 연구계획서 v0.9 + 첨부물 작성계획 v1에서 도출)의 초안
+문안을 **코드에 착지**시켰다. P1·P12가 더 이상 리터럴 `<TODO: PH-IRB-1 — 동의서 정본>`을 띄우지
+않는다 — QA 리허설·워크스루에서 실제 화면을 볼 수 있다.
+
+| 대상 | 전 | 후 |
+|---|---|---|
+| P1 상단 | `CONSENT_TODO` 문자열 | `CONSENT_NOTICE` (초안 §1-C) |
+| P1 항목 6종 | `① 연구 참여 <TODO…>` | `CONSENT_ITEMS` 축약 라벨 (초안 §1-B) |
+| P1 하단 | (없음) | `CONSENT_PII_NOTICE` — payload `footnote` 신설 |
+| P12 본문 | `DEBRIEF_TODO` 문자열 | `DEBRIEF_BODY` — 공개 ①–⑦ + 연락처 4행 (초안 §2-A) |
+| 저장 | `consent_version = irb_v0_placeholder` | `irb_draft_v1_2026-08-24` |
+
+**모집 게이트는 열리지 않았다.** `CONSENT_TODO`·`DEBRIEF_TODO`는 화면에서 내려왔을 뿐 상수로
+남아 `freeze.blockers()`의 미착지 표식 역할을 계속한다 — 승인은 IRB가 하지 코드가 하지 않는다.
+`freeze_study_version.py --check`는 여전히 6건을 보고하고, PH-IRB 두 줄의 사유만
+"문안 미착지" → "IRB 승인 대기 — 초안 문안 착지본 사용 중"으로 정확해졌다.
+
+`tests/assets/test_irb_copy_contract.py`(신규 20건)가 세 가지를 건다: ① 화면 문안 ↔ IRB 문서
+**글자 대조**(상수를 테스트에 복사하지 않는다 — [정본] 5건과 같은 규율, 대조 대상만 다르다)
+② 표식·`CONSENT_VERSION` **정합**(승인 시 둘 중 하나만 바꾸면 실패) ③ 동의 6종·디브리핑 ①–⑦
+필수 항목. 기존 금지 어휘 검사(`test_screen_copy_canonical.py`)가 새 문안도 자동으로 훑는다 —
+조건명·R/U/Q·focal·규범 어휘 0건.
+
+**테스트 744 passed** (직전 724 → 744, 불감소). `tsc -b` + `vite build` clean.
+
+### 명세에 없어 내가 정한 것 (전부 되돌리기 쉬운 형태)
+
+| # | 결정 | 근거 | 되돌리는 법 |
+|---|---|---|---|
+| 1 | 초안 문서에 **§1-C(P1 상단 안내)** 신설 | 초안은 서면 동의서(§1-A)와 재확인 라벨(§1-B)만 줬고 화면 도입문이 없었다. §1-A 상단 안내 5문장 중 **네 문장을 글자 그대로** 옮기고 서면 회신 문장 1개만 뺐다 — 새로 쓴 문장 0건 | 문서 §1-C + `CONSENT_NOTICE` 교체 |
+| 2 | `CONSENT_VERSION` 명명 규약 `irb_draft_v1_<날짜>` / 승인본 `irb_v1_<승인일>` | 저장 기록·`assets_hash`가 초안 여부를 말해야 한다. 계약 테스트가 접두사로 승인 상태를 판정한다 | 상수 1개 |
+| 3 | `CONSENT_TODO`·`DEBRIEF_TODO`의 **역할 전환**(화면 문안 → 게이트 표식) | 게이트 로직(`freeze.py`)을 바꾸지 않고 게이트를 ⛔로 유지하는 최소 변경. 문안 착지와 승인을 분리한다 | 승인 시 상수 + freeze 블록 동시 삭제(위 표 5단계) |
+| 4 | P1 payload에 `footnote` 필드 신설 | PII 안내는 체크 항목이 아니라 하단 고정 안내다(초안 §1-B 하단). 항목에 섞으면 동의 항목이 7종이 된다 | payload 키 1개 + JSX 3줄 |
+| 5 | freeze blocker 사유 문구만 갱신 | 콘솔이 "문안 미착지"라고 말하면 거짓이 된다. **판정 로직·태그·상태는 그대로** | 문자열 1개 |
+
+⚠ 남은 비-IRB 의존: **[확인 3]** 재실측(동의서 ④ "최대 30일" 보유 기간) · **상담 기관 3곳**
+목록 확정(PH-IRB-3 안전 자원 안내문). 둘 다 IRB 승인과 별개로 지금 닫을 수 있다.
+
+---
+
+## 설계 잔여 결정 승인 (2026-08-24) — PH-09·10·11·13·14
+
+PI가 다섯 건을 **전부 명세 기본값 그대로** 승인했다. 반려 0건이라 **동작 변경도 0건**이고,
+코드에서는 `<TODO: PH-nn>` 표식을 걷어내고 `[PI 승인 2026-08-24]`로 바꿨다.
+
+| ID | 확정 | 코드 |
+|---|---|---|
+| PH-09 | 이탈 유형 6코드·라벨·표 순서 고정 | `screen_copy.END_TYPE_OPTIONS` · `state_machine.EndType` |
+| PH-10 | §4.9·§4.10 안내 문안 그대로 | `ALT_EXPOSURE_INTRO` · `PAIRWISE_INTRO` |
+| PH-11 | 개방 비교는 **구술만** — 시스템 필드 없음 | 만들지 않는 결정(변경 0) |
+| PH-13 | checkpoint 수정 UI 현행(segment 단위) | `CHECKPOINT_EDIT_*` |
+| PH-14 | sidecar 1단 「있어요/없어요」 2종, 건너뛰기 없음 | `SIDECAR_HAS_MORE_CHOICES` |
+
+`screen_copy.py` 표기 규약에 **`[PI 승인 <날짜>]`** 를 추가했다 — `[제안]`이 승인되면 이 표식이
+된다. `[정본]`과 구분되는 점은 §0.4 동결 항목이 아니어서 명세서 원문 글자 대조를 걸지 않는다는
+것이다(문안이 명세서와 같지만 대조 테스트의 대상은 아니다).
+
+**테스트 744 passed** (변동 없음 — 주석만 바뀌었다).
+
+### 명세에 없어 내가 정한 것
+
+| # | 결정 | 되돌리는 법 |
+|---|---|---|
+| 1 | `[PI 승인 <날짜>]` 표기 신설 | 주석 표기 규약 1줄 + 상수 주석 6곳 |
+| 2 | PH-09 해소 범위에서 *이유 필수 여부*를 제외 | 명세 §4.7이 그 항목만 `[파일럿 확정]`으로 따로 표시하고 있어 그대로 뒀다. §8 표 참조 |
+
+---
+
+## 문항 자산 `_v1` 착지 (2026-08-24) — PH-06·PH-07
+
+두 자산이 실값으로 올라왔다. 문면 출처는 프로젝트 문서 『연구7_PH06_focal문항_후보_v1』·
+『연구7_PH07_pairwise문항_후보_v1』의 추천 세트다.
+
+**코드 변경 0건이었다.** `ASSET_CANDIDATES = ("*_v1.json", "*_v0.json")`가 앞의 것을 먼저 잡도록
+설계돼 있어서, 파일을 놓는 것만으로 로더·게이트·화면이 전부 새 문면으로 갈아탔다. NS2에서
+"자산은 코드 변경 없이 교체된다"고 적어 둔 설계가 실제로 값을 한 지점이다.
+
+### focal — 9문항 (`focal_items_v1.json`)
+
+| construct | 문항 | 비고 |
+|---|---|---|
+| Grounding Sufficiency | `gs_1` · `gs_2` | gs_1은 record 언어로 재작성, gs_2는 "지원"→"도움" 참가자 언어 교체 |
+| Correction Effort | `ce_1` · `ce_2` | 구 정본 계승 |
+| Reinvestment | `ri_1` | 구 정본 계승 |
+| Clarification Need | `cn_1` | "지원"→"도움" 교체 |
+| Retrospective Continuation Intention | `rci_1` | **신규** — v0의 `<TODO: 신규 작성 필요>` 해소 |
+| manipulation check | `mc_recognition` · `mc_uptake` | mc_uptake의 referent를 **"위 답변"**(AI1 카드)으로 고정 |
+
+### pairwise — contrast당 3문항, 계 9 (`pairwise_items_v1.json`)
+
+- **전 지칭 문항이 `target`/`{side}` 치환으로 통일**됐다. v0은 서술형 지칭("조정을 한 뒤에도…")과
+  치환 문항이 섞여 있었는데, v1은 9문항 전부 `{side}` 치환이다 — 좌우가 뒤집혀도 문면이 따라간다.
+- `sequence`는 **paired-stem**이다: `seq_ask_ok_u`·`seq_ask_ok_nou`가 **동일 문면**에 target만
+  다르다(`with_u`=C4 / `without_u`=C2). 같은 질문이 선행 조정 유무에 따라 어떻게 다르게 지각되는지를
+  문항 쌍으로 얻는다.
+- 이유는 **구술만**(F4-ⓒ) — PH-11 확정과 정합하며 시스템 자유기술 필드를 만들지 않았다.
+
+target → 조건 대응이 세 contrast 모두 **정확히 한쪽**을 지칭하는지 로더가 검증한다
+(`with_u`={C3,C4} ∩ sequence{C2,C4} = {C4} …). 9문항 전부 통과.
+
+### 게이트·테스트
+
+`freeze.blockers()`가 **4건으로 줄었다**: PH-03 · PH-08 · PH-IRB-1 · PH-IRB-2.
+PH-06·07 검사 코드는 **지우지 않았다** — `_v1`이 사라지면 로더가 `_v0`으로 내려가는데
+그 회귀를 잡는 것이 그 두 줄이다. `_v0` 파일도 같은 이유로 남긴다.
+
+**테스트 746 passed** (724 → 744(IRB 계약) → 746(문항 계약 2건 추가), 불감소).
+
+### 정리한 뒤처진 참조
+
+`rating_items.py` docstring · `ASSET_CANDIDATES` 주석 2곳 · `asset_path()` 오류 문구 2곳 ·
+`screen_copy.py`의 지시문 자산 경로 · `freeze.py`의 게이트 주석 — 전부 `_v0` 기준으로 적혀 있던
+것을 `_v1` 착지 사실과 회귀 감지 의도가 드러나게 고쳤다. 동작 변경 0건.
+
+---
+
 ## 미해결 (명세서 TODO)
 
 - `PH-03` dossier P01–P24 **실값 작성·2인 판정·lock** — 본 모집 전 필수. 현재는 스키마 더미.
 - `PH-03b` `mismatch_locus` 목록 확정 — 초판 5종이 로더 상수로 들어가 있다.
 - `PH-04` 실값 배포 반입 절차 — `DOSSIER_DIR` 환경변수가 자리를 잡았다.
-- `PH-06` focal 문항 원문 — 구조·로더·계약 테스트 완료. `focal_items_v1.json`으로 올리면 된다.
-- `PH-07` pairwise 문항 원문 — 〃 (`pairwise_items_v1.json`).
+- ~~`PH-06`·`PH-07` 문항 원문~~ — **2026-08-24 `_v1` 착지 완료**(아래 절). 코드 변경 0건.
 - `PH-08` **배정표 생성·동결** — 생성기·검증·self-test 완료. `--from-dossiers`로 실값 생성.
-- `PH-09` 이탈 유형 라벨·이유 필수 여부 PI 승인.
-- `PH-10` P9·P10 안내 문안 PI 승인 / `PH-11` 개방 비교 문항(기본값: 구술) /
-  `PH-13` 수정 UI 문안 / `PH-14` sidecar "건너뛰기"(기본값: 두지 않는다).
+- ~~`PH-09`·`PH-10`·`PH-11`·`PH-13`·`PH-14`~~ — **2026-08-24 PI 전건 승인, 전부 기본값 확정**
+  (아래 절). PH-09의 *이유 필수 여부*만 `[파일럿 확정]` 창에 남는다.
 - `PH-12` 부록 A.1·A.2 v2 프롬프트 **PI 승인·lock** — 현재 `prompt_config_v2.json`은 [제안].
-- `PH-IRB-1~7` — 동의 항목 6종(⑥ 대안 노출 신설) 구조는 섰고 문안만 남았다.
+- `PH-IRB-1~7` — 초안 문안 착지 완료(위 절). **IRB 승인**과 슬롯 3종 치환만 남았다. PH-IRB-3의 상담 기관 3곳 목록은 승인과 무관하게 미확정.
 - `[확인 1·2]` 모델 슬러그·provider 고정 문법 / `[확인 3]` OpenRouter 보존 정책(전송 항목이
   effective checkpoint·focal AI1·User1로 바뀌었다 — 동의서 문안 갱신) / `[확인 4]` checker
   실모델 비용 / `[확인 5]` Zoom.
@@ -587,8 +703,8 @@ max-width(둘이 따로 움직이면 실패), 가로 모드 휴대폰 차단 + 1
 
 V2-0–V2-4 구현은 끝났다. 남은 것은 **코드가 아니라 자산·승인·운영**이다.
 
-1. **PH-IRB 제출·승인** → 동의서·디브리핑 문안 착지.
-2. **PH-06·PH-07** 문항 문면 PI 승인 → `*_v1.json`으로 교체(코드 변경 0).
+1. **PH-IRB 제출·승인** → 초안 착지본을 승인본으로 교체(`PLACEHOLDERS.md` §6 「승인 후 교체 절차」 5단계).
+2. ~~**PH-06·PH-07** 문항 문면~~ — ✅ 2026-08-24 `_v1` 착지(코드 변경 0건, 예측대로였다).
 3. **PH-03** dossier 24건 실값 작성 → 2인 독립 판정·adjudication → `scripts/lock_dossier.py`.
 4. **PH-08** `make_assignment.py --from-dossiers --seed <n>` → 생성 로그와 함께 동결.
    ⚠ **배정표는 생성 후 금지**다(§1.4) — 재생성 = 새 seed·새 버전·전원 재배정, 모집 전에만.

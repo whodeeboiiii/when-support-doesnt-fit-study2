@@ -1,8 +1,9 @@
 """문항 자산 계약 — focal 5 construct + MC 2 · pairwise 3 contrast (§4.8 · §4.10 · §7).
 
-두 자산 모두 `<TODO: PH-06>`·`<TODO: PH-07>` placeholder다. 계약을 지금 거는 이유는 실값이
-들어올 때 **구조가 아니라 문면만** 바뀌게 하기 위해서다 — 구조가 같이 바뀌면 그건 설계
-변경이고 §1.4의 승인 절차를 지나야 한다.
+두 자산 모두 **`_v1` 실값이 착지했다**(PH-06·PH-07, 2026-08-24 — 문면 출처는 프로젝트 문서
+『연구7_PH06_focal문항_후보_v1』·『연구7_PH07_pairwise문항_후보_v1』 추천 세트). 계약의 역할은
+그대로다: 문면이 바뀌어도 **구조는 바뀌지 않게** 한다 — 구조가 같이 바뀌면 그건 설계 변경이고
+§1.4의 승인 절차를 지나야 한다.
 
 핵심 계약 셋.
 1. **블록 순서 focal → mc 고정, MC가 마지막**(§0.4 D-37). MC가 앞에 오면 그 문항이
@@ -228,14 +229,65 @@ def test_rejects_fourth_contrast(tmp_path, monkeypatch) -> None:
         pairwise_items.reset_cache()
 
 
+def test_each_contrast_has_two_to_three_items(
+    pairwise: pairwise_items.PairwiseAsset,
+) -> None:
+    """부록 A.5 — contrast당 2–3문항 (PH-07 착지 계약)."""
+    for contrast, entry in pairwise.sets.items():
+        assert 2 <= len(entry.items) <= 3, f"{contrast}: {len(entry.items)}문항"
+
+
 # --------------------------------------------------------------------------- #
-# 모집 게이트 (PH-06 · PH-07)
+# 모집 게이트 (PH-06 · PH-07) — 2026-08-24 `_v1` 착지
 # --------------------------------------------------------------------------- #
 
 
-def test_placeholder_state_is_visible(
+def test_realvalue_assets_open_the_recruitment_gate(
     focal: rating_items.RatingAsset, pairwise: pairwise_items.PairwiseAsset
 ) -> None:
-    """§11.2 — `_v0`은 placeholder다. 모집 게이트가 이 값을 읽는다(`core/freeze.py`)."""
-    assert focal.is_placeholder is True
-    assert pairwise.is_placeholder is True
+    """§11.2 — `_v1` 실값이 로더에 잡히고(`_v0`보다 우선), 게이트(`core/freeze.py`)가
+    PH-06·PH-07을 더 이상 보고하지 않는다. `_v0`은 기록용으로 남아 있어도 무해하다."""
+    assert focal.is_placeholder is False
+    assert pairwise.is_placeholder is False
+    assert focal.version == "focal_items_v1"
+    assert pairwise.version == "pairwise_items_v1"
+
+
+#: §4 서두(조건명·구성 원리 비공개) · §4.5(규범 어휘 금지) · 부록 D.3(선호 재활성화 금지)
+#: — `screen_copy` 금지 목록과 같은 규율을 문항 자산에도 건다. `<TODO`는 착지 완료 표식이다.
+BANNED_IN_ITEM_COPY: tuple[str, ...] = (
+    "C1",
+    "C2",
+    "C3",
+    "C4",
+    "uptake",
+    "elicitation",
+    "actionability",
+    "focal",
+    "빠뜨린",
+    "알아야 했던",
+    "말했어야",
+    "withholding",
+    "무엇을 원했",
+    "뭘 원했",
+    "<TODO",
+)
+
+
+def test_item_copy_has_no_banned_expression(
+    focal: rating_items.RatingAsset, pairwise: pairwise_items.PairwiseAsset
+) -> None:
+    """PH-06·07 착지 계약 — 참가자에게 나가는 문항 문자열(지시문·문면)에 금지 표현 0건.
+
+    pairwise의 `pair` 키(조건명)는 서버 전용이라 검사 대상이 아니다 — 참가자에게는
+    치환된 문면만 나간다(NT-38·`test_rendered_text_never_leaks_condition_labels`).
+    """
+    pieces: list[str] = []
+    for block in focal.blocks:
+        pieces.append(block.instruction)
+        pieces.extend(item.text for item in block.items)
+    for entry in pairwise.sets.values():
+        pieces.extend(item.text for item in entry.items)
+    joined = "\n".join(pieces)
+    for banned in BANNED_IN_ITEM_COPY:
+        assert banned not in joined, f"문항 자산에 금지 표현: {banned!r}"

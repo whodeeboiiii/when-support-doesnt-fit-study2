@@ -31,7 +31,8 @@ from app.core.randomization import seeded_order
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURES_DIR = REPO_ROOT / "fixtures"
 
-#: §4.10 — 실값 착지 시 `pairwise_items_v1.json`. v0은 placeholder다(모집 게이트 PH-07).
+#: §4.10 — **앞의 것이 우선**. `_v1`이 2026-08-24 착지한 실값이고(PH-07 해소), `_v0`은
+#: 기록으로 남긴 placeholder다(회귀 감지 — `rating_items`와 같은 규율).
 ASSET_CANDIDATES: tuple[str, ...] = ("pairwise_items_v1.json", "pairwise_items_v0.json")
 PLACEHOLDER_SUFFIX = "_v0.json"
 
@@ -125,7 +126,7 @@ def asset_path() -> Path:
             return candidate
     raise PairwiseAssetError(
         f"pairwise 문항 자산이 없다: {[str(FIXTURES_DIR / name) for name in ASSET_CANDIDATES]} "
-        "(<TODO: PH-07>)"
+        "(PH-07 자산 — `_v1`·`_v0` 어느 쪽도 없다)"
     )
 
 

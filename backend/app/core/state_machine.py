@@ -69,7 +69,7 @@ class Disposition(StrEnum):
     END = "end"
 
 
-#: §4.7 이탈 유형 6코드 [제안 라벨, **영문 코드 고정**] `<TODO: PH-09>`.
+#: §4.7 이탈 유형 6코드 [**영문 코드 고정**] — 라벨은 [PI 승인 2026-08-24](PH-09 해소).
 class EndType(StrEnum):
     STOP_HERE = "stop_here"
     NEW_CHAT = "new_chat"

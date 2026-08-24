@@ -16,27 +16,42 @@
 
 ## 0. 한눈에 — 지금 무엇이 막혀 있는가
 
-**코드로 닫을 수 있는 항목이 다시 생겼다.** v1.0.1은 구현이 끝난 상태였지만, v2.0 전환(Sprint V2-0~V2-4, 명세 §11.1)이 시작 전이다. 전환 자체는 `PROGRESS.md`가 추적하고, 이 문서는 **전환이 끝나도 남는 자산·승인·외부 확인**만 등록한다.
+**코드로 닫을 수 있는 항목은 전부 닫혔다.** V2-0~V2-4 전환도, PI 결정 5건(PH-09·10·11·13·14)도, 문항 자산 2건(PH-06·07)도 끝났다. 남은 것은 **연구팀이 쓰는 자산 · IRB 승인 · 외부 실측**뿐이며, 개발자가 혼자 진행할 수 있는 항목은 PH-04 하나다.
 
 ```bash
 DEV_MODE=true ./backend/.venv/bin/python scripts/freeze_study_version.py --check
-#   (V2-4 이후) 모집 게이트: PH-03 · PH-08 · PH-06 · PH-07 · PH-IRB-1 · PH-IRB-2
+#   모집 게이트 4건(2026-08-25 현재): PH-03 · PH-08 · PH-IRB-1 · PH-IRB-2
 ```
 
 | 분류 | 건수 | 성격 | 본 모집 게이트(§11.2) |
 |---|---|---|---|
 | 자산 — 연구팀 작성 (PH-03·03b·08) | 3 | dossier 24건(R/U/Q·evidence code)·locus 목록·배정표 | PH-03·PH-08 ⛔ |
-| 자산 — 문항 문면 (PH-06·07) | 2 | focal 5 construct + MC 2 / pairwise 3 contrast | PH-06·PH-07 ⛔ |
-| 설계 잔여 결정 — PI (PH-09·10·11·13·14) | 5 | 이탈 유형 라벨·안내 문안·개방 비교·수정 UI·sidecar 선택지 | — (placeholder로 개발 가능) |
+| ~~자산 — 문항 문면 (PH-06·07)~~ | 0 | **2026-08-24 `_v1` 착지 — 추천안 문면 확정, 게이트 소멸**(§3) | — ✅ |
+| ~~설계 잔여 결정 — PI (PH-09·10·11·13·14)~~ | 0 | **2026-08-24 전건 승인 — 전부 기본값 확정**(§4) | — ✅ |
 | 프롬프트 lock (PH-12) | 1 | A.1·A.2 v2 PI 승인 | — (실모델 실행 선행 조건) |
 | IRB·문안 (PH-IRB-1~7) | 7 | IRB 승인 | PH-IRB-1~7 ⛔ |
 | 운영·배포 (PH-04, 확인 1–5) | 6 | 개발자·계정 실측 | — |
 | `[파일럿 확정]` 파라미터 | 12 | soft launch 1회 조정 창 | — |
-| `[제안]` 화면 문안 | 약 25 | PI 승인 (코드 변경 0 예상) | — |
+| `[제안]` 화면 문안 | 28 | PI 승인 (코드 변경 0 예상). PH-09·10·13·14 관련 6건은 `[PI 승인 2026-08-24]`로 전환됨 | — |
 | 논문 역반영 (PH-P-1~6) | 6 | 시스템 밖 | — |
 | v1.0.1 소멸 항목 (✂) | 4 | 기록 | — |
 
-착지 순서 권고: **V2-0~V2-4 전환 완료 → PH-IRB(제출) → PH-06·07(문항) → PH-03(dossier 실값·lock) → PH-08(배정표 생성·동결) → PH-04(반입) → PH-12(프롬프트 lock) → 실모델 fixture([확인 4]) → soft launch → 설계 동결(§10.5)**.
+### 지금 열려 있는 것 — 누가 움직여야 하나
+
+| 주체 | 항목 | 다음 행동 | 막고 있는 것 |
+|---|---|---|---|
+| **연구팀** | PH-03 · PH-03b | dossier 24건 작성 → 2인 코딩·adjudication → QC → `lock_dossier.py` | 모집 ⛔ · **PH-08의 선행 조건** |
+| **연구팀+개발자** | PH-08 | PH-03 완료 후 `make_assignment.py --from-dossiers --seed <사전 기록>` | 모집 ⛔ · 생성 후 변경 금지(§1.4) |
+| **IRB** | PH-IRB-1~7 | 제출 → 승인 → 슬롯 3종 치환 → `screen_copy` 교체(§6 5단계) | 모집 ⛔ |
+| **PI** | PH-12 | 프롬프트 A.1·A.2 v2 승인·lock | 실모델 fixture([확인 4])의 선행 조건 |
+| **개발자** | PH-04 | `DOSSIER_DIR`·`ASSIGNMENT_PATH` 볼륨 반입 절차 확정 | — (지금 진행 가능) |
+| **개발자** | [확인 1~5] | 모델 슬러그·단가 재실측, OpenRouter 보존 정책, checker 비용, Zoom | [확인 3]은 동의서 ④ 문안에 물려 있다 |
+| **연구팀** | PH-IRB-3 부속 | 상담 기관 3곳 목록 확정 | IRB 첨부물 |
+| — | `[파일럿 확정]` 12 | soft launch 1회 조정 창 | — |
+| — | PH-P-1~6 | 논문 역반영 — 시스템 밖 | — |
+
+착지 순서 권고: **PH-IRB(제출) → PH-03(dossier 실값·lock) → PH-08(배정표 생성·동결) → PH-04(반입) → PH-12(프롬프트 lock) → 실모델 fixture([확인 4]) → soft launch → 설계 동결(§10.5)**.
+~~V2-0~V2-4 전환~~·~~PH-06·07(문항)~~·~~PH-09·10·11·13·14(PI 결정)~~은 완료됐다.
 
 ---
 
@@ -47,22 +62,22 @@ DEV_MODE=true ./backend/.venv/bin/python scripts/freeze_study_version.py --check
 | PH-03 | 자산 | dossier P01–P24(배정 참가자) 실값 — ai_visible(provenance 태그 포함)·researcher_only·evidence_code·**R/U/Q segment**·neutral_fallback·QC 기록·lock (§5.3) | `dossiers/schema_dummy/*` · `backend/app/assets/dossier_loader.py` · `scripts/lock_dossier.py` · `backend/app/core/freeze.py` | **개조** (3층 로더·계약 테스트 패턴 승계, 스키마 v2) | 연구팀 | ⬜ |
 | PH-03b | 자산 | `evidence_code.mismatch_locus` 허용값 목록(broad locus) 확정 — 초판: content_depth · affective_tone_intensity · context_memory_use · interpretation · trajectory_timing | `dossier_loader.MISMATCH_LOCI` · `scripts/make_assignment.py`(편중 최소화 입력) | 승계(v1 5종) | 연구팀 | ◐ |
 | PH-04 | 운영 | dossier·배정표 실값의 배포 반입 절차 (§2.9) — `DOSSIER_DIR`·`ASSIGNMENT_PATH` 볼륨 마운트 | `backend/app/assets/files.py` · `backend/app/core/config.py` | 승계(권고 A: Railway 볼륨) | 개발자 | ⬜ |
-| PH-06 | 자산 | focal 5 construct + MC 2 **문항 문면** (§4.8·§7.1–7.2) — 초판은 v1.0.1 12문항 중 7개 차용 + RCI 1 신규 + MC referent 문구 | `fixtures/focal_items_v0.json` · `backend/app/assets/rating_items.py` | **개조** (문면 7개 재사용 가능, 2블록 구성은 변경) | 연구팀·PI | ◐ |
-| PH-07 | 자산 | pairwise 3 contrast **문항 문면·응답 형식** (§4.10·§7.5) — 초판 8문항(부록 A.5), 7점 + 이유 구술(F4-ⓒ) | `fixtures/pairwise_items_v0.json` · `backend/app/assets/pairwise_items.py` | 선례 없음 | 연구팀·PI | ◐ |
+| PH-06 | 자산 | ~~focal 5 construct + MC 2 문항 문면~~ → **`fixtures/focal_items_v1.json` 착지(2026-08-24)** — 9문항(GS 2·CE 2·RI 1·CN 1·RCI 1 + MC 2), 문면 출처 『연구7_PH06_focal문항_후보_v1』 추천 세트. gs_1은 record 언어 재작성본, mc_uptake는 referent를 "위 답변"으로 고정. PI 최종 문면 확정 시 v1 파일만 수정(모집 전 가능) | `fixtures/focal_items_v1.json` · `backend/app/assets/rating_items.py` | **개조** (문면 7개 재사용 + 재작성 2 + 신규 1) | 연구팀·PI | ✅ |
+| PH-07 | 자산 | ~~pairwise 3 contrast 문항 문면·응답 형식~~ → **`fixtures/pairwise_items_v1.json` 착지(2026-08-24)** — contrast당 3문항(계 9), 전 지칭 문항 `target`/{side} 치환(서술형 지칭 폐기 — PROGRESS 확인 ⑦ 해소), sequence는 paired-stem(동일 문면 양측 평정), 7점 + 이유 구술(F4-ⓒ, PH-11 정합). 문면 출처 『연구7_PH07_pairwise문항_후보_v1』 추천 세트 | `fixtures/pairwise_items_v1.json` · `backend/app/assets/pairwise_items.py` | 선례 없음 | 연구팀·PI | ✅ |
 | PH-08 | 자산 | **배정표 실값** `assignments/assignment_v1.json` — strata CSV(24명 a_level·locus) + seed → 생성·제약 검증·로그 (§5.2) | `scripts/make_assignment.py` · `backend/app/core/assignment.py` · `assignments/assignment_dummy.json` | 선례 없음 (Williams는 **사용 금지**) | 연구팀(seed 기록)·개발자 | ⬜ |
-| PH-09 | 승인 | User2/종료 화면의 **이탈 유형 6코드 라벨** + 이유 필수 여부 (§4.7) | `backend/app/assets/screen_copy.py`(`END_TYPE_OPTIONS`) · `backend/app/api/focal.py` | **사용 금지** (구 7메뉴 복원 아님 — 3개 코드명만 우연히 겹침: new_chat·switch_ai·seek_human) | PI | ⬜ |
-| PH-10 | 승인 | 대안 노출 첫 화면 안내 + pairwise 안내 문안 (§4.9·§4.10) — demand 직결 | `screen_copy.py`(`ALT_EXPOSURE_INTRO`·`PAIRWISE_INTRO`) | 선례 없음 | PI | ⬜ |
-| PH-11 | 결정 | 대안 3종 노출 직후 **개방 비교 1문항**(F4-ⓔ)을 시스템 자유기술로 둘지 구술로만 받을지. 기본값: 구술(시스템 필드 없음) | (채택 시) `tables.OpenComparison` · P9 마지막 화면 | 선례 없음 | PI | ⬜ |
+| PH-09 | 승인 | ~~이탈 유형 6코드 라벨 + 이유 필수 여부 (§4.7)~~ → **6코드·라벨·표 순서 현행 확정**. 이유 필수 여부만 `[파일럿 확정]` 창에 남는다 | `screen_copy.END_TYPE_OPTIONS` · `core/state_machine.EndType` — `<TODO>` 제거, `[PI 승인 2026-08-24]` | **사용 금지** (구 7메뉴 복원 아님 — 3개 코드명만 우연히 겹침) | PI | ✅ |
+| PH-10 | 승인 | ~~대안 노출·pairwise 안내 문안 (§4.9·§4.10)~~ → **명세 [제안] 문안 그대로 확정**. demand 우려 3건은 조건 간 교락이 아니라 전 참가자 공통이며, focal 편향은 `focal_included`·`focal_side` sensitivity로 확인한다 | `screen_copy.ALT_EXPOSURE_INTRO`·`PAIRWISE_INTRO` — `<TODO>` 제거 | 선례 없음 | PI | ✅ |
+| PH-11 | 결정 | ~~개방 비교 1문항(F4-ⓔ)의 시스템 입력 여부~~ → **구술로만 받는다. 시스템 필드 없음** | 코드 변경 0건 — `tables.OpenComparison`·P9 추가 화면을 **만들지 않는다** | 선례 없음 | PI | ✅ |
 | PH-12 | 승인 | AI2·checker 프롬프트 v2(부록 A.1·A.2 — `[AI의 직전 답변]` 블록 신설) PI 승인·lock | `prompts/prompt_config_v2.json` · `backend/app/llm/context.py` | **개조** (원칙 5항 승계, 입력 블록 추가) | PI | ◐ |
-| PH-13 | 승인 | checkpoint **참가자 직접 수정** UI 문안(수정 버튼·편집 보조문·확인 버튼) + trouble_cue 수정 시 연구자 대응 규칙(부록 D.3) | `screen_copy.py`(`CHECKPOINT_EDIT_*`) · `backend/app/api/participant.py` · `frontend/src/screens/Intro.tsx` | **사용 금지** (v1 D-08 표시 전용 폐기) | PI | ⬜ |
-| PH-14 | 결정 | sidecar 1단 선택지에 「건너뛰기」를 둘지 (초안 신 §7.8에는 있음/없음만). 기본값: 두지 않는다 | `screen_copy.py`(`SIDECAR_Q1_CHOICES`) · `tables.SidecarEntry.has_more` | **개조** (v1은 없음/있음/건너뛰기) | PI | ⬜ |
-| PH-IRB-1 | 문안 | 동의서 정본 — **항목 ⑥ 대안 노출 신설**, 국외 이전 전송 항목을 "재구성 대화(수정 반영)·첫 AI 응답·답장"으로 갱신 (§4.1·§9.3) | `screen_copy.CONSENT_TODO`·`CONSENT_ITEMS`(6키) · `core/freeze.py` | 승계(국외 이전 6항목·30일 상한) + 개조 | IRB | ⬜ |
-| PH-IRB-2 | 문안 | 디브리핑 정본 — 공개 7항목(§4.12: 대안 응답·"정답 없음"·checkpoint 수정 이용 범위 추가) | `screen_copy.DEBRIEF_TODO` | 승계(구조) + 개조(내용) | IRB | ⬜ |
-| PH-IRB-3 | 문안 | 연구자 안전 대응 프로토콜 (§9.2) | (코드 없음) | 승계 | IRB | ⬜ |
-| PH-IRB-4 | 문안 | 녹화물 보관·파기 | (코드 없음) | 승계 | IRB | ⬜ |
-| PH-IRB-5 | 문안 | Study 1 자료 이용·dossier 보관 | (코드 없음) | 승계 | IRB | ⬜ |
-| PH-IRB-6 | 문안 | 철회 절차 | (코드 없음) | 승계 | IRB | ⬜ |
-| PH-IRB-7 | 문안 | 보상 문안(수동 지급) | (코드 없음) | 승계 | IRB | ⬜ |
+| PH-13 | 승인 | ~~checkpoint 직접 수정 UI 문안 + trouble_cue 대응 규칙~~ → **현행 UI·문안 확정**(segment 단위 수정 유지 — 범위 축소안 미채택) | `screen_copy.CHECKPOINT_EDIT_*` — `<TODO>` 제거 | **사용 금지** (v1 D-08 표시 전용 폐기) | PI | ✅ |
+| PH-14 | 결정 | ~~sidecar 1단 「건너뛰기」 유지 여부~~ → **두지 않는다.** 「있어요」/「없어요」 2종 | `screen_copy.SIDECAR_HAS_MORE_CHOICES` — `<TODO>` 제거. `tables.SidecarEntry.has_more`는 `nullable=False` 유지(무응답 상태 없음) | **개조** (v1은 없음/있음/건너뛰기) | PI | ✅ |
+| PH-IRB-1 | 문안 | 동의서 정본 — **항목 ⑥ 대안 노출 신설**, 국외 이전 전송 항목을 "재구성 대화(수정 반영)·첫 AI 응답·답장"으로 갱신 (§4.1·§9.3) | **초안 착지**: `screen_copy.CONSENT_NOTICE`·`CONSENT_ITEMS`(6키)·`CONSENT_PII_NOTICE`·`CONSENT_VERSION` / 게이트 표식 `CONSENT_TODO` 존치 · `core/freeze.py` | 승계(국외 이전 6항목·30일 상한) + 개조 | IRB | ◐ |
+| PH-IRB-2 | 문안 | 디브리핑 정본 — 공개 7항목(§4.12: 대안 응답·"정답 없음"·checkpoint 수정 이용 범위 추가) | **초안 착지**: `screen_copy.DEBRIEF_BODY` / 게이트 표식 `DEBRIEF_TODO` 존치 | 승계(구조) + 개조(내용) | IRB | ◐ |
+| PH-IRB-3 | 문안 | 연구자 안전 대응 프로토콜 (§9.2) | (코드 없음) | 승계 | IRB | ◐ |
+| PH-IRB-4 | 문안 | 녹화물 보관·파기 | (코드 없음) | 승계 | IRB | ◐ |
+| PH-IRB-5 | 문안 | Study 1 자료 이용·dossier 보관 | (코드 없음) | 승계 | IRB | ◐ |
+| PH-IRB-6 | 문안 | 철회 절차 | (코드 없음) | 승계 | IRB | ◐ |
+| PH-IRB-7 | 문안 | 보상 문안(수동 지급) | (코드 없음) | 승계 | IRB | ◐ |
 | ~~PH-01~~ | ✂ | 사전 설문 — **삭제**(D-31, Q&A #1). 표본 기술은 Study 1 자료 재사용 | 파일 삭제(부록 H.1) | 사용 금지 | — | ✂ |
 | ~~PH-02~~ | ✂ | P10 cross-branch review sidecar 비표시 — 화면 자체 소멸. v2.0은 sidecar를 참가자에게 재표시하는 화면이 없다(P11 인터뷰 대기는 pair만) | — | — | — | ✂ |
 | ~~PH-05~~ | ✂ | normalization 패턴 — **삭제**(D-34) | 파일 삭제 | 사용 금지 | — | ✂ |
@@ -114,41 +129,69 @@ v1.0.1의 5종을 초판으로 유지한다. 초안 신 §7.2는 "broad mismatch
 
 ---
 
-## 3. 자산 — 문항 문면
+## 3. 자산 — 문항 문면 ✅ **2026-08-24 `_v1` 착지**
 
-### PH-06 — focal 5 construct + MC 2 ◐
+두 자산 모두 실값 `_v1`이 fixtures에 착지했고 로더가 이를 우선 선택한다(`ASSET_CANDIDATES` — `_v0`은 기록용 보존, 무해). `freeze.blockers()`에서 PH-06·PH-07 소멸, 모집 게이트는 PH-03·PH-08·PH-IRB-1·2만 남는다. 문면의 문헌 근거·후보 대안은 프로젝트 문서 『연구7_PH06_focal문항_후보_v1』·『연구7_PH07_pairwise문항_후보_v1』에 기록.
 
-**현재 상태.** `fixtures/focal_items_v0.json`에 부록 A.4 초판(9문항)이 placeholder로 들어간다. 파일명 `_v0`인 동안 모집 게이트가 PH-06을 보고한다.
+### PH-06 — focal 5 construct + MC 2 ✅
 
-**v1.0.1 대조 — 개조.** 12문항 중 7개(gs_1·gs_2·ce_1·ce_2·ri_1·cn_1·mc 2종)는 구 초안 §7.10 [정본]이었고 문면 재사용 가능성이 높다. 다만 **신 초안은 문면을 싣지 않았으므로 더 이상 [정본]이 아니다** — 재승인 대상. 삭제된 것: overreach·premature_withdrawal(pairwise로 이동)·autonomy·support_purpose_clarity(소멸). 신규: Retrospective Continuation Intention 1문항.
+**착지 내용** (`fixtures/focal_items_v1.json`, 9문항):
+- 문항 수 확정: GS 2 · CE 2 · RI 1 · CN 1 · RCI 1 (+MC 2). 블록 1(대화 전체, 카드 없음) → 블록 2(MC, AI1 카드) 순서는 계약 그대로.
+- **gs_1 교체**: 구 문면("…충분히 이해했다") → record 언어 재작성본("…판단할 근거가 충분히 마련되었다") — 구 문면은 mind-perception 언어라 mc_uptake와 변별 실패(수정사항 (b)).
+- gs_2·cn_1: 연구 용어 "지원" → 참가자 언어 "도움". ce_1·ce_2·ri_1·mc_recognition: 구 정본 계승.
+- **rci_1 신규**: "실제 상황이었다면, 나는 이 대화를 여기서 더 이어갔을 것 같다." — continuance intention(Bhattacherjee 2001; Ashfaq et al. 2020)의 대화 수준 번안, P7 이탈 유형의 연속형 삼각측정.
+- **mc_uptake referent 고정**: "…위 답변에 실제로 반영했다" — 구 문면의 "다음 반응"은 P8 시점에 AI2로 오독 가능.
+- MC referent 처리: 명세 기본값(블록 지시문 + AI1 카드, 문면 괄호 없음) 채택.
 
-**결정 필요**: construct당 문항 수(1 또는 2), RCI 문면, MC 2문항에 referent 문구("첫 번째 AI 응답")를 문면에 넣을지 블록 지시문으로만 둘지(명세 기본값: 지시문 + AI1 카드, 문면은 괄호 없이).
+**계약**: `tests/assets/test_item_assets.py`에 착지 계약 추가 — `is_placeholder=False`·version 확인, 금지 표현(조건명·규범 어휘·`<TODO`) 0건 검사. (계획서의 `test_focal_items_contract.py`는 별도 파일 대신 기존 계약 파일에 통합.)
 
-**해소 경로**: 문면 확정 → `focal_items_v1.json` 승격 + `rating_items.ASSET_PATH` 교체 → `tests/assets/test_focal_items_contract.py`(construct 5종 각 ≥1, mc 2, 규범 어휘 부재, `<TODO>` 0건) 통과 → 게이트 소멸.
+**잔여**: PI가 최종 문면을 다르게 고르면 `_v1` 파일의 text만 교체(모집 전 가능 — §1.4, hash는 §10.5 freeze 시 동결).
 
-### PH-07 — pairwise 3 contrast ◐
+### PH-07 — pairwise 3 contrast ✅
 
-**현재 상태.** `fixtures/pairwise_items_v0.json`에 부록 A.5 초판(8문항) placeholder. 응답 형식은 7점 평정(시스템) + 이유 구술(연구자) — F4-ⓒ 디폴트.
+**착지 내용** (`fixtures/pairwise_items_v1.json`, contrast당 3문항):
+- **Sequence**(C2–C4): paired-stem 정당성 2문항(동일 문면 "그 시점에 물어볼 만한 질문"을 양측에 각각 평정 — 동일 질문의 지각이 선행 조정 유무로 달라지는지를 쌍 차이로 직접 측정) + 떠넘김 1문항(without_u). 구 seq_2는 질문 문면이 두 조건에서 동일해 좌우 구분 불가 — 폐기.
+- **Scope**(C1–C3): warrant(with_u, record 언어) · overreach(with_u — 구 초안 §7.10 overreach 이식) · omission(without_u — "문제를 알아차리고도 조정 미수행").
+- **Stopping**(C3–C4): 필요성(with_q) · 조기 철회(without_q — 구 premature withdrawal 이식) · 재설명 부담(with_q).
+- **응답 형식 확정**: 7점 동의 척도(focal과 동일) + 이유 구술만(F4-ⓒ — PH-11 확정 정합). 한쪽 지칭은 전부 `target`/{side} 치환 — 서술형 지칭 폐기(PROGRESS 확인 ⑦ 해소).
 
-**v1.0.1 대조 — 선례 없음.** 구 overreach·premature_withdrawal 문항의 **취지**가 Scope·Stopping 문항으로 이동했을 뿐, branch 평정 문항을 그대로 옮기면 안 된다(A/B 비교 문면이어야 한다).
+**계약**: contrast당 2–3문항·target 유효·A/B 치환 정합·금지 표현 0건 — `test_item_assets.py`.
 
-**결정 필요**: contrast당 문항 수(2–3), 한쪽 응답을 지칭하는 문항의 처리(자산 `target` 필드로 서버가 "응답 A/B" 치환 — 명세 A.5), 이유를 시스템 자유기술로도 받을지(현재: 구술만).
-
-**해소 경로**: PH-06과 동일 패턴. 계약 테스트: contrast 3종 각 ≥2, `target` 값 유효, 문면에 조건명·R/U/Q 어휘 0건.
+**잔여**: PH-06과 동일 — 최종 문면 변경은 `_v1` 파일 수정으로(모집 전).
 
 ---
 
-## 4. 설계 잔여 결정 — PI (placeholder로 개발 진행 가능)
+## 4. 설계 잔여 결정 — PI ✅ **2026-08-24 전건 승인**
 
-| ID | 기본값(명세) | 반려 시 비용 |
+다섯 건 모두 **명세 기본값 그대로** 확정됐다. 반려·변경 0건이므로 동작 변경도 0건이고,
+코드에서 한 일은 `<TODO: PH-nn>` 표식을 걷어내고 `[PI 승인 2026-08-24]`로 바꾼 것뿐이다.
+
+| ID | 확정된 내용 | 코드에 남긴 것 |
 |---|---|---|
-| PH-09 이탈 유형 라벨·이유 필수 | 6코드(stop_here·new_chat·switch_ai·seek_human·no_further_need·other) 표 순서 고정, 이유 필수 `[파일럿 확정]` | 낮음 — `screen_copy` 상수 + 검증 1줄. 코드 **추가·삭제**는 export 열과 codebook에 영향(중간) |
-| PH-10 안내 문안 | §4.9·§4.10 [제안] 문안 | 낮음 |
-| PH-11 개방 비교 문항 | 구술만(시스템 없음) | 시스템 입력 채택 시: 테이블 1·화면 1·export 열 1 (중간) |
-| PH-13 checkpoint 수정 UI | segment별 "수정" → 편집창 → 저장/취소, 보조문 "기억하시는 사실과 다른 부분만 고쳐주세요.", trouble_cue 수정 시 경보 + 연구자 구두 확인 | 낮음 (문안) / 수정 범위를 segment 일부로 제한하려면 UI 재설계(높음) |
-| PH-14 sidecar 건너뛰기 | 두지 않는다(있어요/없어요) | 낮음 — 선택지 1 + `has_more` nullable |
+| **PH-09** | 이탈 유형 6코드(`stop_here`·`new_chat`·`switch_ai`·`seek_human`·`no_further_need`·`other`)·국문 라벨·**표 순서 고정**(무작위 아님, `display_order`에 기록) | `screen_copy.END_TYPE_OPTIONS` · `state_machine.EndType` |
+| **PH-10** | §4.9 대안 노출 안내 · §4.10 pairwise 안내 — 명세 [제안] 문안 그대로 | `ALT_EXPOSURE_INTRO` · `PAIRWISE_INTRO` |
+| **PH-11** | 개방 비교 1문항(F4-ⓔ)은 **구술로만**. 시스템 입력 필드·테이블·export 열을 만들지 않는다 | (없음 — 만들지 않는 결정) |
+| **PH-13** | checkpoint 수정 UI 현행 확정 — segment별 "수정" → 편집창(원문 채워진 채로) → 저장/취소, 보조문 "기억하시는 사실과 다른 부분만 고쳐주세요.", 확인 "확인했습니다 — 다음으로". trouble_cue·problematic_ai_response 수정 시 R2 붉은 경보 + Discord notify + 연구자 구두 확인 | `CHECKPOINT_EDIT_*` · `dossier_loader.ALERT_SEGMENTS` |
+| **PH-14** | sidecar 1단은 **「있어요」/「없어요」 2종**. 「건너뛰기」를 두지 않는다 | `SIDECAR_HAS_MORE_CHOICES` · `tables.SidecarEntry.has_more` (`nullable=False`) |
 
----
+**남는 것 하나** — PH-09의 *이유 필수 여부*(`END_REASON_REQUIRED = True`)는 승인 항목이 아니라
+`[파일럿 확정]` 파라미터다(§8 표 "종료 이유 필수 여부"). soft launch 1회 조정 창에서만 바꾼다.
+
+### PH-10 판단 근거 (기록)
+
+문안이 없던 것이 아니라 **demand characteristics 우려 때문에 승인 보류돼 있던** 항목이다.
+확인된 우려 3건과 현행 유지 판단:
+
+1. "AI가 **다르게** 응답했다면" — 비교 프레임을 미리 깐다. 그러나 이 문장을 빼면 참가자가 같은
+   상황을 왜 세 번 더 보는지 이해하지 못한다. 혼란이 만드는 노이즈가 더 크다.
+2. "이번에는 답장을 작성하지 않으셔도 됩니다" — focal(User1 강제)과의 대비가 "focal만 진짜"라는
+   신호가 될 수 있다. 그러나 실제로 입력창이 없으므로 고지하지 않을 수 없다.
+3. "이어서 연구자가 몇 가지 질문을 드립니다" — accountability 효과로 정당화 가능한 답 쪽으로
+   움직일 수 있다. 그러나 P11이 인터뷰 대기 화면이라 어차피 알게 되고, 예고가 놀람을 줄인다.
+
+셋 다 **전 참가자에게 동일하게** 적용되므로 focal 조건과 교락되지 않는다(between 비교 안전).
+위협받는 것은 pairwise의 focal 대 대안 within 비교뿐이고, 그 검정을 위해 서버가
+`pairwise_views.focal_included`·`focal_side`를 기록한다(초안 §7.12 sensitivity).
 
 ## 5. 프롬프트 lock (PH-12) ◐
 
@@ -162,19 +205,31 @@ v1.0.1의 5종을 초판으로 유지한다. 초안 신 §7.2는 "broad mismatch
 
 ## 6. IRB·문안
 
-### PH-IRB-1 동의서 ⬜ **모집 게이트**
+> **2026-08-24 문안 초안 착지 + 코드 반영**: PH-IRB-1~7의 문안 정본 초안이 `docs/IRB_문안_정본_초안_v1.md`에 있다(출처: 프로젝트 문서 『연구7_IRB_2-1_심의용연구계획서_초안_v0.9』 + 『연구7_IRB_첨부물_작성계획_v1』, 명세 §4.1·§4.12·§9.2·§9.3 구조 준수). 전 항목 ⬜→◐.
+>
+> PH-IRB-1·2는 **초안 문안이 코드에도 착지**했다(P1·P12 화면이 실제 문안을 띄운다 — 리허설 가능). **모집 게이트는 그대로 ⛔다**: `CONSENT_TODO`·`DEBRIEF_TODO` 상수가 화면에서 내려오되 `freeze.blockers()`가 읽는 미착지 표식으로 남아 있고, `CONSENT_VERSION = "irb_draft_v1_2026-08-24"`가 저장 기록·`assets_hash`에 초안임을 남긴다. `tests/assets/test_irb_copy_contract.py`가 ① 코드 문안 ↔ IRB 문서 글자 대조 ② 표식·버전 정합(둘 중 하나만 바꾸면 실패) ③ 필수 항목 6종·7항목을 건다.
+
+### 승인 후 교체 절차 (PH-IRB-1·2 ◐ → ✅)
+
+1. `docs/IRB_문안_정본_초안_v1.md`를 승인본으로 갱신하고 슬롯 3종(`[IRB 승인번호]`·`[연구팀 연락처]`·`[IRB 사무국 연락처]`)을 치환한다.
+2. [확인 3] 재실측 → 동의서 ④의 보유 기간(현행 "최대 30일") 확정. 상담 기관 3곳 확정(PH-IRB-3, 안전 자원 안내문).
+3. `screen_copy.py`: 승인본 문안으로 상수 교체 → `CONSENT_TODO`·`DEBRIEF_TODO` **삭제** → `CONSENT_VERSION = "irb_v1_<승인일>"`. `freeze.IRB_TAGS` 루프가 참조하는 상수를 지우므로 `core/freeze.py`의 해당 블록도 함께 제거한다.
+4. `pytest` 전체 green — 계약 테스트가 슬롯 잔존·표식/버전 불일치를 잡는다.
+5. `freeze_study_version.py --check`에서 PH-IRB-1·2 소멸 확인 → 이 표를 ✅ + 커밋 해시로 갱신.
+
+### PH-IRB-1 동의서 ◐ **모집 게이트**
 
 v1 대비 변경: ① 항목 6종(`alternative_exposure` 신설 — "같은 상황에 대해 서로 다른 AI 응답 여러 개를 보게 됩니다") ② 국외 이전 전송 항목 = **재구성된 대화(참가자 수정 반영본)·첫 AI 응답·참가자 답장**(비식별). sidecar·평정·pairwise·User2·연락처는 전송되지 않는다(§1.2가 방어 논리, NT-01이 증거) ③ 30일 보수 상한은 [확인 3] 재실측 후 갱신.
 
-### PH-IRB-2 디브리핑 ⬜ **모집 게이트**
+착지 형태: **실제 동의 취득은 자필 서명 서면**(초안 §1-A, 시스템 밖)이고 **P1은 재확인 화면**(§1-B 축약 라벨 6종 + §1-C 상단 안내 + PII 안내)이다. 화면 payload는 `notice`·`items`·`footnote` 3종.
 
-공개 7항목(§4.12). v1의 "네 branch 비교" 문장을 옮기면 안 된다 — v2는 "처음 경험한 응답 1개 + 나중에 본 응답 3개"이고 "어느 것도 정답이 아니다"가 추가된다.
+### PH-IRB-2 디브리핑 ◐ **모집 게이트**
 
-### PH-IRB-3~7 ⬜
+공개 7항목(§4.12). v1의 "네 branch 비교" 문장을 옮기면 안 된다 — v2는 "처음 경험한 응답 1개 + 나중에 본 응답 3개"이고 "어느 것도 정답이 아니다"가 추가된다. 착지본은 초안 §2-A 본문 전체(단락 7 + 연락처 4행)이며 SS90 중단 세션용 축약판(§2-B)은 **구두 + 이메일**이라 코드에 두지 않는다.
 
-v1.0.1 내용 승계(안전 프로토콜·녹화·Study 1 연계·철회·보상). PH-IRB-5에 "checkpoint 수정본도 연구 데이터로 보관"을 추가.
+### PH-IRB-3~7 ◐
 
----
+v1.0.1 내용 승계(안전 프로토콜·녹화·Study 1 연계·철회·보상). PH-IRB-5에 "checkpoint 수정본도 연구 데이터로 보관"을 추가. 다섯 항목 모두 **코드에 닿지 않는다** — 초안 문서가 IRB 첨부물의 원고다. PH-IRB-3만 상담 기관 3곳 목록이 미확정으로 남아 있다.
 
 ## 7. 운영·배포
 
@@ -217,7 +272,7 @@ v1 권고 A(Railway 볼륨) 유지. v2는 반입 대상이 **dossier 24 + 배정
 | PH-P-2 | §7.3: checkpoint 사실 오류를 **참가자가 직접 수정**하며 수정본이 AI2 입력에 쓰임을 서술(D-25) — 현행 "수정할 수 있다"와 정합, 방법 명시 |
 | PH-P-3 | §7.7: AI2 이후 선택지 목록(User2 / 종료 + 이탈 유형 6종) 복원(결정로그 #2·#6) |
 | PH-P-4 | limitations: User1 강제 작성으로 AI1 직후 즉시 이탈은 관찰 불가(D-27·D-32) |
-| PH-P-5 | §7.8: sidecar 선택지(있음/없음, 건너뛰기 없음 — PH-14 결과에 따라) |
+| PH-P-5 | §7.8: sidecar 선택지 = **있음/없음 2종, 건너뛰기 없음**(PH-14 확정 2026-08-24) |
 | PH-P-6 | §7.5: LLM 역할 문장을 "인간 코딩 후 sensitivity/audit용 third reading" 허용으로 개정(결정로그 #4 확정 시). 파이프라인 flowchart A3 박스도 동일 |
 
 ---
@@ -235,4 +290,5 @@ v1 권고 A(Railway 볼륨) 유지. v2는 반입 대상이 **dossier 24 + 배정
 - 명세서의 `<TODO>`에 대응하는 코드상 빈 자리는 전부 §1 표에 등록한다. 표에 없는 `PH-nn`이 코드에 남아 있으면 CI가 깨진다(`tests/unit/test_placeholder_registry.py`). ✂ 항목의 참조가 코드에 남아 있어도 깨진다.
 - 해소되면 ✅로 바꾸고 교체 커밋 해시를 기록한다. 문안·자산이 존재하지만 코드 교체 전이면 ◐다.
 - 새 미확정 항목은 **명세서 부록 E.4에 먼저** 등록하고 여기에 반영한다(반대 순서 금지).
-- 전환 작업(Sprint V2-0~V2-4)의 진행은 `PROGRESS.md`가 담당한다 — 이 문서는 전환이 끝나도 남는 것만 다룬다.
+- 전환 작업(Sprint V2-0~V2-4)은 완료됐고 기록은 `PROGRESS.md`에 있다 — 이 문서는 전환이 끝나고도 남은 것만 다룬다.
+- 자산 파일은 `_v1`이 실값이고 `_v0`은 **지우지 않고 남긴다**. `_v1`이 사라지면 로더가 `_v0`으로 내려가면서 모집 게이트가 다시 울리는 것이 회귀 감지 장치다(`rating_items.ASSET_CANDIDATES` 주석).

@@ -1,8 +1,9 @@
 """focal 평정 + manipulation check 자산 로더 (구현명세서 §4.8 · §7.1 · §7.2 · 부록 A.4).
 
 v1.0.1의 "코드 상수 12문항"에서 **자산 파일 로더**로 바뀌었다(부록 H.2). 이유는 §7.1·§7.2가
-문항을 `fixtures/focal_items_v0.json`으로 지정했고 그 파일이 `<TODO: PH-06>` placeholder라
-PI 승인 시 **코드 변경 없이** 교체되어야 하기 때문이다.
+문항을 자산 파일로 지정했고, PI 승인 시 **코드 변경 없이** 교체되어야 하기 때문이다.
+그 설계가 실제로 값을 했다: 2026-08-24 `focal_items_v1.json` 착지(PH-06 해소)에 코드 변경
+0건이 들었다 — 파일을 놓자 `ASSET_CANDIDATES`가 잡았다.
 
 세 가지 규율이 걸린다.
 
@@ -31,7 +32,9 @@ from app.core.randomization import seeded_order
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURES_DIR = REPO_ROOT / "fixtures"
 
-#: §4.8 — 실값 착지 시 `focal_items_v1.json`. v0은 placeholder다(모집 게이트 PH-06).
+#: §4.8 — **앞의 것이 우선**. `_v1`이 2026-08-24 착지한 실값이고(PH-06 해소), `_v0`은
+#: 기록으로 남긴 placeholder다. `_v1`이 사라지면 로더가 `_v0`으로 내려가고 모집 게이트가
+#: 다시 PH-06을 보고한다 — 그 회귀 감지가 이 목록을 두 개로 유지하는 이유다.
 ASSET_CANDIDATES: tuple[str, ...] = ("focal_items_v1.json", "focal_items_v0.json")
 PLACEHOLDER_SUFFIX = "_v0.json"
 
@@ -113,7 +116,7 @@ def asset_path() -> Path:
             return candidate
     raise RatingAssetError(
         f"focal 문항 자산이 없다: {[str(FIXTURES_DIR / name) for name in ASSET_CANDIDATES]} "
-        "(<TODO: PH-06>)"
+        "(PH-06 자산 — `_v1`·`_v0` 어느 쪽도 없다)"
     )
 
 

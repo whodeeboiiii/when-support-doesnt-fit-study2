@@ -241,10 +241,12 @@ async def _screen_data(
 
     if screen == "P1":
         return {
-            "notice": screen_copy.CONSENT_TODO,
+            "notice": screen_copy.CONSENT_NOTICE,
             "items": [
                 {"field": item.field, "label": item.label} for item in screen_copy.CONSENT_ITEMS
             ],
+            # §4.1 하단 고정 — PII 입력 금지(심의용 연구계획서 19번).
+            "footnote": screen_copy.CONSENT_PII_NOTICE,
         }
     if screen == "P2":
         edits = await store.effective_edits(db, session.id)
@@ -359,7 +361,7 @@ async def _screen_data(
         return await _interview_view(db, session, dossier)
 
     if screen == "P12":
-        return {"notice": screen_copy.DEBRIEF_TODO, "button": screen_copy.DEBRIEF_CONFIRM_BUTTON}
+        return {"notice": screen_copy.DEBRIEF_BODY, "button": screen_copy.DEBRIEF_CONFIRM_BUTTON}
     if screen == "ABORTED":
         return {"message": screen_copy.SESSION_ABORTED}
     return {}

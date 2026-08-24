@@ -16,10 +16,13 @@ from tests.helpers import ADMIN_AUTH
 
 
 def test_blockers_report_the_current_placeholder_state() -> None:
-    """지금은 더미 자산 단계다(§11.1) — 게이트가 그 사실을 정확히 말해야 한다."""
+    """dossier·배정표는 아직 더미 단계다(§11.1) — 게이트가 그 사실을 정확히 말해야 한다."""
     tags = {blocker.tag for blocker in freeze.blockers()}
-    # 부록 H.2가 지정한 게이트 항목 6종.
-    assert tags >= {"PH-03", "PH-08", "PH-06", "PH-07", "PH-IRB-1", "PH-IRB-2"}
+    # 부록 H.2가 지정한 게이트 항목 중 남은 4종 — 문항 자산은 2026-08-24 `_v1` 착지로 소멸.
+    assert tags >= {"PH-03", "PH-08", "PH-IRB-1", "PH-IRB-2"}
+    assert "PH-06" not in tags and "PH-07" not in tags, (
+        "문항 `_v1` 착지(PH-06·PH-07 해소) 후에도 게이트가 남아 있다"
+    )
     assert "PH-03" in tags, "dossier 실값 미lock 상태를 게이트가 놓쳤다"
     assert "PH-08" in tags, "배정표가 dummy인 상태를 게이트가 놓쳤다 (NT-42)"
     # v1.0.1의 PH-01(사전설문)은 소멸했다(D-31).
@@ -32,7 +35,6 @@ def test_blocker_details_name_the_missing_thing() -> None:
         "P00은 QA 전용이라 게이트 대상이 아니다"
     )
     assert "dummy" in blockers["PH-08"]
-    assert "_v0.json" in blockers["PH-06"] and "_v0.json" in blockers["PH-07"]
 
 
 def test_asset_hashes_cover_every_frozen_asset() -> None:

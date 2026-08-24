@@ -71,7 +71,7 @@ export function Debrief({ state, onState }: ScreenProps) {
       <DevScreenNote
         screen="P12"
         term="디브리핑"
-        detail="§4.12 — 필수 공개 7항목. 문안 전체가 IRB 착지 대기다(PH-IRB-2)."
+        detail="§4.12 — 필수 공개 7항목. 문안은 IRB 초안 착지본이고 승인 대기다(PH-IRB-2)."
       />
       <ScreenTitle>디브리핑</ScreenTitle>
       <div className="callout whitespace-pre-wrap">{state.data.notice}</div>
