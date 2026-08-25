@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.assets import dossier_loader, pairwise_items, rating_items, screen_copy
+from app.assets import files
 from app.assets.files import QA_PARTICIPANT_NO
 from app.core import assignment
 from app.core.config import get_settings
@@ -116,6 +117,49 @@ def blockers() -> list[Blocker]:
         found.append(Blocker("확인 1", "MAIN·VALIDATOR 모델 슬러그 미설정 (§2.2)"))
 
     return found
+
+
+def asset_sources() -> dict[str, Any]:
+    """§2.4 · PH-04 — **어디서 읽었는가**. 반입 직후 확인용이다.
+
+    `blockers()`가 "무엇이 미착지인가"를 말한다면 이쪽은 "지금 읽고 있는 파일이 무엇인가"를
+    말한다. 볼륨을 마운트한 뒤 가장 먼저 알아야 하는 것이 그거다 — 게이트가 PH-03을
+    보고할 때, 볼륨이 안 붙은 것인지 파일이 아직 lock 전인지 구분되지 않으면 손을 못 댄다.
+    """
+    dossiers = dossier_loader.load_all()
+    real = sorted(no for no, entry in dossiers.items() if not entry.is_dummy)
+    dummy = sorted(no for no, entry in dossiers.items() if entry.is_dummy)
+    locked = sorted(no for no, entry in dossiers.items() if entry.is_locked)
+
+    try:
+        table = assignment.load()
+        assignment_entry: dict[str, Any] = {
+            "path": str(table.source_path),
+            "is_dummy": table.is_dummy,
+            "version": table.version,
+            "rows": len(table.rows),
+        }
+    except assignment.AssignmentContractError as exc:
+        assignment_entry = {"path": None, "error": str(exc)}
+
+    return {
+        "dossier_dir": str(files.dossier_dir()),
+        "dossier_dir_overridden": files.is_dossier_dir_overridden(),
+        "schema_dummy_dir": str(files.schema_dummy_dir()),
+        "dossiers": {"real": real, "dummy": dummy, "locked": locked},
+        "assignment": assignment_entry,
+        "focal_items": {
+            "path": str(rating_items.asset_path()),
+            "version": rating_items.load().version,
+            "is_placeholder": rating_items.load().is_placeholder,
+        },
+        "pairwise_items": {
+            "path": str(pairwise_items.asset_path()),
+            "version": pairwise_items.load().version,
+            "is_placeholder": pairwise_items.load().is_placeholder,
+        },
+        "consent_version": screen_copy.CONSENT_VERSION,
+    }
 
 
 def asset_hashes() -> dict[str, Any]:

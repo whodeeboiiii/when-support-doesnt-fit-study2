@@ -1,7 +1,11 @@
 """설계 동결 · 모집 게이트 점검 (구현명세서 §10.5 · §11.2).
 
-    python scripts/freeze_study_version.py --check              # 모집 게이트만 본다
+    python scripts/freeze_study_version.py --check              # 모집 게이트 + 자산 출처
     python scripts/freeze_study_version.py --actor <이름>        # soft launch 종료 시 1회 동결
+
+`--check`는 **어디서 읽었는가**(§2.4 `DOSSIER_DIR`·`ASSIGNMENT_PATH`)를 함께 찍는다 — PH-04
+반입 직후의 첫 확인이 그것이다. 게이트가 PH-03을 보고할 때 "볼륨이 안 붙었다"와 "파일은
+있는데 아직 lock 전이다"가 구분되지 않으면 손을 댈 수 없다.
 
 §10.5: "soft launch 종료 시 `study_version`에 spec_version·prompt_hash·model_strings·
 assets_hash 동결 기입. 이후 변경은 §1.4 본실험 열만 적용."
@@ -31,6 +35,38 @@ from app.models.session import create_engine  # noqa: E402
 from app.security.audit import AuditAction, record  # noqa: E402
 
 
+def _print_sources() -> None:
+    """§2.4 · PH-04 — 지금 읽고 있는 파일이 무엇인가."""
+    sources = freeze.asset_sources()
+    dossiers = sources["dossiers"]
+    mark = " (DOSSIER_DIR 오버라이드)" if sources["dossier_dir_overridden"] else ""
+
+    print("자산 출처 (§2.4 · PH-04)")
+    print(f"  dossier 디렉터리 : {sources['dossier_dir']}{mark}")
+    if sources["schema_dummy_dir"] != f"{sources['dossier_dir']}/schema_dummy":
+        print(f"  스키마 더미      : {sources['schema_dummy_dir']} (리포 바닥으로 내려감)")
+    print(
+        f"  dossier          : 실값 {len(dossiers['real'])}건 "
+        f"(lock {len(dossiers['locked'])}건) · 더미 {len(dossiers['dummy'])}건"
+    )
+    if dossiers["dummy"]:
+        print(f"    더미로 뜬 번호 : {', '.join(dossiers['dummy'])}")
+
+    entry = sources["assignment"]
+    if entry.get("error"):
+        print(f"  배정표           : 읽을 수 없다 — {entry['error']}")
+    else:
+        state = "dummy" if entry["is_dummy"] else "실값"
+        print(f"  배정표           : {entry['path']} [{state} · {entry['version']} · {entry['rows']}행]")
+
+    for label, key in (("focal 문항", "focal_items"), ("pairwise 문항", "pairwise_items")):
+        item = sources[key]
+        state = "placeholder" if item["is_placeholder"] else "실값"
+        print(f"  {label:<15}: {item['version']} [{state}]")
+    print(f"  동의서 버전      : {sources['consent_version']}")
+    print()
+
+
 def _print_gate(blockers: list[freeze.Blocker]) -> None:
     if not blockers:
         print("모집 게이트: 통과 — PH-03·PH-IRB 계열 착지 (§11.2)")
@@ -46,6 +82,8 @@ async def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="게이트만 점검하고 쓰지 않는다")
     args = parser.parse_args(argv)
 
+    if args.check:
+        _print_sources()
     blockers = freeze.blockers()
     _print_gate(blockers)
 

@@ -30,7 +30,7 @@ DEV_MODE=true ./backend/.venv/bin/python scripts/freeze_study_version.py --check
 | ~~설계 잔여 결정 — PI (PH-09·10·11·13·14)~~ | 0 | **2026-08-24 전건 승인 — 전부 기본값 확정**(§4) | — ✅ |
 | 프롬프트 lock (PH-12) | 1 | A.1·A.2 v2 PI 승인 | — (실모델 실행 선행 조건) |
 | IRB·문안 (PH-IRB-1~7) | 7 | IRB 승인 | PH-IRB-1~7 ⛔ |
-| 운영·배포 (PH-04, 확인 1–5) | 6 | 개발자·계정 실측 | — |
+| 운영·배포 (PH-04 ◐, 확인 1–5) | 6 | PH-04 절차 확정(§7) — 남은 5건은 계정 실측 | — |
 | `[파일럿 확정]` 파라미터 | 12 | soft launch 1회 조정 창 | — |
 | `[제안]` 화면 문안 | 28 | PI 승인 (코드 변경 0 예상). PH-09·10·13·14 관련 6건은 `[PI 승인 2026-08-24]`로 전환됨 | — |
 | 논문 역반영 (PH-P-1~6) | 6 | 시스템 밖 | — |
@@ -44,7 +44,7 @@ DEV_MODE=true ./backend/.venv/bin/python scripts/freeze_study_version.py --check
 | **연구팀+개발자** | PH-08 | PH-03 완료 후 `make_assignment.py --from-dossiers --seed <사전 기록>` | 모집 ⛔ · 생성 후 변경 금지(§1.4) |
 | **IRB** | PH-IRB-1~7 | 제출 → 승인 → 슬롯 3종 치환 → `screen_copy` 교체(§6 5단계) | 모집 ⛔ |
 | **PI** | PH-12 | 프롬프트 A.1·A.2 v2 승인·lock | 실모델 fixture([확인 4])의 선행 조건 |
-| **개발자** | PH-04 | `DOSSIER_DIR`·`ASSIGNMENT_PATH` 볼륨 반입 절차 확정 | — (지금 진행 가능) |
+| **개발자** | PH-04 ◐ | 절차·코드 완료(`docs/배포_자산_반입_v1.md`). 실제 반입 시 호스트 CLI 문법만 실측 | — |
 | **개발자** | [확인 1~5] | 모델 슬러그·단가 재실측, OpenRouter 보존 정책, checker 비용, Zoom | [확인 3]은 동의서 ④ 문안에 물려 있다 |
 | **연구팀** | PH-IRB-3 부속 | 상담 기관 3곳 목록 확정 | IRB 첨부물 |
 | — | `[파일럿 확정]` 12 | soft launch 1회 조정 창 | — |
@@ -61,7 +61,7 @@ DEV_MODE=true ./backend/.venv/bin/python scripts/freeze_study_version.py --check
 |---|---|---|---|---|---|---|
 | PH-03 | 자산 | dossier P01–P24(배정 참가자) 실값 — ai_visible(provenance 태그 포함)·researcher_only·evidence_code·**R/U/Q segment**·neutral_fallback·QC 기록·lock (§5.3) | `dossiers/schema_dummy/*` · `backend/app/assets/dossier_loader.py` · `scripts/lock_dossier.py` · `backend/app/core/freeze.py` | **개조** (3층 로더·계약 테스트 패턴 승계, 스키마 v2) | 연구팀 | ⬜ |
 | PH-03b | 자산 | `evidence_code.mismatch_locus` 허용값 목록(broad locus) 확정 — 초판: content_depth · affective_tone_intensity · context_memory_use · interpretation · trajectory_timing | `dossier_loader.MISMATCH_LOCI` · `scripts/make_assignment.py`(편중 최소화 입력) | 승계(v1 5종) | 연구팀 | ◐ |
-| PH-04 | 운영 | dossier·배정표 실값의 배포 반입 절차 (§2.9) — `DOSSIER_DIR`·`ASSIGNMENT_PATH` 볼륨 마운트 | `backend/app/assets/files.py` · `backend/app/core/config.py` | 승계(권고 A: Railway 볼륨) | 개발자 | ⬜ |
+| PH-04 | 운영 | ~~배포 반입 절차~~ → **절차 확정 + 코드 구멍 2건 수정**(`docs/배포_자산_반입_v1.md`). 볼륨 오버레이 방식, `--check`에 「자산 출처」 블록 신설. 남은 것: 호스트 CLI 문법 실측·볼륨 백업 정책 | `files.dossier_search_paths()`(신설) · `files.AssetLocationError`(신설) · `assignment.assignment_path()` · `freeze.asset_sources()`(신설) · `scripts/freeze_study_version.py` | 승계(권고 A: 볼륨) + 오버레이 개조 | 개발자 | ◐ |
 | PH-06 | 자산 | ~~focal 5 construct + MC 2 문항 문면~~ → **`fixtures/focal_items_v1.json` 착지(2026-08-24)** — 9문항(GS 2·CE 2·RI 1·CN 1·RCI 1 + MC 2), 문면 출처 『연구7_PH06_focal문항_후보_v1』 추천 세트. gs_1은 record 언어 재작성본, mc_uptake는 referent를 "위 답변"으로 고정. PI 최종 문면 확정 시 v1 파일만 수정(모집 전 가능) | `fixtures/focal_items_v1.json` · `backend/app/assets/rating_items.py` | **개조** (문면 7개 재사용 + 재작성 2 + 신규 1) | 연구팀·PI | ✅ |
 | PH-07 | 자산 | ~~pairwise 3 contrast 문항 문면·응답 형식~~ → **`fixtures/pairwise_items_v1.json` 착지(2026-08-24)** — contrast당 3문항(계 9), 전 지칭 문항 `target`/{side} 치환(서술형 지칭 폐기 — PROGRESS 확인 ⑦ 해소), sequence는 paired-stem(동일 문면 양측 평정), 7점 + 이유 구술(F4-ⓒ, PH-11 정합). 문면 출처 『연구7_PH07_pairwise문항_후보_v1』 추천 세트 | `fixtures/pairwise_items_v1.json` · `backend/app/assets/pairwise_items.py` | 선례 없음 | 연구팀·PI | ✅ |
 | PH-08 | 자산 | **배정표 실값** `assignments/assignment_v1.json` — strata CSV(24명 a_level·locus) + seed → 생성·제약 검증·로그 (§5.2) | `scripts/make_assignment.py` · `backend/app/core/assignment.py` · `assignments/assignment_dummy.json` | 선례 없음 (Williams는 **사용 금지**) | 연구팀(seed 기록)·개발자 | ⬜ |
@@ -233,9 +233,22 @@ v1.0.1 내용 승계(안전 프로토콜·녹화·Study 1 연계·철회·보상
 
 ## 7. 운영·배포
 
-### PH-04 — 실값 반입 ⬜
+### PH-04 — 실값 반입 ◐ **절차 확정 (2026-08-25)**
 
-v1 권고 A(Railway 볼륨) 유지. v2는 반입 대상이 **dossier 24 + 배정표 1**로 늘어 `DOSSIER_DIR`·`ASSIGNMENT_PATH` 환경변수가 §2.4에 정식 편입되었다(v1에서 "명세 개정 대상"이던 것이 해소됨).
+정본은 **`docs/배포_자산_반입_v1.md`**다. v1 권고 A(볼륨) 유지 — JSON 24건을 환경변수로 주입하면 크기 제한·이스케이프·회전 절차가 전부 문제가 되므로 볼륨을 택했다.
+
+**절차 요약**: 볼륨 `/data` 마운트 → `DOSSIER_DIR=/data/dossiers` · `ASSIGNMENT_PATH=/data/assignments/assignment_v1.json` → lock된 파일을 호스트 CLI로 전송(중간 저장소 경유 금지) → `freeze_study_version.py --check`의 「자산 출처」 블록으로 확인.
+
+**닫으면서 드러난 코드 구멍 2건을 같이 고쳤다.** 둘 다 "틀렸는데 떠 있는" 모양이었다.
+
+| # | 구멍 | 고친 것 |
+|---|---|---|
+| 1 | `DOSSIER_DIR`를 볼륨으로 돌리면 **이미지의 P00과 스키마 더미가 탐색 범위 밖으로 나갔다** — 부분 착지(24명이 한 명씩 lock, §5.3) 상태에서 기동 게이트가 죽고, 배포 환경에서 QA 워크스루(§10.2)가 돌지 않았다 | `dossier_search_paths()` 신설 — **볼륨 오버레이** 3단(볼륨 실값 → 이미지 실값 → 더미). 볼륨에는 실값만 올린다 |
+| 2 | 경로 오타가 **조용히** 수렴했다: `DOSSIER_DIR` 오타 → 참가자 루프가 `DossierNotFound`를 삼켜 **dossier 0건으로 기동 성공** / `ASSIGNMENT_PATH` 오타 → **더미 배정표를 실은 채 기동 성공** | `AssetLocationError` 신설(삼켜지는 계보 밖) · `assignment_path()`가 오버라이드 미존재 시 끊는다 |
+
+**남은 것 2건**(§7절 「이 문서가 확정하지 않은 것」): 호스트 CLI 명령 문법 실측, 볼륨 백업 정책(PH-IRB-4 오프라인 백업으로 갈음할지). 둘 다 실제 반입 시점에 닫힌다 — **PH-03·PH-08이 먼저다**(올릴 파일이 아직 없다).
+
+검증: `tests/assets/test_asset_import.py` 9건 — 부분 착지 폴백 · P00 생존 · 볼륨 자체 더미 우선 · 오설정 2종이 조용히 넘어가지 않음 · `asset_sources()` 보고.
 
 ### [확인 1~5]
 

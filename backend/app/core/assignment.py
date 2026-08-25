@@ -147,12 +147,22 @@ class AssignmentTable:
 
 
 def assignment_path() -> tuple[Path, bool]:
-    """(경로, is_dummy). §2.4 `ASSIGNMENT_PATH` → 실값 → dummy 순."""
+    """(경로, is_dummy). §2.4 `ASSIGNMENT_PATH` → 실값 → dummy 순.
+
+    ⚠ 오버라이드가 설정됐는데 그 파일이 없으면 **dummy로 내려가지 않고 끊는다**(PH-04).
+    조용히 내려가면 오타 하나로 **더미 배정표를 실은 채 기동이 성공**한다. `is_dummy`가
+    R1과 모집 게이트에 뜨긴 하지만, 명시적으로 경로를 지정한 설정이 무시되는 것 자체가
+    사고다 — 지정했으면 그 파일이어야 한다.
+    """
     override = os.environ.get("ASSIGNMENT_PATH", "").strip()
     if override:
         path = Path(override)
-        if path.is_file():
-            return path, False
+        if not path.is_file():
+            raise AssignmentContractError(
+                f"ASSIGNMENT_PATH={override!r} — 그런 파일이 없다 (§2.4 · PH-04). "
+                "볼륨 마운트 경로를 확인하라. 값을 비우면 리포의 assignments/를 쓴다."
+            )
+        return path, False
     if DEFAULT_ASSIGNMENT_PATH.is_file():
         return DEFAULT_ASSIGNMENT_PATH, False
     if DUMMY_ASSIGNMENT_PATH.is_file():
