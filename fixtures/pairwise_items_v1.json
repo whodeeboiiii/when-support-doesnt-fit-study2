@@ -1,7 +1,7 @@
 {
   "version": "pairwise_items_v1",
-  "_note": "PH-07 실값 v1 (2026-08-24 착지). 문면 출처: 프로젝트 문서 『연구7_PH07_pairwise문항_후보_v1』 추천 세트. 한쪽 지칭은 전부 target/{side} 치환으로 통일(서술형 지칭 폐기 — PROGRESS 확인 ⑦ 해소). sequence는 동일 문면을 양측에 각각 평정(paired-stem)해 선행 조정 유무에 따른 동일 질문의 지각 차이를 문항 쌍으로 얻는다. 이유는 구술만(F4-ⓒ, PH-11 확정과 정합). PI 최종 문면 확정 시 이 파일만 수정한다(모집 전 가능).",
-  "_target_note": "target이 있는 문항은 서버가 좌우 배정에 맞춰 {side}를 '응답 A'/'응답 B'로 치환한다(부록 A.5 말미). 클라이언트는 조건을 모른다 — 치환된 문면만 받는다(NT-38).",
+  "_note": "PH-07 실값 v1 (2026-08-24 착지 · 2026-08-26 PI 문면 개정). 한쪽 지칭은 전부 target/{side} 치환으로 통일한다(서술형 지칭 폐기). 양쪽을 함께 지칭하는 문항(SEQ3)은 target이 가리키는 쪽이 {side}, 나머지가 {other}다. 두 응답에 공통인 것을 묻는 문항(SEQ1)은 target 없이 치환도 없다. 이유는 구술만(F4-ⓒ, PH-11 확정과 정합). PI 최종 문면 확정 시 이 파일만 수정한다(모집 전 가능).",
+  "_target_note": "target이 있는 문항은 서버가 좌우 배정에 맞춰 {side}(=target 쪽)와 {other}(=반대쪽)를 '응답 A'/'응답 B'로 치환한다(부록 A.5 말미). 클라이언트는 조건을 모른다 — 치환된 문면만 받는다(NT-38).",
   "scale": { "min": 1, "max": 7 },
   "contrasts": [
     {
@@ -9,19 +9,19 @@
       "pair": ["C2", "C4"],
       "items": [
         {
-          "item_id": "seq_ask_ok_u",
+          "item_id": "SEQ1_Q_CONSEQUENTIALITY",
+          "target": null,
+          "text": "두 응답에 공통으로 들어 있는 마지막 질문은, 어떻게 답하느냐에 따라 AI의 다음 답변이 실제로 달라질 수 있는 질문이었다."
+        },
+        {
+          "item_id": "SEQ2_PRIOR_SYSTEM_WORK",
+          "target": "without_u",
+          "text": "{side}에서는, AI가 나에게 질문하기 전에 먼저 처리할 수 있었던 부분이 남아 있었다."
+        },
+        {
+          "item_id": "SEQ3_ORDER_PREFERENCE",
           "target": "with_u",
-          "text": "{side}에서 AI가 덧붙인 질문은, 그 시점에 물어볼 만한 질문으로 느껴졌다."
-        },
-        {
-          "item_id": "seq_ask_ok_nou",
-          "target": "without_u",
-          "text": "{side}에서 AI가 덧붙인 질문은, 그 시점에 물어볼 만한 질문으로 느껴졌다."
-        },
-        {
-          "item_id": "seq_offload",
-          "target": "without_u",
-          "text": "{side}의 질문은 AI가 스스로 할 수 있는 일을 나에게 넘기는 것처럼 느껴졌다."
+          "text": "질문을 하는 순서만 놓고 보면, {side}의 방식이 {other}의 방식보다 더 적절했다."
         }
       ]
     },
@@ -30,19 +30,19 @@
       "pair": ["C1", "C3"],
       "items": [
         {
-          "item_id": "sco_warrant",
+          "item_id": "SCO1_WARRANTED_UPTAKE",
           "target": "with_u",
-          "text": "{side}가 답변을 조정한 방식은, 그때까지 대화에서 내가 말한 내용만으로 충분히 뒷받침되는 것이었다."
+          "text": "{side}에서 AI가 바꾼 내용은, 지금까지 내가 한 말만으로도 충분히 할 수 있는 정도였다."
         },
         {
-          "item_id": "sco_overreach",
+          "item_id": "SCO2_INFERENCE_OVERREACH",
           "target": "with_u",
-          "text": "{side}는 내가 표현하지 않은 것까지 지나치게 넘겨짚었다고 느꼈다."
+          "text": "{side}에서 AI가 바꾼 내용에는, 내가 말하지 않은 뜻까지 너무 많이 추측한 부분이 있었다."
         },
         {
-          "item_id": "sco_omission",
+          "item_id": "SCO3_UNPERFORMED_SYSTEM_WORK",
           "target": "without_u",
-          "text": "{side}는 문제를 알아차리고도, 할 수 있는 조정을 하지 않은 채 남겨두었다고 느꼈다."
+          "text": "{side}는 문제를 알아차렸지만, AI가 스스로 할 수 있는 수정은 하지 않고 멈춘 느낌이 들었다."
         }
       ]
     },
@@ -51,19 +51,19 @@
       "pair": ["C3", "C4"],
       "items": [
         {
-          "item_id": "sto_need",
+          "item_id": "STO1_Q_NEED_AFTER_UPTAKE",
           "target": "with_q",
-          "text": "{side}가 조정 뒤에 덧붙인 질문은, 그래도 여전히 필요한 확인이었다고 느꼈다."
+          "text": "{side}에서 마지막에 한 질문은, 앞의 내용을 바꾼 뒤에도 AI가 다음 답변을 하기 위해 필요한 질문이었다."
         },
         {
-          "item_id": "sto_premature",
+          "item_id": "STO2_PREMATURE_STOPPING",
           "target": "without_q",
-          "text": "{side}는 내가 여전히 원할 수 있는 도움을 너무 일찍 거둔 것처럼 느껴졌다."
+          "text": "{side}는 추가 질문 없이 끝나서, 아직 더 필요한 도움이 있을 수 있는데 너무 일찍 멈춘 느낌이 들었다."
         },
         {
-          "item_id": "sto_reexplain",
+          "item_id": "STO3_ADDITIONAL_EXPLANATION_BURDEN",
           "target": "with_q",
-          "text": "{side}의 질문은 이미 말한 것을 다시 설명하게 만드는 것처럼 느껴졌다."
+          "text": "{side}의 마지막 질문 때문에, 내가 추가로 설명해야 할 일이 늘어난 느낌이 들었다."
         }
       ]
     }

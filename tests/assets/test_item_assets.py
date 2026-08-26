@@ -178,10 +178,10 @@ def test_ab_substitution_follows_assigned_sides(
             reversed_ = item.render(right, left)
             assert forward != reversed_, f"{item.item_id}: 좌우를 뒤집었는데 문면이 같다"
             assert {forward, reversed_} == {
-                item.text.replace("{side}", SIDE_LABELS[0]),
-                item.text.replace("{side}", SIDE_LABELS[1]),
+                item.text.replace("{side}", SIDE_LABELS[0]).replace("{other}", SIDE_LABELS[1]),
+                item.text.replace("{side}", SIDE_LABELS[1]).replace("{other}", SIDE_LABELS[0]),
             }
-            assert "{side}" not in forward
+            assert "{side}" not in forward and "{other}" not in forward
 
 
 def test_rendered_text_never_leaks_condition_labels(

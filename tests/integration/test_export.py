@@ -304,6 +304,6 @@ async def test_written_files_round_trip(exported: AsyncSession, tmp_path: Path) 
         encoding="utf-8-sig", newline=""
     ) as handle:
         header = next(csv_module.reader(handle))
-    assert any(name.startswith("item_seq_") for name in header)
-    assert any(name.startswith("item_sco_") for name in header)
-    assert any(name.startswith("item_sto_") for name in header)
+    assert any(name.startswith("item_SEQ") for name in header)
+    assert any(name.startswith("item_SCO") for name in header)
+    assert any(name.startswith("item_STO") for name in header)

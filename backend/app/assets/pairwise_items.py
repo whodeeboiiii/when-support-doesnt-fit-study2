@@ -6,7 +6,9 @@
 검증한다 — 두 곳이 갈라지면 배정표의 좌우와 문항의 A/B 지칭이 어긋난다.
 
 **A/B 치환이 이 모듈의 핵심**이다(부록 A.5 말미). 어떤 문항은 두 응답 중 **한쪽**을 지칭한다
-("{side}의 조정은 … 정당했다"). 자산은 그 한쪽을 조건이 아니라 **성질**로 적는다:
+("{side}의 조정은 … 정당했다"). 어떤 문항은 양쪽을 함께 지칭하며, 그때 나머지 한쪽은
+`{other}`로 적는다("{side}의 방식이 {other}의 방식보다 …"). 자산은 지칭하는 쪽을 조건이
+아니라 **성질**로 적는다:
 
     target ∈ {with_u, without_u, with_q, without_q}
 
@@ -50,8 +52,10 @@ TARGET_CONDITIONS: Mapping[str, frozenset[str]] = {
     "without_q": frozenset({"C1", "C3"}),
 }
 
-#: 자산 문면의 치환 자리.
+#: 자산 문면의 치환 자리. `{side}`는 target이 가리키는 쪽, `{other}`는 반대쪽이다
+#: (`{other}`는 양쪽을 함께 지칭하는 문항 — 예: 순서 선호 — 에만 쓴다).
 SIDE_PLACEHOLDER = "{side}"
+OTHER_PLACEHOLDER = "{other}"
 
 
 class PairwiseAssetError(ValueError):
@@ -69,7 +73,8 @@ class PairwiseItem:
     target: str | None
 
     def render(self, left_condition: str, right_condition: str) -> str:
-        """§4.10 — `{side}`를 배정된 좌우에 맞춰 "응답 A"/"응답 B"로 치환한다.
+        """§4.10 — `{side}`(target 쪽)·`{other}`(반대쪽)를 배정된 좌우에 맞춰
+        "응답 A"/"응답 B"로 치환한다.
 
         치환이 **서버에서** 일어나는 것이 요점이다: 클라이언트가 조건을 받아 스스로 고르면
         조건 라벨이 참가자 번들에 실린다(§1.2 · NT-13).
@@ -78,15 +83,15 @@ class PairwiseItem:
             return self.text
         holders = TARGET_CONDITIONS[self.target]
         if left_condition in holders:
-            side = SIDE_LABELS[0]
+            side, other = SIDE_LABELS
         elif right_condition in holders:
-            side = SIDE_LABELS[1]
+            other, side = SIDE_LABELS
         else:  # pragma: no cover — 자산 계약이 이미 막는다
             raise PairwiseAssetError(
                 f"{self.item_id}: target={self.target}를 가진 조건이 "
                 f"({left_condition}, {right_condition}) 어느 쪽에도 없다"
             )
-        return self.text.replace(SIDE_PLACEHOLDER, side)
+        return self.text.replace(SIDE_PLACEHOLDER, side).replace(OTHER_PLACEHOLDER, other)
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,8 +164,10 @@ def _parse_item(raw: Any, contrast: str, index: int, problems: list[str]) -> Pai
                     f"{label}.target={target}: contrast {contrast}의 두 조건 중 정확히 하나여야 "
                     f"한쪽을 지칭할 수 있다 — 해당 조건 {sorted(holders)}"
                 )
-    elif SIDE_PLACEHOLDER in text:
-        problems.append(f"{label}: {SIDE_PLACEHOLDER}가 있는데 target이 없다 (치환 불가)")
+    elif SIDE_PLACEHOLDER in text or OTHER_PLACEHOLDER in text:
+        problems.append(
+            f"{label}: {SIDE_PLACEHOLDER}·{OTHER_PLACEHOLDER}가 있는데 target이 없다 (치환 불가)"
+        )
 
     return PairwiseItem(item_id=item_id, contrast=contrast, text=text, target=target)
 

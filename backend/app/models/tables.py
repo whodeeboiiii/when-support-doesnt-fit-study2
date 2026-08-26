@@ -275,7 +275,8 @@ class PairwiseResponse(Base):
     pairwise_view_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("pairwise_views.id"), nullable=False, index=True
     )
-    item_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    #: 문항 코드는 자산이 정한다(부록 A.5) — 현재 최장 34자.
+    item_id: Mapped[str] = mapped_column(String(48), nullable=False)
     value: Mapped[int] = mapped_column(Integer, nullable=False)  # 1–7
     display_order: Mapped[int] = mapped_column(Integer, nullable=False)
 
