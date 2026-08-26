@@ -33,7 +33,13 @@ from app.api.deps import AdminActor, DbSession
 from app.assets import dossier_loader
 from app.assets.files import DossierNotFound, QA_PARTICIPANT_NO, is_participant_no
 from app.core import access_code, assignment, freeze
-from app.core.state_machine import IllegalTransition, SsState, assert_ss_transition
+from app.core.state_machine import (
+    SS_RANK,
+    IllegalTransition,
+    SsState,
+    assert_rewind,
+    assert_ss_transition,
+)
 from app.models import tables
 from app.notify.discord import NotifyEvent, notify
 from app.security import fernet
@@ -48,6 +54,7 @@ BLOCKING_STATUSES = ("active", "done")
 FLAG_EVENT = "researcher_flag"
 ABORT_EVENT = "researcher_abort"
 DROPOUT_EVENT = "researcher_dropout"
+REWIND_EVENT = "rewind"
 REASON_FIELD = "reason_encrypted"
 
 
@@ -387,6 +394,151 @@ async def flag_session(
     await db.flush()
     assert session.ss_state == before, "flag가 상태를 바꿨다 — non-blocking 위반(D-07)"
     return {"flagged": True, "ss_state": session.ss_state, "status": session.status}
+
+
+class RewindRequest(BaseModel):
+    """§9.1.1 — 되돌릴 화면과 (위치가 있는 화면이면) 위치, 그리고 사유."""
+
+    screen: str
+    position: int | None = None
+    reason: str = Field(min_length=1)
+
+
+async def _discard_for_rewind(
+    db: DbSession, session: tables.Session, target: SsState, position: int | None
+) -> dict[str, Any]:
+    """§9.1.1 — 되돌릴 지점 **이후의 산출물**을 치우고, 치운 값을 그대로 돌려준다.
+
+    지우는 것은 UNIQUE 제약이 걸린 측정 행 둘뿐이다(`ratings` · `pairwise_responses`).
+    나머지는 지울 필요가 없다 — 노출 행 생성기가 기존 행을 건너뛰므로(§3.3) 조건·좌우·
+    `stimulus_hash`·`rendered_at`이 그대로 재사용되고, 그게 NT-08(재추첨 0건)의 근거다.
+    `generations`·`llm_calls`는 어떤 경우에도 손대지 않는다(§6.6).
+
+    반환값은 호출부가 `events`에 스냅샷으로 남긴다 — 지운 것이 무엇이었는지 복원할 수는
+    없어도 확인할 수는 있어야 한다.
+    """
+    rank = SS_RANK[target]
+    discarded: dict[str, Any] = {}
+
+    if rank <= SS_RANK[SsState.FOCAL_MEASURES]:
+        rows = await store.ratings(db, session.id)
+        if rows:
+            discarded["ratings"] = [
+                {
+                    "item_id": row.item_id,
+                    "scope": row.scope,
+                    "construct": row.construct,
+                    "value": row.value,
+                    "display_order": row.display_order,
+                }
+                for row in rows
+            ]
+            for row in rows:
+                await db.delete(row)
+
+    if rank <= SS_RANK[SsState.ALT_EXPOSURE]:
+        start = position if target is SsState.ALT_EXPOSURE else 1
+        touched = []
+        for row in await store.alt_exposures(db, session.id):
+            if row.position >= start and row.advanced_at is not None:
+                touched.append({"position": row.position, "advanced_at": _iso(row.advanced_at)})
+                row.advanced_at = None
+        if touched:
+            discarded["alt_exposures"] = touched
+
+    if rank <= SS_RANK[SsState.PAIRWISE]:
+        start = position if target is SsState.PAIRWISE else 1
+        views = []
+        for view in await store.pairwise_views(db, session.id):
+            if view.position < start:
+                continue
+            responses = await store.pairwise_responses(db, view.id)
+            if responses or view.submitted_at is not None:
+                views.append(
+                    {
+                        "position": view.position,
+                        "contrast": view.contrast,
+                        "submitted_at": _iso(view.submitted_at),
+                        "responses": [
+                            {
+                                "item_id": row.item_id,
+                                "value": row.value,
+                                "display_order": row.display_order,
+                            }
+                            for row in responses
+                        ],
+                    }
+                )
+            for row in responses:
+                await db.delete(row)
+            view.submitted_at = None
+        if views:
+            discarded["pairwise"] = views
+
+    return discarded
+
+
+@router.post("/sessions/{session_id}/rewind")
+async def rewind_session(
+    session_id: uuid.UUID, payload: RewindRequest, actor: AdminActor, db: DbSession
+) -> dict[str, Any]:
+    """§9.1.1 연구자 되돌리기 — 참가자 조작 실수의 복구 경로.
+
+    참가자에게는 여전히 역방향 간선이 없다(§1.3·§3.5). 이 경로는 콘솔에만 있고 전건이
+    `audit_logs`에 남는다. idempotency가 상태 자체이므로(§3.5) 상태를 되돌리면 참가자의
+    재제출이 신규 제출로 처리된다 — 그래서 이 함수가 할 일은 상태 되돌리기와 **충돌할
+    측정 행 치우기** 둘뿐이다.
+    """
+    session = await get_session_or_404(db, session_id)
+    if session.status != "active":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, f"진행 중인 세션이 아닙니다 (status={session.status})"
+        )
+
+    current = SsState(session.ss_state)
+    current_position = session.pair_index if current is SsState.PAIRWISE else session.alt_index
+    try:
+        target, position = assert_rewind(current, payload.screen, payload.position, current_position)
+    except IllegalTransition as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+
+    before = {
+        "ss_state": session.ss_state,
+        "alt_index": session.alt_index,
+        "pair_index": session.pair_index,
+    }
+    discarded = await _discard_for_rewind(db, session, target, position)
+
+    session.ss_state = target.value
+    session.alt_index = position if target is SsState.ALT_EXPOSURE else None
+    session.pair_index = position if target is SsState.PAIRWISE else None
+
+    await store.record_event(
+        db,
+        session.id,
+        REWIND_EVENT,
+        payload={
+            "from": before,
+            "to": {
+                "ss_state": session.ss_state,
+                "alt_index": session.alt_index,
+                "pair_index": session.pair_index,
+            },
+            # 🔒 사유는 flag와 같은 규율로 암호문이다(§2.9 · §8.1).
+            REASON_FIELD: fernet.encrypt(payload.reason).decode("ascii"),
+            "discarded": discarded,
+            "at": _iso(_now()),
+        },
+    )
+    await record(db, actor=actor, action=AuditAction.REWIND, target=f"session:{session.id}")
+    await db.flush()
+    return {
+        "screen": payload.screen,
+        "ss_state": session.ss_state,
+        "alt_index": session.alt_index,
+        "pair_index": session.pair_index,
+        "discarded": {key: len(value) for key, value in discarded.items()},
+    }
 
 
 async def _interrupt(

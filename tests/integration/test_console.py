@@ -598,6 +598,8 @@ async def test_admin_surface_matches_the_spec_api_table() -> None:
         ("/admin/sessions/{session_id}/flag", ("POST",)),
         ("/admin/sessions/{session_id}/abort", ("POST",)),
         ("/admin/sessions/{session_id}/dropout", ("POST",)),
+        # §9.1.1 [파일럿 확정 2026-08-26] — 연구자 되돌리기.
+        ("/admin/sessions/{session_id}/rewind", ("POST",)),
         ("/admin/monitor/{session_id}", ("GET",)),
         ("/admin/review/{session_id}", ("GET",)),
         ("/admin/dossier/{participant_no}", ("GET",)),
@@ -608,3 +610,190 @@ async def test_admin_surface_matches_the_spec_api_table() -> None:
         ("/admin/participants", ("GET",)),
         ("/admin/console", ("GET",)),
     }
+
+
+# --------------------------------------------------------------------------- #
+# rewind — 연구자 되돌리기 (§9.1.1 [파일럿 확정 2026-08-26])
+# --------------------------------------------------------------------------- #
+
+
+async def _rewind(client: AsyncClient, session_id: Any, **body: Any):
+    return await client.post(
+        f"/admin/sessions/{session_id}/rewind", json=body, auth=ADMIN_AUTH
+    )
+
+
+async def _reach_pairwise(client: AsyncClient, session) -> str:
+    """SS07 pair 1까지 진행한 세션 id."""
+    await helpers.reach_focal(client)
+    await helpers.complete_focal(client)
+    await helpers.advance(client, "P7")
+    await helpers.submit_ratings(client)
+    await helpers.complete_alt_exposures(client)
+    row = (await session.execute(select(tables.Session))).scalars().one()
+    return str(row.id)
+
+
+async def test_rewind_discards_only_the_targeted_pairs(
+    client: AsyncClient, session
+) -> None:
+    """§9.1.1 — P10 position 2로 되돌리면 2·3만 지워지고 1은 남는다."""
+    session_id = await _reach_pairwise(client, session)
+    await helpers.complete_pairwise(client)  # 세 pair 전부 제출 → SS08
+
+    response = await _rewind(client, session_id, screen="P10", position=2, reason="참가자 오조작")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["ss_state"] == SsState.PAIRWISE.value and body["pair_index"] == 2
+
+    views = {
+        view.position: view
+        for view in (await session.execute(select(tables.PairwiseView))).scalars().all()
+    }
+    assert views[1].submitted_at is not None, "되돌리지 않은 pair 1은 그대로여야 한다"
+    assert views[2].submitted_at is None and views[3].submitted_at is None
+
+    remaining = (await session.execute(select(tables.PairwiseResponse))).scalars().all()
+    assert {row.pairwise_view_id for row in remaining} == {views[1].id}
+
+
+async def test_rewind_lets_the_participant_answer_again(
+    client: AsyncClient, session
+) -> None:
+    """되돌리기의 목적 — 재제출이 UNIQUE 충돌 없이 다시 된다(§3.5 idempotency = 상태)."""
+    session_id = await _reach_pairwise(client, session)
+    await helpers.complete_pairwise(client, value=3)
+    await _rewind(client, session_id, screen="P10", position=1, reason="처음부터 다시")
+
+    state = await helpers.state(client)
+    assert state["screen"] == "P10" and state["pair_index"] == 1
+    after = await helpers.complete_pairwise(client, value=6)
+    assert after["ss_state"] == SsState.INTERVIEW.value
+
+    values = {
+        row.value
+        for row in (await session.execute(select(tables.PairwiseResponse))).scalars().all()
+    }
+    assert values == {6}, "재제출 값만 남아야 한다"
+
+
+async def test_rewind_keeps_the_same_stimuli_and_order(
+    client: AsyncClient, session
+) -> None:
+    """NT-08 — 되돌려도 재추첨하지 않는다: 좌우·조건·문항 순서가 같다."""
+    session_id = await _reach_pairwise(client, session)
+    before = await helpers.state(client)
+    await helpers.complete_pairwise(client)
+    await _rewind(client, session_id, screen="P10", position=1, reason="다시")
+    after = await helpers.state(client)
+
+    assert [side["ai1"] for side in after["data"]["sides"]] == [
+        side["ai1"] for side in before["data"]["sides"]
+    ]
+    assert [item["text"] for item in after["data"]["items"]] == [
+        item["text"] for item in before["data"]["items"]
+    ]
+
+
+async def test_rewind_to_ratings_clears_them_and_resets_alt_exposures(
+    client: AsyncClient, session
+) -> None:
+    """P8로 되돌리면 `ratings`가 지워지고 대안 노출을 다시 걷는다 — 노출 행 자체는 남는다."""
+    session_id = await _reach_pairwise(client, session)
+    exposures_before = {
+        row.position: row.stimulus_hash
+        for row in (await session.execute(select(tables.AltExposure))).scalars().all()
+    }
+
+    response = await _rewind(client, session_id, screen="P8", reason="평정 오조작")
+    assert response.status_code == 200, response.text
+    assert response.json()["ss_state"] == SsState.FOCAL_MEASURES.value
+
+    assert (await session.execute(select(tables.Rating))).scalars().all() == []
+    rows = (await session.execute(select(tables.AltExposure))).scalars().all()
+    assert {row.position: row.stimulus_hash for row in rows} == exposures_before
+    assert all(row.advanced_at is None for row in rows)
+
+
+async def test_rewind_never_touches_the_generation_audit(
+    client: AsyncClient, session
+) -> None:
+    """§6.6 — `generations`·`llm_calls`는 되돌리기의 대상이 아니다."""
+    session_id = await _reach_pairwise(client, session)
+    before = len((await session.execute(select(tables.Generation))).scalars().all())
+    assert before > 0
+    await _rewind(client, session_id, screen="P8", reason="평정 오조작")
+    after = len((await session.execute(select(tables.Generation))).scalars().all())
+    assert after == before
+
+
+async def test_rewind_records_snapshot_audit_and_encrypted_reason(
+    client: AsyncClient, session
+) -> None:
+    """§9.1.1 — 지운 값은 events 스냅샷, 행위는 audit, 사유는 🔒."""
+    session_id = await _reach_pairwise(client, session)
+    await helpers.complete_pairwise(client, value=5)
+    await _rewind(client, session_id, screen="P10", position=1, reason="참가자가 잘못 눌렀다")
+
+    events = (
+        (await session.execute(select(tables.Event).where(tables.Event.type == "rewind")))
+        .scalars()
+        .all()
+    )
+    assert len(events) == 1
+    payload = events[0].payload
+    assert payload["from"]["ss_state"] == SsState.INTERVIEW.value
+    assert payload["to"]["pair_index"] == 1
+    assert len(payload["discarded"]["pairwise"]) == 3
+    assert payload["discarded"]["pairwise"][0]["responses"][0]["value"] == 5
+
+    from app.security import fernet
+
+    assert "참가자가 잘못 눌렀다" not in str(payload), "사유가 평문으로 남았다"
+    assert fernet.decrypt(payload["reason_encrypted"].encode("ascii")) == "참가자가 잘못 눌렀다"
+    assert len(await _audit(session, "rewind")) == 1
+
+
+@pytest.mark.parametrize(
+    ("body", "why"),
+    [
+        ({"screen": "P11", "reason": "x"}, "전진 방향"),
+        ({"screen": "P4", "reason": "x"}, "되돌릴 수 없는 화면"),
+        ({"screen": "P10", "position": 9, "reason": "x"}, "position 범위 밖"),
+        ({"screen": "P10", "reason": "x"}, "position 누락"),
+    ],
+)
+async def test_rewind_rejects_illegal_targets(
+    client: AsyncClient, session, body: dict[str, Any], why: str
+) -> None:
+    """§9.1.1 — 되돌리기로 앞으로 밀거나 금지 구간에 손댈 수 없다."""
+    session_id = await _reach_pairwise(client, session)
+    response = await _rewind(client, session_id, **body)
+    assert response.status_code == 409, f"{why}: {response.text}"
+
+
+async def test_rewind_is_blocked_before_focal_measures_and_after_debrief(
+    client: AsyncClient, session
+) -> None:
+    """focal은 abort의 영역이고(§9.1.1 금지 ①), 디브리핑 이후 재측정은 오염이다(금지 ②)."""
+    await helpers.reach_focal(client)
+    row = (await session.execute(select(tables.Session))).scalars().one()
+    assert (await _rewind(client, str(row.id), screen="P8", reason="x")).status_code == 409
+
+    await helpers.complete_focal(client)
+    await helpers.advance(client, "P7")
+    await helpers.submit_ratings(client)
+    await helpers.complete_alt_exposures(client)
+    await helpers.complete_pairwise(client)
+    await helpers.advance(client, "P11")
+    await client.post("/api/debrief/confirm")
+    assert (await _rewind(client, str(row.id), screen="P8", reason="x")).status_code == 409
+
+
+async def test_rewind_requires_admin_auth(client: AsyncClient, session) -> None:
+    """§2.7 — 되돌리기는 콘솔 뒤에 있다."""
+    session_id = await _reach_pairwise(client, session)
+    response = await client.post(
+        f"/admin/sessions/{session_id}/rewind", json={"screen": "P8", "reason": "x"}
+    )
+    assert response.status_code == 401

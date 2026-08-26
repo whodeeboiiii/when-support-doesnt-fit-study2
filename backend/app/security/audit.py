@@ -26,6 +26,8 @@ class AuditAction(StrEnum):
     FLAG = "flag"
     ABORT = "abort"
     CODE_ISSUE = "code_issue"
+    #: §9.1.1 — 연구자 되돌리기. 참가자 응답을 지우는 유일한 경로라 감사 대상이다.
+    REWIND = "rewind"
 
 
 async def record(

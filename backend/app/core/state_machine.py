@@ -114,6 +114,44 @@ POST_FOCAL_MEASURE_SS: frozenset[SsState] = frozenset(
     {SsState.ALT_EXPOSURE, SsState.PAIRWISE, SsState.INTERVIEW, SsState.DEBRIEF, SsState.DONE}
 )
 
+def _build_ss_rank() -> Mapping[SsState, int]:
+    """§3.1 진행 순위. `SS_NEXT` 사슬을 걸어서 만든다 — 표를 손으로 또 적으면 갈라진다."""
+    order: dict[SsState, int] = {}
+    state, rank = SsState.CREATED, 0
+    while True:
+        order[state] = rank
+        following = SS_NEXT.get(state)
+        if following is None:
+            return MappingProxyType(order)
+        state, rank = following, rank + 1
+
+
+#: 상태의 진행 순위(클수록 뒤). idempotency 판정(§3.5)과 rewind 방향 검증(§9.1.1)이 함께 쓴다.
+SS_RANK: Mapping[SsState, int] = _build_ss_rank()
+
+#: §9.1.1 rewind — **연구자 개입**이다. 참가자에게는 여전히 역방향 간선이 없다(§1.3·§3.5).
+#:
+#: focal(SS04)이 없는 이유: AI1 노출·User1·AI2는 1회성이라 되돌려도 복구되지 않는다 —
+#: 그 경우의 정당한 처리는 abort다. SS09 이후가 없는 이유: 디브리핑이 설계를 공개한 뒤의
+#: 재측정은 오염이다.
+REWIND_TARGETS: Mapping[str, SsState] = MappingProxyType(
+    {
+        "P8": SsState.FOCAL_MEASURES,
+        "P9": SsState.ALT_EXPOSURE,
+        "P10": SsState.PAIRWISE,
+        "P11": SsState.INTERVIEW,
+    }
+)
+
+#: rewind 요청을 **받을 수 있는** 현재 상태. 대상 집합과 같다(둘 다 SS05–SS08).
+REWINDABLE_FROM: frozenset[SsState] = frozenset(REWIND_TARGETS.values())
+
+#: position을 함께 받는 대상 — 그 상태 안에서 위치까지 지정해야 되돌릴 지점이 정해진다.
+REWIND_POSITION_LIMIT: Mapping[SsState, int] = MappingProxyType(
+    {SsState.ALT_EXPOSURE: ALT_POSITIONS, SsState.PAIRWISE: PAIR_POSITIONS}
+)
+
+
 #: §3.2 focal 전이. **갈래가 없다** — F4의 reply/end는 둘 다 F5로 간다(§0.3 · D-32).
 F_NEXT: Mapping[FState, frozenset[FState]] = MappingProxyType(
     {
@@ -155,6 +193,44 @@ def assert_position(current_index: int | None, submitted: int, *, limit: int, la
         raise IllegalTransition(
             f"{label} 위치 불일치: 서버 {current_index} vs 요청 {submitted} (§3.3 · NT-33)"
         )
+
+
+def assert_rewind(
+    current: SsState,
+    target_screen: str,
+    position: int | None,
+    current_position: int | None = None,
+) -> tuple[SsState, int | None]:
+    """§9.1.1 — 연구자 되돌리기의 대상 검증. 반환 = (목표 상태, 확정된 position).
+
+    **전진은 rewind가 아니다.** 같은 상태 안에서는 position이 현재 위치보다 뒤면 거부한다 —
+    되돌리기 API로 참가자를 앞으로 밀 수 있으면 그건 상태머신을 우회하는 두 번째 경로다.
+    """
+    if current not in REWINDABLE_FROM:
+        raise IllegalTransition(
+            f"{current}에서는 되돌릴 수 없다 — SS05–SS08만 가능하다 "
+            "(focal은 abort, 디브리핑 이후는 오염 — §9.1.1)"
+        )
+    target = REWIND_TARGETS.get(target_screen)
+    if target is None:
+        raise IllegalTransition(
+            f"되돌릴 수 없는 화면: {target_screen} (가능: {sorted(REWIND_TARGETS)} — §9.1.1)"
+        )
+    if SS_RANK[target] > SS_RANK[current]:
+        raise IllegalTransition(f"전진 방향이다: {current} → {target} (§9.1.1)")
+
+    limit = REWIND_POSITION_LIMIT.get(target)
+    if limit is None:
+        return target, None
+    if position is None:
+        raise IllegalTransition(f"{target_screen}은 position이 필요하다 (1–{limit})")
+    if not 1 <= position <= limit:
+        raise IllegalTransition(f"position 범위 밖: {position} (1–{limit})")
+    if target is current and current_position is not None and position > current_position:
+        raise IllegalTransition(
+            f"전진 방향이다: {target_screen} {current_position} → {position} (§9.1.1)"
+        )
+    return target, position
 
 
 # --------------------------------------------------------------------------- #

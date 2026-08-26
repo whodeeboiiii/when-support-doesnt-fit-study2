@@ -39,7 +39,7 @@ async def test_audit_records_actor_action_target(session: AsyncSession) -> None:
 
 
 def test_audit_actions_match_spec_list() -> None:
-    """§8.1 `audit_logs.action` — view/decrypt/export/flag/abort/code_issue."""
+    """§8.1 `audit_logs.action` — view/decrypt/export/flag/abort/code_issue/rewind."""
     assert {str(action) for action in audit.AuditAction} == {
         "view",
         "decrypt",
@@ -47,4 +47,6 @@ def test_audit_actions_match_spec_list() -> None:
         "flag",
         "abort",
         "code_issue",
+        # §9.1.1 — 연구자 되돌리기. 참가자 응답을 지우는 유일한 경로다.
+        "rewind",
     }

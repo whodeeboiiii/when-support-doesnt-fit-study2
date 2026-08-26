@@ -24,23 +24,12 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from app.core.state_machine import FState, SsState
+from app.core.state_machine import SS_RANK, FState, SsState
 
 #: §3.1·§3.2 상태의 진행 순위. 클수록 뒤 단계다. 중단 상태(SS90·SS91)는 여기 없다 —
 #: 순서 비교의 대상이 아니라 제출 거부의 사유이기 때문이다.
-_SS_RANK: dict[SsState, int] = {
-    SsState.CREATED: 0,
-    SsState.CONSENT: 1,
-    SsState.CHECKPOINT: 2,
-    SsState.REENTRY: 3,
-    SsState.FOCAL: 4,
-    SsState.FOCAL_MEASURES: 5,
-    SsState.ALT_EXPOSURE: 6,
-    SsState.PAIRWISE: 7,
-    SsState.INTERVIEW: 8,
-    SsState.DEBRIEF: 9,
-    SsState.DONE: 10,
-}
+#: 표는 `state_machine.SS_RANK` 하나다 — rewind 방향 검증(§9.1.1)도 같은 표를 봐야 한다.
+_SS_RANK = SS_RANK
 
 _F_RANK: dict[FState, int] = {state: index for index, state in enumerate(FState)}
 

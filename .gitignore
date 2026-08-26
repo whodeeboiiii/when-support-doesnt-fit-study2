@@ -86,3 +86,6 @@ dossier_prep/
 screening_deid.csv
 study1_interview_deid.csv
 _to_delete/
+
+# 세션 DB 백업 (🔒 참가자 데이터)
+backups/

@@ -818,6 +818,49 @@ PH-03(나머지 23건)·PH-IRB-1·2.
 
 ---
 
+## 2026-08-26 (2) — 파일럿 조정 1회 (§10.3): pair별 인터뷰 · P11 재작성 · 연구자 rewind
+
+P23(첫 실참가자) 세션 뒤 PI가 지시한 세 건. §10.3이 연 **[파일럿 확정] 1회 조정 창**이므로
+P24 세션 전에 동결한다. 772 tests green(기준선 756 → +16).
+
+**① pair별 인터뷰 (§4.10).** 세 pair를 모아 한 번에 인터뷰하던 것을 pair마다로 바꿨다.
+별도 화면·상태를 만들지 않았다 — 참가자가 문항을 채운 뒤 **버튼을 누르기 전**이 이미
+인터뷰 자리이고(두 응답·문항이 화면에 그대로 있다), 바뀐 것은 **버튼 문안 하나**다:
+`PAIRWISE_SUBMIT_BUTTON = "연구자의 안내를 받은 뒤 눌러주세요"`. 백엔드·DB·상태머신 변경 0건.
+
+**② P11 재작성 (§4.11).** 구판(세 pair 좌우 재배치)은 폐기. 지금은 처음 상황 → focal 대화
+(AI1 → User1 → AI2) → 나머지 세 응답 **나열**이다. 화면 ID·상태머신은 그대로라 events·
+export·R2가 영향을 받지 않는다. 경계는 유지(NT-39): 조건 라벨·문항·평정값·sidecar 없음.
+
+**③ 연구자 rewind (§9.1.1 신설).** 참가자에게 뒤로가기를 주는 대신 콘솔에 되돌리기를 뒀다.
+`POST /admin/sessions/{id}/rewind {screen, position?, reason}` — abort·dropout과 같은 개입 계열.
+
+- 대상 P8·P9(1–3)·P10(1–3)·P11, 받을 수 있는 현재 상태 SS05–SS08. 전진은 409.
+- **금지 ①** focal(SS04): AI1·User1·AI2가 1회성이라 되돌려도 복구되지 않는다 → abort의 영역.
+  **금지 ②** SS09 이후: 디브리핑이 설계를 공개한 뒤의 재측정은 오염이다.
+- `generations`·`llm_calls`는 손대지 않는다(§6.6).
+- 지우는 것은 UNIQUE가 걸린 측정 행 둘(`ratings`·`pairwise_responses`)뿐. 나머지는 지울
+  필요가 없다 — 노출 행 생성기가 기존 행을 건너뛰므로 조건·좌우·`stimulus_hash`가 그대로
+  재사용된다(NT-08). 지운 값은 `events(type="rewind")` 스냅샷, 사유는 flag와 같이 🔒.
+- **DB 마이그레이션 0건.** idempotency가 상태 자체라(§3.5) 상태만 되돌리면 재제출이 신규
+  제출로 처리된다 — 그 성질이 이 기능을 컬럼 추가 없이 성립시켰다.
+
+**명세에 없어 내가 정한 것**
+
+| 결정 | 이유 | 되돌리기 |
+|---|---|---|
+| rewind 금지 구간 2곳(focal · SS09 이후) | 되돌려도 과학적으로 복구되지 않는 구간을 API로 열면 "복구했다"는 오해가 남는다 | `REWIND_TARGETS`·`REWINDABLE_FROM` 표 2줄 |
+| 되돌린 뒤 참가자 화면은 **수동 새로고침** | `App.tsx`는 폴링하지 않는다. 폴링 추가는 §4.0 events에 잡음을 만들고 Zoom 동석이라 구두 안내로 충분하다 | 폴링 5–10초 추가 |
+| `SS_RANK`를 `state_machine`으로 승격 | idempotency 판정과 rewind 방향 검증이 같은 순위표를 봐야 한다 — 두 벌이면 갈라진다 | — |
+
+**P23 파일럿 관측 — AI2가 neutral_fallback으로 끝났다.** attempt 1이 R-3(질문 3개 > 상한 1개)로
+재생성, attempt 2는 규칙은 통과했으나 checker가 `unsupported_inference` 3건을 잡아 pass=false →
+§9.1대로 `neutral_fallback` 착지. 참가자가 본 AI2는 fallback 문안(70자)이다. 파이프라인은 설계대로
+동작했지만 **focal AI2가 실제 생성물이 아니므로** P23의 focal 측정 해석에는 이 사실이 붙는다.
+세션 비용 $0.046(main 2회 + validator 1회).
+
+---
+
 <details>
 <summary>v1.0.1 (within, 12명 × 4-branch) 이력 — 태그 <code>v1.0.1-within</code></summary>
 

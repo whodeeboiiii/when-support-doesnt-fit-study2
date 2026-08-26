@@ -198,36 +198,57 @@ async def _pairwise_view(
         # 문항 ID는 내려가지 않는다 — 위치와 (치환된) 문면만.
         "items": [{"position": entry.position, "text": entry.text} for entry in presented],
         "scale": _scale(),
+        # §4.10 — 버튼이 인터뷰 시점을 지시한다. 문안은 서버가 준다(NT-13과 같은 규율).
+        "button": screen_copy.PAIRWISE_SUBMIT_BUTTON,
     }
 
 
 async def _interview_view(
     db: AsyncSession, session: tables.Session, dossier: dossier_loader.Dossier
 ) -> dict[str, Any]:
-    """§4.11 — 세 pair를 **제시된 순서·좌우 그대로** 읽기 전용으로.
+    """§4.11 [파일럿 확정 2026-08-26] — 시나리오 · focal 대화 · 나머지 세 응답.
 
-    문항·응답값은 재표시하지 않는다(§4.11). sidecar·조건 라벨·researcher_only도 없다 —
-    그것들은 연구자 R3에만 있다(NT-39).
+    pair별 인터뷰가 P10에서 끝나므로(§4.10) 이 화면은 **전체를 한 번에 놓고 보는 자리**다.
+    구판의 좌우 재배치는 폐기했다.
+
+    여기 없는 것이 계약이다(NT-39): 조건 라벨 · 문항·평정값 · sidecar · researcher_only.
+    User1·AI2는 **참가자 본인 텍스트의 재표시**이므로 복호화한다(§2.9 — 연구자 접근이
+    아니라서 audit 대상이 아니다).
+
+    대안 세 개가 실려도 NT-31 위반이 아니다: SS08은 focal 측정(SS05) 이후이고, 같은 세
+    자극을 참가자가 이미 P9에서 봤다.
     """
-    pairs = []
-    for row in await store.pairwise_views(db, session.id):
-        pairs.append(
-            {
-                "position": row.position,
-                "label": screen_copy.INTERVIEW_PAIR_LABEL.format(position=row.position),
-                "sides": [
-                    {
-                        "label": screen_copy.PAIRWISE_SIDE_LABELS[0],
-                        "ai1": dossier.assemble(row.left_condition),
-                    },
-                    {
-                        "label": screen_copy.PAIRWISE_SIDE_LABELS[1],
-                        "ai1": dossier.assemble(row.right_condition),
-                    },
-                ],
-            }
-        )
-    return {"pairs": pairs, "button": screen_copy.INTERVIEW_HOLD_BUTTON}
+    effective = await effective_checkpoint(db, session)
+    run = await store.focal_run(db, session.id)
+
+    focal_turns: list[dict[str, Any]] = []
+    if run is not None:
+        turns = {turn.role: turn for turn in await store.turns(db, run.id)}
+        if run.condition:
+            focal_turns.append({"role": "ai", "text": dossier.assemble(run.condition)})
+        if "user1" in turns:
+            focal_turns.append({"role": "user", "text": _decrypt(turns["user1"].text) or ""})
+        if "ai2" in turns:
+            focal_turns.append({"role": "ai", "text": _decrypt(turns["ai2"].text) or ""})
+
+    alternatives = [
+        {
+            "label": screen_copy.INTERVIEW_ALT_LABEL.format(position=row.position),
+            "ai1": dossier.assemble(row.condition),
+        }
+        for row in await store.alt_exposures(db, session.id)
+    ]
+
+    return {
+        "scenario_title": screen_copy.INTERVIEW_SCENARIO_TITLE,
+        # 시나리오 3필드 = checkpoint 말풍선 그대로(원 요청 → 문제된 응답 → 참가자가 남긴 말).
+        "scenario": checkpoint_chat(effective),
+        "focal_title": screen_copy.INTERVIEW_FOCAL_TITLE,
+        "focal_turns": focal_turns,
+        "alternatives_title": screen_copy.INTERVIEW_ALTERNATIVES_TITLE,
+        "alternatives": alternatives,
+        "button": screen_copy.INTERVIEW_HOLD_BUTTON,
+    }
 
 
 async def _screen_data(

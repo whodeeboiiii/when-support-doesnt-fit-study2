@@ -1,9 +1,9 @@
 /**
- * P11 contrastive interview 대기 · P12 디브리핑 · 종료·중단 화면 (§4.11–§4.12 · §9.1).
+ * P11 사후 인터뷰 화면 · P12 디브리핑 · 종료·중단 화면 (§4.11–§4.12 · §9.1).
  *
- * **P11이 v1.0.1의 P10(cross-branch review)을 대체한다.** 네 trajectory를 나란히 보여 주던
- * 화면은 사라졌고(4-branch 설계와 함께), 대신 **세 pair를 제시된 순서·좌우 그대로** 읽기
- * 전용으로 세로 배치한다. 참가자가 인터뷰 중 참조하는 화면이다.
+ * **[파일럿 확정 2026-08-26] P11이 다시 쓰였다.** 구판은 세 pair를 좌우 그대로 재배치한
+ * 화면이었는데, pair별 인터뷰가 P10에서 끝나게 되면서(§4.10) 그 배치가 할 일이 없어졌다.
+ * 지금 P11은 **전체를 한 번에 놓고 보는 자리**다 — 처음 상황 → 그때의 대화 → 나머지 세 응답.
  *
  * 여기 없는 것이 중요하다(NT-39): 문항·응답값 재표시 없음, sidecar 없음, 조건 라벨 없음,
  * researcher_only 없음. 그것들은 연구자 R3에만 있다.
@@ -16,44 +16,64 @@ import { Bubble } from '../components/Chat'
 import { SubmitBar } from '../components/Inputs'
 import { DONE_NOTICE, NEXT } from '../copy'
 import { DevScreenNote } from '../components/DevNote'
+import { CheckpointCard } from './Intro'
 import { ScreenProps, ScreenTitle, useSubmit } from './common'
 
-interface PairView {
-  position: number
+interface FocalTurn {
+  role: 'user' | 'ai'
+  text: string
+}
+
+interface Alternative {
   label: string
-  sides: { label: string; ai1: string }[]
+  ai1: string
 }
 
 export function InterviewHold({ state, onState }: ScreenProps) {
-  const pairs: PairView[] = state.data.pairs ?? []
+  const focalTurns: FocalTurn[] = state.data.focal_turns ?? []
+  const alternatives: Alternative[] = state.data.alternatives ?? []
   const { busy, error, run } = useSubmit(onState)
 
   return (
-    <div className="screen" style={{ maxWidth: '1100px' }}>
+    <div className="screen">
       <DevScreenNote
         screen="P11"
-        term="Contrastive Interview 대기"
-        detail="§4.11 — 세 pair를 제시 순서·좌우 그대로 읽기 전용 재배치. 문항·응답값은 재표시하지 않는다. 인터뷰는 Zoom 구두(부록 D.3)."
+        term="사후 인터뷰"
+        detail="§4.11 [파일럿 확정 2026-08-26] — 시나리오 · focal 대화 · 나머지 세 응답을 읽기 전용으로. 문항·평정값·조건 라벨은 없다(NT-39). 인터뷰는 Zoom 구두(부록 D.3)."
       />
-      <ScreenTitle>비교한 응답들</ScreenTitle>
-      <div className="space-y-10">
-        {pairs.map((pair) => (
-          <section key={pair.position}>
-            <h2 className="mb-3 text-sm font-semibold text-gray-600">{pair.label}</h2>
-            {/* P10과 같은 열 규칙 — 폭 동일, 높이 맞춤, 열 내부 스크롤 없음(§4.11). */}
-            <div className="grid grid-cols-2 gap-5">
-              {pair.sides.map((side) => (
-                <div key={side.label} className="sec flex flex-col">
-                  <p className="mb-3 text-sm font-semibold text-gray-600">{side.label}</p>
-                  <div className="chat">
-                    <Bubble role="ai" text={side.ai1} wide />
-                  </div>
+      <ScreenTitle>{state.data.scenario_title}</ScreenTitle>
+      <CheckpointCard checkpoint={state.data.scenario} />
+
+      {focalTurns.length > 0 && (
+        <section className="mt-12">
+          <h2 className="mb-3 text-sm font-semibold text-gray-600">{state.data.focal_title}</h2>
+          <div className="chat">
+            {focalTurns.map((turn, index) => (
+              <Bubble key={index} role={turn.role} text={turn.text} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {alternatives.length > 0 && (
+        <section className="mt-12">
+          <h2 className="mb-3 text-sm font-semibold text-gray-600">
+            {state.data.alternatives_title}
+          </h2>
+          {/* pairwise 배치가 아니라 **나열**이다 — 여기서는 비교를 시키지 않는다(§4.11). */}
+          <div className="space-y-6">
+            {alternatives.map((alternative) => (
+              <div key={alternative.label} className="sec">
+                <p className="mb-3 text-sm font-semibold text-gray-600">{alternative.label}</p>
+                <div className="chat">
+                  <Bubble role="ai" text={alternative.ai1} />
                 </div>
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <SubmitBar
         label={state.data.button}
         busy={busy}
@@ -63,6 +83,7 @@ export function InterviewHold({ state, onState }: ScreenProps) {
     </div>
   )
 }
+
 
 export function Debrief({ state, onState }: ScreenProps) {
   const { busy, error, run } = useSubmit(onState)

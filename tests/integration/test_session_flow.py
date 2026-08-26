@@ -523,3 +523,84 @@ async def test_p7_shows_user2_after_reply(client: AsyncClient, llm) -> None:
     assert data["user2"] == "그럼 안정성 쪽으로"
     assert data["ai2"], "AI2도 계속 보여야 한다"
     assert "ai3" not in data
+
+
+# --------------------------------------------------------------------------- #
+# P10 버튼 · P11 사후 인터뷰 화면 (§4.10 · §4.11 [파일럿 확정 2026-08-26])
+# --------------------------------------------------------------------------- #
+
+
+async def _reach_interview(client: AsyncClient, user1: str = "비교만 해줘") -> dict[str, Any]:
+    await helpers.reach_focal(client, "P00")
+    await helpers.complete_focal(client, user1=user1)
+    await helpers.advance(client, "P7")
+    await helpers.submit_ratings(client)
+    await helpers.complete_alt_exposures(client)
+    await helpers.complete_pairwise(client)
+    return await helpers.state(client)
+
+
+async def test_p10_button_directs_the_per_pair_interview(client: AsyncClient) -> None:
+    """§4.10 — pair마다 이 화면에서 인터뷰한다. 버튼이 그 순서를 지시하는 유일한 장치다."""
+    await helpers.reach_focal(client, "P00")
+    await helpers.complete_focal(client)
+    await helpers.advance(client, "P7")
+    await helpers.submit_ratings(client)
+    await helpers.complete_alt_exposures(client)
+
+    state = await helpers.state(client)
+    assert state["screen"] == "P10"
+    assert state["data"]["button"] == screen_copy.PAIRWISE_SUBMIT_BUTTON
+    assert "연구자" in state["data"]["button"], "인터뷰 시점을 지시하지 않는 문안이다"
+
+
+async def test_p11_shows_scenario_focal_conversation_and_three_alternatives(
+    client: AsyncClient,
+) -> None:
+    """§4.11 — 처음 상황 → focal 대화(AI1·User1·AI2) → 나머지 세 응답 나열."""
+    state = await _reach_interview(client, user1="장기 계획 말고 비교만")
+    assert state["screen"] == "P11"
+    data = state["data"]
+
+    dossier = dossier_loader.load("P00")
+    effective = dossier.ai_visible
+    scenario_turns = [turn["text"] for turn in data["scenario"]["turns"]]
+    assert scenario_turns == [
+        effective.original_request,
+        effective.problematic_ai_response,
+        effective.trouble_cue,
+    ]
+
+    roles = [turn["role"] for turn in data["focal_turns"]]
+    assert roles == ["ai", "user", "ai"], "focal AI1 → User1 → AI2 순서여야 한다"
+    assert data["focal_turns"][1]["text"] == "장기 계획 말고 비교만", "참가자 본인 답장 재표시"
+    assert data["focal_turns"][2]["text"], "AI2가 비어 있다"
+
+    assert [item["label"] for item in data["alternatives"]] == [
+        screen_copy.ALT_EXPOSURE_LABEL.format(position=position) for position in (1, 2, 3)
+    ]
+
+
+async def test_p11_alternatives_are_the_three_non_focal_conditions(
+    client: AsyncClient, session: AsyncSession
+) -> None:
+    """§4.11 — 나열되는 셋은 대안 노출과 같은 자극이고 focal은 그 안에 없다(초안 §7.10)."""
+    state = await _reach_interview(client)
+    dossier = dossier_loader.load("P00")
+    run = (await session.execute(select(tables.FocalRun))).scalars().one()
+
+    shown = [item["ai1"] for item in state["data"]["alternatives"]]
+    exposures = (
+        (await session.execute(select(tables.AltExposure).order_by(tables.AltExposure.position)))
+        .scalars()
+        .all()
+    )
+    assert shown == [dossier.assemble(row.condition) for row in exposures]
+    assert dossier.assemble(run.condition) not in shown, "focal이 '나머지 셋'에 섞였다"
+
+
+async def test_p11_no_longer_carries_the_pairwise_layout(client: AsyncClient) -> None:
+    """구판(세 pair 좌우 재배치)은 폐기됐다 — 되살아나면 §4.10과 중복 측정이 된다."""
+    state = await _reach_interview(client)
+    assert "pairs" not in state["data"]
+    assert "sides" not in str(state["data"])

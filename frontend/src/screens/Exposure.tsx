@@ -155,8 +155,10 @@ export function Pairwise({ state, onState }: ScreenProps) {
         />
       </div>
 
+      {/* §4.10 — pair마다 이 화면에서 인터뷰한다. 버튼 문안이 "연구자 안내 후"를 지시하므로
+          공용 SUBMIT을 쓰지 않는다(문안은 서버가 준다). */}
       <SubmitBar
-        label={SUBMIT}
+        label={state.data.button ?? SUBMIT}
         busy={busy}
         disabled={Object.keys(values).length !== items.length}
         error={error}

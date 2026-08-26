@@ -77,6 +77,22 @@ let timer = null;
 
 const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 const short = (v) => (v ? String(v).slice(0, 8) : "");
+
+// §8.4 checker 판정 전문(부록 A.2 `{violations:[{type,span,rationale}], pass}`).
+// 모델이 쓴 원문 그대로다 — 재생성 안내에는 유형만 실리지만(§6.4 R-1), 사람이 보는
+// 기록에는 근거가 남아야 위반이 났을 때 세션 중에 판단할 수 있다.
+function checkerLines(g) {
+  if (g.checker_skipped) return "";
+  const result = g.checker_result;
+  if (!result) return '\n  checker 판정 없음 — 호출·파싱 실패(§9.1)';
+  const violations = Array.isArray(result.violations) ? result.violations : [];
+  if (!violations.length) return '\n  checker pass — 위반 없음';
+  return violations.map((v) =>
+    `\n  <span class="bad">${esc(v.type)}</span>` +
+    `${v.span ? `\n    span: ${esc(v.span)}` : ""}` +
+    `${v.rationale ? `\n    사유: ${esc(v.rationale)}` : ""}`
+  ).join("");
+}
 const time = (v) => (v ? String(v).slice(11, 19) : "");
 
 async function api(path, options) {
@@ -253,6 +269,7 @@ async function viewR2(sessionId) {
         <span class="pill">${esc(s.status)}</span>
         <span class="muted mono">${esc(short(s.session_id))}</span>
         <button id="flag">flag (기록 전용)</button>
+        <button id="rewind">되돌리기</button>
         <button id="abort" class="danger">세션 중단 (SS90)</button>
         <a href="#/r3/${esc(s.session_id)}" style="margin-left:auto">인터뷰 뷰 →</a>
       </div>
@@ -270,13 +287,46 @@ async function viewR2(sessionId) {
       <div><h2>transcript</h2><div class="stream" style="padding:0 12px">${transcript}</div></div>
       <div><h2>이벤트</h2><div class="stream" style="padding:0 12px">${events}</div></div>
     </section>
-    <p class="muted">3초마다 갱신합니다. flag는 상태를 바꾸지 않고 기록만 남깁니다(D-07).</p>`;
+    <p class="muted">3초마다 갱신합니다. flag는 상태를 바꾸지 않고 기록만 남깁니다(D-07).
+      되돌리기(§9.1.1)는 그 지점 이후의 참가자 응답을 지웁니다 — 지운 값은 이벤트에 스냅샷으로 남습니다.
+      되돌린 뒤 <b>참가자에게 새로고침을 안내하세요</b>(참가자 화면은 폴링하지 않습니다).</p>`;
 
   document.getElementById("flag").onclick = async () => {
     const reason = prompt("flag 사유 (기록 전용 — 세션 상태는 바뀌지 않습니다)");
     if (!reason) return;
     try { await post(`/admin/sessions/${sessionId}/flag`, { reason }); route(); }
     catch (error) { alert(error.message); }
+  };
+  // §9.1.1 되돌리기 — 참가자 조작 실수의 복구 경로. 대상·금지 구간은 서버가 판정하고
+  // (409로 돌아온다) 여기서는 무엇이 지워지는지를 사람이 알고 누르게 하는 것이 전부다.
+  document.getElementById("rewind").onclick = async () => {
+    const screen = prompt(
+      "되돌릴 화면 — P8(평정) · P9(대안 노출) · P10(비교) · P11(사후 인터뷰)\n" +
+      "focal 구간은 되돌릴 수 없습니다(그 경우는 중단). 디브리핑 이후도 불가합니다.",
+    );
+    if (!screen) return;
+    const target = screen.trim().toUpperCase();
+    let position = null;
+    if (target === "P9" || target === "P10") {
+      const answer = prompt(`${target} 몇 번째로 되돌립니까? (1–3)`);
+      if (!answer) return;
+      position = Number(answer);
+    }
+    const reason = prompt("되돌리기 사유 (필수 — audit에 남습니다)");
+    if (!reason) return;
+    const warning = target === "P8"
+      ? "평정 9문항과 이후 비교 응답이 모두 지워집니다."
+      : target === "P10"
+        ? `비교 ${position}번 이후의 응답이 지워집니다.`
+        : "이 지점 이후의 응답이 지워집니다.";
+    if (!confirm(`${target}${position ? " " + position : ""}로 되돌립니다.\n${warning}\n계속할까요?`)) return;
+    try {
+      const result = await post(`/admin/sessions/${sessionId}/rewind`, { screen: target, position, reason });
+      const discarded = Object.entries(result.discarded || {})
+        .map(([key, count]) => `${key} ${count}건`).join(" · ") || "지운 것 없음";
+      alert(`되돌렸습니다 — ${result.ss_state}${result.pair_index ? " · 비교 " + result.pair_index : ""}\n${discarded}\n참가자에게 새로고침을 안내하세요.`);
+      route();
+    } catch (error) { alert(error.message); }
   };
   document.getElementById("abort").onclick = async () => {
     const reason = prompt("중단 사유 (필수 — 참가자 화면은 중단 안내로 바뀝니다)");
@@ -307,7 +357,8 @@ async function viewR3(sessionId) {
           `attempt ${esc(g.attempt)}${g.final ? " [final]" : ""}${g.fallback_used ? " fallback" : ""}` +
           `${g.checker_skipped ? " checker_skipped" : ""}` +
           `${(g.rule_violations || []).length ? " 위반=" + esc(JSON.stringify(g.rule_violations)) : ""}` +
-          `${(g.alt_overlap || []).length ? " overlap=" + esc(JSON.stringify(g.alt_overlap)) + " (기록만)" : ""}`
+          `${(g.alt_overlap || []).length ? " overlap=" + esc(JSON.stringify(g.alt_overlap)) + " (기록만)" : ""}` +
+          checkerLines(g)
         ).join("\n")}</div>
       </div>`
     : '<p class="empty">focal run 없음</p>';
