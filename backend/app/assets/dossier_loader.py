@@ -152,7 +152,6 @@ _RESEARCHER_ONLY_KEYS: frozenset[str] = frozenset(
         "original_trajectory",
         "ideal_response_reported",
         "correction_labor_notes",
-        "verification_notes",
     }
 )
 

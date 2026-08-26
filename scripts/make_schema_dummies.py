@@ -102,7 +102,6 @@ def _document(participant_no: str, index: int) -> dict:
             "original_trajectory": f"{TODO} — {pn} 원 trajectory 미착지>",
             "ideal_response_reported": f"{TODO} — {pn} ideal response 미착지>",
             "correction_labor_notes": f"{TODO} — {pn} correction labor 기록 미착지>",
-            "verification_notes": f"{TODO} — {pn} P2·인터뷰에서 나온 private preference 기록 자리>",
         },
         "stimulus": {
             **segments,

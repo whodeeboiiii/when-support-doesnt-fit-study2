@@ -47,6 +47,27 @@ def _test_env() -> None:
     get_settings.cache_clear()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _committed_assets_only(_test_env: None) -> AsyncIterator[None]:
+    """실값 배정표가 로컬에 착지해도 테스트는 **커밋된 자산**으로 돈다 (§2.9 · PH-08).
+
+    `assignments/assignment_v1.json`은 gitignore 대상이라 CI에는 없다. 그 파일이 있고
+    없고에 따라 판정이 갈리면 "연구팀 컴퓨터에서만 빨간" 테스트가 되고, 그건 자산을
+    만드는 사람이 가장 CI를 믿어야 하는 시점에 CI를 못 믿게 만든다.
+
+    실값 자산 자체의 검증은 여기가 아니라 기동 게이트(§5.4)와
+    `scripts/freeze_study_version.py --check`가 한다.
+    """
+    from app.core import assignment
+
+    original = assignment.DEFAULT_ASSIGNMENT_PATH
+    assignment.DEFAULT_ASSIGNMENT_PATH = original.with_name("__테스트에서는_보지_않는다__.json")
+    assignment.reset_cache()
+    yield
+    assignment.DEFAULT_ASSIGNMENT_PATH = original
+    assignment.reset_cache()
+
+
 @pytest.fixture(scope="session")
 async def engine(_test_env: None) -> AsyncIterator:
     from app.models import Base

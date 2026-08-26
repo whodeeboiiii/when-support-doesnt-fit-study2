@@ -45,8 +45,7 @@
     "mismatch_interpretation": "[QA 합성] 정보가 부족해서가 아니라, 요청하지 않은 단계까지 밀고 나간 것이 문제였다고 해석했다.",
     "original_trajectory": "[QA 합성] 당시에는 짧게 알겠다고만 답하고 그 대화를 끝냈다.",
     "ideal_response_reported": "[QA 합성] 장기 계획을 접고 두 선택지 비교만 이어갔으면 좋았겠다고 보고했다.",
-    "correction_labor_notes": "[QA 합성] 범위를 다시 설명하는 일 자체가 번거로워서 정정하지 않았다고 보고했다.",
-    "verification_notes": "[QA 합성] P2 확인·인터뷰에서 새로 나온 private preference를 적는 자리다. stimulus에는 반영하지 않는다."
+    "correction_labor_notes": "[QA 합성] 범위를 다시 설명하는 일 자체가 번거로워서 정정하지 않았다고 보고했다."
   },
   "stimulus": {
     "r": "장기 계획까지 확장한 건 지금 요청하신 범위를 넘었네요.",

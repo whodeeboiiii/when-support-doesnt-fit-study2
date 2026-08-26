@@ -1,7 +1,7 @@
 {
   "version": "prompt_config_v2",
   "spec_version": "v2.0",
-  "_note": "정본은 구현명세서 부록 A.1·A.2(v2)다. 문안은 PI 승인 후 lock 대상이며(§1.4 · <TODO: PH-12>), 변경 시 prompt_hash를 다시 계산해야 한다(app.llm.prompts.verify). v1의 normalization_patterns_version 키는 삭제됐다(D-34).",
+  "_note": "정본은 구현명세서 부록 A.1·A.2(v2)다. 문안은 [PI 승인 2026-08-26]으로 lock됐다 — 본실험 중 변경은 장애 외 금지이고 변경 시 cohort를 분리한다(§1.4). 변경 시 prompt_hash를 다시 계산해야 한다(app.llm.prompts.verify). v1의 normalization_patterns_version 키는 삭제됐다(D-34).",
   "ai2_generation": {
     "role": "main",
     "source": "부록 A.1 v2 (MAIN — 전 조건·전 참가자 동일)",
@@ -22,5 +22,5 @@
       "expect_json": true
     }
   },
-  "prompt_hash": "c3adbf9f201c2dd6196f0c8627257ac776b0ce4e99d990105cc8ab234b8e2fc0"
+  "prompt_hash": "fbe5d92ef2c3049e0be06801954ee041edbdde265b0eeeb85bbb847637a25c05"
 }

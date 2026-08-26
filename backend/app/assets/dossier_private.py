@@ -24,8 +24,6 @@ RESEARCHER_ONLY_FIELDS: tuple[str, ...] = (
     "original_trajectory",
     "ideal_response_reported",
     "correction_labor_notes",
-    #: v2 신설 — P2 수정·인터뷰에서 새로 나온 private preference. **stimulus 미반영**(§5.3).
-    "verification_notes",
 )
 
 

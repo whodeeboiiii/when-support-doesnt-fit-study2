@@ -36,6 +36,20 @@ def _real_dossier(target_dir, participant_no: str) -> None:
     )
 
 
+def _still_dummy(volume=None) -> str:
+    """아직 실값이 착지하지 않은 번호. **고정 번호를 박지 않는다** — PH-03은 한 명씩
+    lock되므로(§5.3), 박아 둔 번호에 실값이 도착하는 날 이 파일이 깨진다. 실값은
+    커밋되지 않으니(§2.9) CI는 멀쩡하고 자산을 만드는 연구팀 로컬만 깨진다 — 그쪽이
+    이 테스트를 가장 필요로 하는 자리다."""
+    for participant_no in files.DUMMY_PARTICIPANT_NUMBERS:
+        if (files.REPO_DOSSIER_DIR / f"{participant_no}.json").is_file():
+            continue
+        if volume is not None and (volume / f"{participant_no}.json").is_file():
+            continue
+        return participant_no
+    pytest.skip("실값 24건이 전부 착지했다 — 더미로 내려가는 번호가 없다")
+
+
 @pytest.fixture
 def volume(tmp_path, monkeypatch):
     """`DOSSIER_DIR`가 걸린 빈 볼륨. 캐시는 앞뒤로 비운다."""
@@ -60,7 +74,8 @@ def test_partial_landing_falls_back_to_image_dummies(volume) -> None:
     path, is_dummy = dossier_path("P05")
     assert path.parent == volume and is_dummy is False, "반입한 실값이 이겨야 한다"
 
-    path, is_dummy = dossier_path("P01")
+    not_landed = _still_dummy(volume)
+    path, is_dummy = dossier_path(not_landed)
     assert is_dummy is True, "반입 전 참가자는 이미지의 스키마 더미로 내려간다"
     assert path.parent == files.REPO_DOSSIER_DIR / "schema_dummy"
 
@@ -152,12 +167,13 @@ def test_asset_sources_reports_where_each_file_came_from(volume) -> None:
     """PH-04 — 반입 직후의 첫 확인. 게이트가 PH-03을 보고할 때 "볼륨이 안 붙었다"와
     "아직 lock 전이다"를 구분할 수 있어야 손을 댄다."""
     _real_dossier(volume, "P07")
+    not_landed = _still_dummy(volume)  # 볼륨에 놓은 P07을 고르지 않도록 반입 뒤에 고른다
     sources = freeze.asset_sources()
 
     assert sources["dossier_dir"] == str(volume)
     assert sources["dossier_dir_overridden"] is True
     assert "P07" in sources["dossiers"]["real"]
-    assert "P08" in sources["dossiers"]["dummy"]
+    assert not_landed in sources["dossiers"]["dummy"]
     assert sources["focal_items"]["is_placeholder"] is False
 
 
