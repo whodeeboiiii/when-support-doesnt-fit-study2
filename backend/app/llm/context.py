@@ -29,6 +29,7 @@ allowlist를 **시그니처로** 건다(§6.2 — "시그니처가 allowlist다"
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -93,11 +94,17 @@ def _split_at_context(filled: str) -> Payload:
 
     이어 붙이면 부록 A.1 전문 그대로다 — 문안은 한 글자도 바꾸지 않고, 채팅 API의 role 구분만
     따른다(정책은 system, 사건·발화는 user).
+
+    ⚠ 경계는 **줄 첫머리에 홀로 선 블록 머리말**이다. A.1 v2의 첫 문단은 본문 안에서
+    "아래 [대화 맥락]은 …"으로 같은 문자열을 언급한다 — 단순 `find`로 자르면 그 언급에서
+    끊겨 **원칙 1–5가 통째로 user로 넘어간다**(system은 첫 문장 조각만 남는다).
     """
-    index = filled.find(CONTEXT_BLOCK)
-    if index == -1:
-        raise PayloadAssemblyError(f"프롬프트에 {CONTEXT_BLOCK} 블록이 없다 (부록 A.1)")
-    return Payload(system=filled[:index].strip(), user=filled[index:].strip())
+    match = re.search(rf"^{re.escape(CONTEXT_BLOCK)}$", filled, re.MULTILINE)
+    if match is None:
+        raise PayloadAssemblyError(
+            f"프롬프트에 {CONTEXT_BLOCK} 블록(줄 단독)이 없다 (부록 A.1)"
+        )
+    return Payload(system=filled[: match.start()].strip(), user=filled[match.start() :].strip())
 
 
 def _assert_filled(text: str, placeholders: Sequence[str]) -> None:

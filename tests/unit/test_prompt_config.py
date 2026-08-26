@@ -78,3 +78,21 @@ def test_prompt_role_mapping_is_dual_provider() -> None:
     """§2.2.1 D-18 이원화 — 생성은 MAIN, 검증은 VALIDATOR."""
     assert prompts.PROMPT_KEY_ROLE[prompts.AI2_PROMPT_KEY] == "main"
     assert prompts.PROMPT_KEY_ROLE[prompts.CHECKER_PROMPT_KEY] == "validator"
+
+
+def test_system_part_carries_the_whole_policy_not_just_the_first_line() -> None:
+    """§6.2 — role 분리는 **정책부/자료부** 경계다.
+
+    A.1 v2의 첫 문단이 본문 안에서 "아래 [대화 맥락]은 …"으로 블록 머리말을 언급하기 때문에,
+    경계를 단순 `find`로 잡으면 그 언급에서 잘려 원칙 1–5가 통째로 user 메시지로 넘어간다.
+    경계는 줄 첫머리에 홀로 선 머리말이어야 한다.
+    """
+    from app.llm import context
+
+    payload = context._split_at_context(prompts.system_template(prompts.AI2_PROMPT_KEY))
+    for principle in ("1.", "2.", "3.", "4.", "5."):
+        assert f"\n{principle} " in f"\n{payload.system}", f"원칙 {principle}이 system에 없다"
+    assert payload.system.endswith("확장하지 않습니다.")
+    assert payload.user.startswith(context.CONTEXT_BLOCK)
+    for slot in ("{ai_visible_context}", "{focal_ai1}", "{user1}"):
+        assert slot in payload.user and slot not in payload.system

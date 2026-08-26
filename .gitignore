@@ -13,8 +13,11 @@ backend/.venv/
 
 *.docx
 
-# DEV_MODE 로컬 DB (§2.0)
+# DEV_MODE 로컬 DB (§2.0) + DEV_MODE=false 로컬 수집 DB(2026-08-26 — 🔒 실참가자 데이터)
 *.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
 dev_local.db*
 
 # Frontend
@@ -67,7 +70,19 @@ dossiers/P30.json
 # `assignments/assignment_dummy.json`(+ .log)만 커밋한다.
 assignments/assignment_v*.json
 assignments/assignment_v*.log
+# 배정표 생성 입력(strata) — 참가자별 코딩 결과다. 표와 같은 취급.
+# 출처·해소 규칙을 적은 `strata_v1.README.md`는 커밋한다(값이 아니라 절차 기록).
+assignments/strata_v*.csv
+
+# 인터뷰·스크리닝 원자료 (§2.9 — dossier 실값과 같은 취급. 리포에 들어가면 되돌릴 수 없다)
+P[0-9][0-9]_interview.csv
+P[0-9][0-9]_screening.csv
 
 # 실행 산출물
 exports/
 reports/
+
+dossier_prep/
+screening_deid.csv
+study1_interview_deid.csv
+_to_delete/

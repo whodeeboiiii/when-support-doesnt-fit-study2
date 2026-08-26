@@ -657,10 +657,12 @@ PI가 다섯 건을 **전부 명세 기본값 그대로** 승인했다. 반려 0
 ### pairwise — contrast당 3문항, 계 9 (`pairwise_items_v1.json`)
 
 - **전 지칭 문항이 `target`/`{side}` 치환으로 통일**됐다. v0은 서술형 지칭("조정을 한 뒤에도…")과
-  치환 문항이 섞여 있었는데, v1은 9문항 전부 `{side}` 치환이다 — 좌우가 뒤집혀도 문면이 따라간다.
-- `sequence`는 **paired-stem**이다: `seq_ask_ok_u`·`seq_ask_ok_nou`가 **동일 문면**에 target만
-  다르다(`with_u`=C4 / `without_u`=C2). 같은 질문이 선행 조정 유무에 따라 어떻게 다르게 지각되는지를
-  문항 쌍으로 얻는다.
+  치환 문항이 섞여 있었는데, v1은 지칭 문항 전부 `{side}` 치환이다 — 좌우가 뒤집혀도 문면이 따라간다.
+- 2026-08-26 PI 문면 개정: 문항 코드가 `SEQ1_Q_CONSEQUENTIALITY` 등 서술 코드로 바뀌었고,
+  `sequence`의 paired-stem 2문항은 공통 Q 결과성(target 없음)·순서 직접 비교로 대체됐다.
+  순서 비교 문항은 양측을 함께 지칭하므로 `{other}`(=target 반대쪽) 치환 자리를 추가했다 —
+  `{side}`가 C4, `{other}`가 C2로 렌더된다. `pairwise_responses.item_id`는 새 코드 길이(최장
+  34자)에 맞춰 `String(48)`로 넓혔다.
 - 이유는 **구술만**(F4-ⓒ) — PH-11 확정과 정합하며 시스템 자유기술 필드를 만들지 않았다.
 
 target → 조건 대응이 세 contrast 모두 **정확히 한쪽**을 지칭하는지 로더가 검증한다
@@ -781,6 +783,38 @@ V2-0–V2-4 구현은 끝났다. 남은 것은 **코드가 아니라 자산·승
    참가자 전 동결.
 9. **설계 동결(§10.5)** — `scripts/freeze_study_version.py --actor <이름>` 1회.
 10. **배포** — Railway 단일 서비스, `proto_v2` → `main_v2` 전환(§2.4).
+
+---
+
+## 2026-08-26 — P23 실세션 준비 (DEV_MODE=false 전환)
+
+**고친 코드 1건 (버그, 문안 불변).** `llm/context._split_at_context`가 `[대화 맥락]`을 단순
+`find`로 찾아 **A.1 v2 첫 문단 안의 언급**에서 잘렸다 — system은 "…돕는 대화형 AI입니다. 아래"
+25자 조각만 남고 **원칙 1–5가 통째로 user 메시지로** 나갔다. 경계를 "줄 첫머리에 홀로 선 블록
+머리말"로 바꿨다(정규식 `^\[대화 맥락\]$`). 프롬프트 문안·hash는 그대로다. 회귀 계약:
+`tests/unit/test_prompt_config.py::test_system_part_carries_the_whole_policy_not_just_the_first_line`.
+
+**실LLM 스모크(P00, scratch DB).** DEV_MODE=false로 전 구간 완주(SS00→SS10). MAIN
+`anthropic/claude-opus-4.8` 7.06s·$0.0127(947/320 tok), VALIDATOR `openai/gpt-5.4`
+1.76s·$0.0021(745/16 tok, JSON 모드·`pass:true`). rule_violations 0 · fallback 0 · 1회 생성으로
+final. 두 슬러그 모두 OpenRouter 현행 목록에 존재 — **[확인 1] 해소**, [확인 4] 실측치 확보.
+
+**운영 구성.** `DEV_MODE=false` · `DATABASE_URL`=로컬 SQLite 절대경로(`proto_v2_local.sqlite3`) ·
+schema `proto_v2`. dossier P23 lock 완료(§5.3) — PH-03 blocker에서 P23 제외. 남은 blocker는
+PH-03(나머지 23건)·PH-IRB-1·2.
+
+**명세에 없어 내가 정한 것** (되돌리기 쉬운 형태로 둔다)
+
+| 결정 | 이유 | 되돌리기 |
+|---|---|---|
+| DB 파일명 `proto_v2_local.sqlite3` · **절대경로** URL | 상대경로면 `scripts/init_db.py`(리포 루트)와 `uvicorn`(cwd에 따라)이 **서로 다른 빈 DB**를 만든다. 확장자는 기존 `.gitignore`의 `*.sqlite3`가 덮는다 | `.env` 한 줄 |
+| `.gitignore`에 `P[0-9][0-9]_interview.csv`·`_screening.csv` 추가 | 리포 루트의 원자료 48건이 untracked였다 — `git add -A` 한 번이면 §2.9 위반이고 이력은 지워지지 않는다 | `.gitignore` 2줄 |
+| `pairwise_responses.item_id` `String(32)`→`String(48)` | 새 문항 코드 최장 34자(`STO3_ADDITIONAL_EXPLANATION_BURDEN`) | 코드 1줄. Alembic 미도입이라 반영은 새 schema `create_all` 시점 |
+
+**운영 주의 — secure 쿠키.** `api/deps.py`가 `secure=not dev_mode`이므로 DEV_MODE=false에서는
+세션 쿠키가 **https에서만** 저장된다. 자체서명 https로 join→state 왕복을 실측 확인했다.
+평문 http는 `localhost` 예외를 주는 브라우저(Chrome·Firefox)에서만 통하고 **Safari는 통하지
+않는다**. 원격 참가자는 터널(https)이 필요하다.
 
 ---
 
