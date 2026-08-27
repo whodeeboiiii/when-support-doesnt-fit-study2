@@ -251,8 +251,8 @@ async def test_ai2_payload_carries_the_uptake_note_for_a_c3_focal(
 ) -> None:
     """D-40 — focal AI1은 **참가자가 본 그대로** 간다: C3·C4는 무대지시까지 함께다.
 
-    화면에만 무대지시가 있고 AI2에는 없으면, 참가자는 "추천을 이미 받은 대화"를 이어가는데
-    AI2는 그 사실을 모른 채 그 추천을 처음부터 다시 한다 — P6에서 AI1과 AI2가 나란히 보이므로
+    화면에만 무대지시가 있고 AI2에는 없으면, 참가자는 "답변을 이미 받은 대화"를 이어가는데
+    AI2는 그 사실을 모른 채 그 답변을 처음부터 다시 한다 — P6에서 AI1과 AI2가 나란히 보이므로
     참가자 눈에 바로 어긋나 보인다. [PI 결정 2026-08-26]
     """
     dossier = dossier_loader.load("P05")  # dummy 배정표에서 focal C3
