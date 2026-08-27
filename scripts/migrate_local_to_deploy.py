@@ -37,8 +37,16 @@ from app.models import tables  # noqa: F401,E402  (모델 등록)
 
 
 def sync_url(url: str) -> str:
-    """async 드라이버가 붙은 URL을 동기용으로 되돌린다 — 이관은 한 번 도는 배치다."""
-    return url.replace("+aiosqlite", "").replace("+asyncpg", "+psycopg")
+    """async 드라이버가 붙은 URL을 동기용으로 되돌린다 — 이관은 한 번 도는 배치다.
+
+    드라이버가 **아예 없는** 형태(`postgresql://…` — Supabase·Railway 콘솔이 그대로 준다)는
+    앱과 같은 규칙으로 psycopg3를 명시한다. 그러지 않으면 SQLAlchemy가 psycopg2(미설치)로
+    해석해 `ModuleNotFoundError`로 끊긴다 — 앱 기동에서 이미 만난 함정이고(§2.4 발견 ①),
+    이관 스크립트만 그 규칙 밖에 있었다. `postgresql+psycopg`는 동기·비동기 양쪽에 쓰인다.
+    """
+    from app.core.config import normalize_db_url
+
+    return normalize_db_url(url.replace("+aiosqlite", "").replace("+asyncpg", "+psycopg"))
 
 
 def source_url(value: str) -> str:
