@@ -1159,11 +1159,12 @@ dossier 계약 · lock 완료(§5.3) · 배정표에 있는 번호 · P00 제외
 | **콘솔 계정 분리** | **하지 않는다** — §2.7의 HTTP Basic 단일 자격 유지 | 코드·명세 변경 0건. 연구자 2인이 같은 자격을 쓰므로 `audit_logs`로는 행위자가 구분되지 않는다 → **세션마다 진행자를 연구 기록에 수기 기입**하는 것이 IRB 문안 4항의 이행 수단이다 |
 | **파일럿 데이터 이관** | **한다** (P08 완주 · P23 진행 중) | 첫 배포 직후·세션 생성 전에 `migrate_local_to_deploy.py --apply`. P23은 `active`(SS08)로 옮겨져 재접속 시 이어진다 |
 | **Supabase 리전** | **서울**(Northeast Asia) | 수집 데이터는 국내 |
-| **Railway 리전** | **싱가포르** | **서울 리전이 존재하지 않는다** — 2026-08-27 확인, 지원 리전은 US West·US East·EU West·Southeast Asia 넷뿐. dossier 실값 볼륨이 국외에 놓인다 |
+| **Railway 리전** | **싱가포르** (서울 불가 확인 후 확정) | 지원 리전은 US West·US East·EU West·Southeast Asia 넷뿐. Fly.io도 서울이 없고(도쿄 최근접), 서울이 되는 것은 Cloud Run `asia-northeast3`뿐인데 **Cloud Run은 Railway식 영구 볼륨이 없어 PH-04를 GCS FUSE로 다시 짜야 한다** — 채택하지 않았다. 국외로 나가는 것은 dossier 볼륨뿐이고 수집 데이터는 Supabase 서울에 있다 |
 
-**남은 미확정 하나** — 국내 잔류가 IRB 요건이 되면 Railway로는 풀 수 없다. Dockerfile이
-플랫폼 중립이라 Cloud Run `asia-northeast3`·Fly.io `icn`이 같은 이미지를 받지만, 호스트 교체는
-별도 사안이다.
+환경변수 주입은 `scripts/push_env_to_railway.py`로 자동화했다. 손으로 14개를 옮기면 하나쯤
+빠지는데, 이 구성에서는 변수 하나가 틀려도 **기동 실패가 아니라 조용한 오작동**일 수 있다 —
+`FERNET_KEY`가 다르면 서버는 멀쩡히 뜨고 세션도 돌지만 기존 🔒 데이터만 못 읽는다. 그래서
+목록을 코드에 뒀다. 볼륨 변수 2개는 반입 뒤에만 걸리도록 2단계로 분리했다.
 
 ### 테스트
 
