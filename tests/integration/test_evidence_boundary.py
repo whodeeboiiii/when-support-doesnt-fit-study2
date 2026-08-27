@@ -18,7 +18,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.assets import dossier_loader, pairwise_items, rating_items
+from app.assets import dossier_loader, pairwise_items, presurvey, rating_items
 from app.llm import prompts
 from app.models import tables
 from tests import helpers
@@ -43,6 +43,7 @@ async def _run_session_with_sentinels(client: AsyncClient) -> None:
     """금지 정보를 전부 심은 채 focal을 끝까지 돌린다."""
     await helpers.open_and_join(client)
     await helpers.consent(client)
+    await helpers.presurvey(client)
     # checkpoint 수정 — 수정 **전** 원문이 R-1의 금지 문자열이 된다(§6.4).
     await helpers.edit_checkpoint(
         client, "situation_summary", f"{EDIT_ORIGINAL_MARK}를 지운 새 요약입니다."
@@ -159,6 +160,28 @@ async def test_rating_and_pairwise_items_never_reach_the_payload(
     for payload in payloads:
         for text in texts:
             assert text not in payload
+
+
+async def test_presurvey_never_reaches_any_llm_payload(client: AsyncClient, llm) -> None:
+    """§1.2 · v1.0.1 NT-01 — 사전설문 문항·선택지·문항 ID는 AI2·checker 전부 금지 (D-44).
+
+    sidecar처럼 sentinel을 심을 수 없다 — 응답이 자산의 선택지 집합에 갇혀 있기 때문이다.
+    그래서 평정·pairwise와 같은 방식으로 **자산 문면 전수**를 본다. 응답값(선택지 value·
+    라벨)까지 포함하는 이유: payload에 "daily"만 실려도 그건 사전설문이 샌 것이다.
+    """
+    await _run_session_with_sentinels(client)
+    payloads = _sent(llm)
+    assert payloads, "모델 호출이 없었다 — 검사가 무의미하다"
+
+    asset = presurvey.load()
+    needles = [
+        *(item.text for item in asset.items),
+        *(item.item_id for item in asset.items),
+        *(option.label for item in asset.items for option in item.options),
+    ]
+    for payload in payloads:
+        for needle in needles:
+            assert needle not in payload, f"사전설문이 payload에 있다: {needle[:16]}…"
 
 
 async def test_pre_edit_original_never_reaches_the_payload(

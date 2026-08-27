@@ -13,6 +13,7 @@ focal trajectory다(D-23). 대신 **pairwise**가 참가자당 3행으로 within
 |---|---|---|
 | `trajectory.csv` | 참가자 1행 | focal 전 과정 + 평정 요약(계량만) |
 | `checkpoint_edits.csv` | 수정 1행 | **길이·segment만**. 문장은 opt-in 파일에 |
+| `presurvey.csv` | 문항 1행 | 사전설문 응답 (D-44 — 자유 텍스트 없음) |
 | `ratings.csv` | 문항 1행 | focal 5 construct + MC 2 |
 | `pairwise.csv` | pair 1행 | contrast·좌우·`focal_included` + 문항 응답 |
 | `alt_exposure.csv` | 노출 1행 | 순서·조건·시각 |
@@ -32,8 +33,11 @@ focal trajectory다(D-23). 대신 **pairwise**가 참가자당 3행으로 within
    나가지 않는다. 세션 id는 파일 간 조인 키로만 쓴다.
 
 **삭제된 것**(부록 B): `sequence_index`·`branch_index`·`disposition(no_reply)`·
-`normalization_*`·`presurvey_*`·`first_opportunity`·`carryover_sensitive`. 마지막 둘은
-4-branch 설계와 함께 소멸했다(§7.7 — "first-opportunity·carryover 태깅은 폐기").
+`normalization_*`·`first_opportunity`·`carryover_sensitive`. 마지막 둘은 4-branch 설계와
+함께 소멸했다(§7.7 — "first-opportunity·carryover 태깅은 폐기"). `presurvey_*`는 v2.0에서
+삭제됐다가 **D-44로 복원**됐다 — 다만 trajectory의 열이 아니라 **별도 파일**이다(문항
+1행). participant characterization 전용이라 focal 행에 붙일 이유가 없고, 붙이면 열 수가
+문항 수를 따라 흔들린다.
 `response_latency`는 **기본 미산출**이고 `--latency`를 준 실행만 계산한다(§2.11).
 """
 
@@ -57,7 +61,7 @@ if str(REPO_ROOT) not in sys.path:
 from sqlalchemy import select  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker  # noqa: E402
 
-from app.assets import dossier_loader, pairwise_items, rating_items  # noqa: E402
+from app.assets import dossier_loader, pairwise_items, presurvey, rating_items  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
 from app.models import tables  # noqa: E402
 from app.models.session import create_engine  # noqa: E402
@@ -70,6 +74,7 @@ FREE_TEXT_FILE = "free_text.csv"
 #: 기본 출력 파일들 — 자유 텍스트 0열.
 TRAJECTORY_FILE = "trajectory.csv"
 CHECKPOINT_EDITS_FILE = "checkpoint_edits.csv"
+PRESURVEY_FILE = "presurvey.csv"
 RATINGS_FILE = "ratings.csv"
 PAIRWISE_FILE = "pairwise.csv"
 ALT_EXPOSURE_FILE = "alt_exposure.csv"
@@ -94,6 +99,7 @@ class ExportTables:
 
     trajectory: list[dict[str, Any]]
     checkpoint_edits: list[dict[str, Any]]
+    presurvey: list[dict[str, Any]]
     ratings: list[dict[str, Any]]
     pairwise: list[dict[str, Any]]
     alt_exposure: list[dict[str, Any]]
@@ -106,6 +112,7 @@ class ExportTables:
         files = {
             TRAJECTORY_FILE: self.trajectory,
             CHECKPOINT_EDITS_FILE: self.checkpoint_edits,
+            PRESURVEY_FILE: self.presurvey,
             RATINGS_FILE: self.ratings,
             PAIRWISE_FILE: self.pairwise,
             ALT_EXPOSURE_FILE: self.alt_exposure,
@@ -164,9 +171,12 @@ async def collect(
         for row in (await db.execute(select(tables.Participant))).scalars().all()
     }
     focal_item_scope = {item.item_id: item for item in rating_items.load().items}
+    # 사전설문은 위치가 아니라 문항 ID로 저장된다 — section·reverse는 자산에서 붙인다.
+    presurvey_by_id = {item.item_id: item for item in presurvey.load().items}
 
     trajectory: list[dict[str, Any]] = []
     edit_rows: list[dict[str, Any]] = []
+    presurvey_rows: list[dict[str, Any]] = []
     ratings_rows: list[dict[str, Any]] = []
     pairwise_rows: list[dict[str, Any]] = []
     alt_rows: list[dict[str, Any]] = []
@@ -333,6 +343,40 @@ async def collect(
                         f"item_{item.item_id}": values.get(item.item_id, "")
                         for item in pairwise_items.load().items_for(view.contrast)
                     },
+                }
+            )
+
+        # --- 사전설문 (v1.0.1 §4.2 · D-44) ---
+        # 응답이 범주 코드·정수라 자유 텍스트가 아니다 — 기본 출력에 그대로 실린다.
+        # 역채점은 **적용하지 않는다**: 자산의 `reverse`는 분석 시점의 정보이고, export가
+        # 미리 뒤집으면 원자료가 사라진다(§7.1 합산 금지와 같은 태도).
+        for response in (
+            (
+                await db.execute(
+                    select(tables.PresurveyResponse)
+                    .where(tables.PresurveyResponse.session_id == session.id)
+                    .order_by(tables.PresurveyResponse.display_order)
+                )
+            )
+            .scalars()
+            .all()
+        ):
+            item = presurvey_by_id.get(response.item_id)
+            presurvey_rows.append(
+                {
+                    "participant_no": session.participant_no,
+                    "session_id": session_key,
+                    "item_id": response.item_id,
+                    "section": item.section if item else "",
+                    "type": item.type if item else "",
+                    "reverse": item.reverse if item else "",
+                    # 복수 선택은 리스트다 — CSV 한 칸에 담기게 직렬화한다.
+                    "value": (
+                        json.dumps(response.value, ensure_ascii=False)
+                        if isinstance(response.value, list)
+                        else response.value
+                    ),
+                    "display_order": response.display_order,
                 }
             )
 
@@ -536,6 +580,7 @@ async def collect(
     return ExportTables(
         trajectory=trajectory,
         checkpoint_edits=edit_rows,
+        presurvey=presurvey_rows,
         ratings=ratings_rows,
         pairwise=pairwise_rows,
         alt_exposure=alt_rows,

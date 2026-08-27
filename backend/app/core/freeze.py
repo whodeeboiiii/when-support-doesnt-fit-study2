@@ -5,10 +5,12 @@
 
 1. `blockers()` — §11.2의 마지막 줄("PH-03(dossier)·PH-08(배정표)·PH-06·PH-07(문항)·
    PH-IRB 착지 전 본 모집 금지")을 실행 가능한 점검으로 옮긴다(부록 H.2가 지정한 항목
-   목록이 그대로다). **자동 차단 장치가 아니다** — 콘솔·스크립트가 상태를 보여 주고,
+   목록이 그대로다). 여기에 D-44로 복원된 PH-01(사전설문 문항)이 한 줄 더 붙는다 —
+   참가자가 보는 자산이면 미착지가 게이트에 뜨는 것이 이 모듈의 규율이다. **자동 차단 장치가 아니다** — 콘솔·스크립트가 상태를 보여 주고,
    시작 여부는 사람이 정한다(D-10과 같은 태도: 시스템은 판정하지 않는다).
 2. `freeze()` — §10.5 "soft launch 종료 시 `study_version`에 spec_version·prompt_hash·
    model_strings·assets_hash(dossier 24 + assignment + prompt_config + items) 동결 기입".
+   items에는 사전설문 자산도 들어간다(D-44).
    이후 변경은 §1.4 본실험 열만 적용된다.
 
 `study_version`은 **한 번만** 쓴다. 두 번째 호출은 기존 행을 돌려주고 덮어쓰지 않는다 —
@@ -25,7 +27,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.assets import dossier_loader, pairwise_items, rating_items, screen_copy
+from app.assets import dossier_loader, pairwise_items, presurvey, rating_items, screen_copy
 from app.assets import files
 from app.assets.files import QA_PARTICIPANT_NO
 from app.core import assignment
@@ -103,6 +105,16 @@ def blockers() -> list[Blocker]:
             )
         )
 
+    # PH-01 — 사전설문 문항 원문(독립 2인차 번안·합의 + PI 확인). v2.0 §11.2의 게이트
+    # 목록에는 없다 — D-44로 되살린 화면의 자산이라 같은 규율을 그대로 건다.
+    if presurvey.load().is_placeholder:
+        found.append(
+            Blocker(
+                "PH-01",
+                f"사전설문 문항 원문 미착지 — {presurvey.asset_path().name} (v1.0.1 §4.2 · D-44)",
+            )
+        )
+
     # PH-IRB-1 · PH-IRB-2 — 동의서·디브리핑 정본. 초안 문안이 착지해도 표식은 남는다
     # (승인은 IRB가 한다) — `screen_copy`의 P1·P12 주석 참조.
     consent_text = screen_copy.CONSENT_TODO + screen_copy.DEBRIEF_TODO
@@ -158,6 +170,11 @@ def asset_sources() -> dict[str, Any]:
             "version": pairwise_items.load().version,
             "is_placeholder": pairwise_items.load().is_placeholder,
         },
+        "presurvey_items": {
+            "path": str(presurvey.asset_path()),
+            "version": presurvey.load().version,
+            "is_placeholder": presurvey.load().is_placeholder,
+        },
         "consent_version": screen_copy.CONSENT_VERSION,
     }
 
@@ -189,6 +206,10 @@ def asset_hashes() -> dict[str, Any]:
         "pairwise_items": {
             "version": pairwise_items.load().version,
             "hash": _file_hash(pairwise_items.asset_path()),
+        },
+        "presurvey_items": {
+            "version": presurvey.load().version,
+            "hash": _file_hash(presurvey.asset_path()),
         },
         "consent_version": screen_copy.CONSENT_VERSION,
     }

@@ -25,8 +25,12 @@ def test_blockers_report_the_current_placeholder_state() -> None:
     )
     assert "PH-03" in tags, "dossier 실값 미lock 상태를 게이트가 놓쳤다"
     assert "PH-08" in tags, "배정표가 dummy인 상태를 게이트가 놓쳤다 (NT-42)"
-    # v1.0.1의 PH-01(사전설문)은 소멸했다(D-31).
-    assert "PH-01" not in tags
+    # PH-01(사전설문)은 D-31로 소멸 → D-44로 부활 → 2026-08-27 `_v1` 착지로 다시 소멸.
+    # PH-06·PH-07과 **같은 처리**다: 검사는 남기고 방향만 뒤집는다 — `_v1`이 사라져
+    # 로더가 `_v0`으로 내려가는 회귀를 이 한 줄이 잡는다.
+    assert "PH-01" not in tags, (
+        "사전설문 자산이 placeholder로 내려갔다 — `presurvey_items_v1.json` 확인 (D-44)"
+    )
 
 
 def test_blocker_details_name_the_missing_thing() -> None:
@@ -46,8 +50,11 @@ def test_asset_hashes_cover_every_frozen_asset() -> None:
         "assignment",
         "focal_items",
         "pairwise_items",
+        # D-44 — 참가자가 보는 자산이면 동결 지문에 남는다.
+        "presurvey_items",
         "consent_version",
     }
+    assert len(hashes["presurvey_items"]["hash"]) == 64
     assert len(hashes["dossiers"]) >= 25  # P00 + 배정표 24명
     assert all(len(value) == 64 for value in hashes["dossiers"].values())
     assert hashes["assignment"]["is_dummy"] is True

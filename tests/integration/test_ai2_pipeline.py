@@ -275,6 +275,7 @@ async def test_pre_edit_original_leak_is_a_violation(
 
     await helpers.open_and_join(client)
     await helpers.consent(client)
+    await helpers.presurvey(client)
     await helpers.edit_checkpoint(
         client, "problematic_ai_response", "AI가 다른 방향으로 답했습니다."
     )
@@ -303,6 +304,7 @@ async def test_effective_checkpoint_echo_is_not_a_violation(
 
     await helpers.open_and_join(client)
     await helpers.consent(client)
+    await helpers.presurvey(client)
     await helpers.edit_checkpoint(client, "situation_summary", "조금 다른 상황 요약입니다.")
     await helpers.confirm_checkpoint(client)
     await helpers.advance(client, "P3")

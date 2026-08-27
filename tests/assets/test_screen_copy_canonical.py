@@ -186,7 +186,14 @@ def test_no_reply_button_does_not_exist() -> None:
     assert not hasattr(screen_copy, "NO_REPLY_BUTTON")
 
 
-def test_no_presurvey_copy_remains() -> None:
-    """D-31 — 사전 설문 폐기. 화면 문안에 흔적이 남지 않는다."""
-    assert "사전 설문" not in _all_participant_copy()
-    assert not hasattr(screen_copy, "PRESURVEY_INTRO")
+def test_presurvey_copy_is_back_and_stays_neutral() -> None:
+    """D-44 — D-31이 지웠던 사전설문 문안이 돌아왔다. 대신 두 조건이 붙는다.
+
+    ① **조건·구성 원리를 암시하지 않는다**(§4 서두) — 다른 화면 문안과 같은 규율이다.
+    ② **Study 1 사건을 건드리지 않는다**. 이 화면은 checkpoint **앞**이라, 사건을 떠올리게
+       하는 문장은 §4.2·§4.3의 선호 재활성화 금지와 같은 문제를 만든다.
+    """
+    assert screen_copy.PRESURVEY_INTRO
+    assert screen_copy.PRESURVEY_SUBMIT_BUTTON
+    for banned in ("그때", "당시", "재구성", "원하셨던", "AI가 빗나"):
+        assert banned not in screen_copy.PRESURVEY_INTRO, f"사건을 되살리는 표현: {banned}"

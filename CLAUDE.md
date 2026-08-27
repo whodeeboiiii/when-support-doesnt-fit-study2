@@ -14,11 +14,12 @@ NOT QUITE YES Study 2: **24명 focal between-participants enactment + within-par
 6. **User1은 필수, AI3는 없다.** no_reply/end 분기·enacted-choice 문항·User2에 대한 AI 응답을 만들지 마라(D-27·D-32·D-33).
 7. **dead-end 금지**: 모든 오류 경로는 §9.1의 유효한 다음 상태로 수렴한다. AI2 실패의 종착지는 참가자별 `neutral_fallback`이다.
 8. **판정 코드 금지**: 비수용 판정·라우팅·eligible 분류·actionability 기반 분기·checkpoint 수정 내용의 "선호 유입" 판정은 존재하지 않는다. A-level은 descriptor다.
-9. **ID 예약**: C1–C4 = 조건, D-nn = 결정(D-23부터 v2), NT-nn = 테스트(신규 NT-31~), SS##/F# = 상태, P0–P12/R1–R4 = 화면. 변수명에 `acceptance`·`branch` 계열 금지.
+9. **ID 예약**: C1–C4 = 조건, D-nn = 결정(D-23부터 v2), NT-nn = 테스트(신규 NT-31~), SS##/F# = 상태, P0–P12/R1–R4 = 화면. 변수명에 `acceptance`·`branch` 계열 금지. **예외 1건**: 사전설문 복원(D-44)은 `SS01S`/`P1S`를 쓴다 — 화면 하나를 끼우자고 SS02–SS10·P2–P12를 재번호하면 명세서·콘솔·rewind 대상·문서가 전부 갈라진다.
 
 ## Legacy 참조 규칙
 
-- **v1.0.1 코드(태그 `v1.0.1-within`)에서 되살리면 안 되는 것**: `core/williams.py` · `llm/normalization.py` · `assets/presurvey.py` · `Disposition`/`has_ai2`/no_reply 분기 · `Branch` 테이블·`branch_index` 루프·reset 의미론 · 12문항 2블록·downstream 7메뉴 · `analysis/tagging_flags.py` · cue form · D-08 표시 전용 checkpoint · P10 cross-branch review. 처분 근거는 명세 부록 G, 파일 단위 지시는 **부록 H**.
+- **사전설문은 예외다(D-44, 2026-08-27)**: 연구자 지시로 v1.0.1 §4.2·§7.1의 사전 설문이 복원됐다 — 자산·로더·`presurvey_responses`·화면 **P1S**(동의 직후·checkpoint 직전). 되살린 범위는 `PLACEHOLDERS.md` §3b의 표가 정본이고, 그 밖의 v1.0.1 폐기 항목은 아래 금지 목록 그대로다. 명세서 v2.0은 아직 D-31(사전설문 삭제)로 되어 있다 — **개정 전까지 이 줄이 우선한다**.
+- **v1.0.1 코드(태그 `v1.0.1-within`)에서 되살리면 안 되는 것**: `core/williams.py` · `llm/normalization.py` · `Disposition`/`has_ai2`/no_reply 분기 · `Branch` 테이블·`branch_index` 루프·reset 의미론 · 12문항 2블록·downstream 7메뉴 · `analysis/tagging_flags.py` · cue form · D-08 표시 전용 checkpoint · P10 cross-branch review. 처분 근거는 명세 부록 G, 파일 단위 지시는 **부록 H**.
 - 구 `../study2_pipeline`(v5.0 계보)은 v1.0.1 CLAUDE.md의 참조 금지 목록이 그대로 유효하다 — 열지 마라.
 
 ## 자산 원칙

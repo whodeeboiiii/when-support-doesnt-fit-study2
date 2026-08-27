@@ -38,6 +38,7 @@ class Step(StrEnum):
     """§8.2의 제출 엔드포인트 = idempotency key의 `step` 성분."""
 
     CONSENT = "consent"
+    PRESURVEY = "presurvey"
     CHECKPOINT_EDIT = "checkpoint_edit"
     CHECKPOINT_CONFIRM = "checkpoint_confirm"
     USER1 = "user1"

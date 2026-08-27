@@ -244,6 +244,7 @@ async def test_abort_is_refused_after_the_session_is_done(client: AsyncClient) -
     created = await helpers.create_session(client, "P00")
     await helpers.join(client, "P00", created["access_code"])
     await helpers.consent(client)
+    await helpers.presurvey(client)
     await helpers.confirm_checkpoint(client)
     await helpers.advance(client, "P3")
     await helpers.complete_focal(client)
@@ -291,6 +292,7 @@ async def test_r2_monitor_shows_state_transcript_and_pipeline_state(
 ) -> None:
     created, _ = await helpers.open_and_join(client, "P00")
     await helpers.consent(client)
+    await helpers.presurvey(client)
     # §2.7 v2 — checkpoint 수정 diff + 경보를 R2가 보여야 한다.
     await helpers.edit_checkpoint(client, "trouble_cue", "그렇게까지는 아니었어")
     await helpers.confirm_checkpoint(client)
@@ -331,6 +333,7 @@ async def test_r2_monitor_reports_fallback_as_pipeline_state(client: AsyncClient
 
     created, _ = await helpers.open_and_join(client, "P00")
     await helpers.consent(client)
+    await helpers.presurvey(client)
     await helpers.confirm_checkpoint(client)
     await helpers.advance(client, "P3")
     # 두 시도 모두 규칙 위반 → §6.5 neutral_fallback.
@@ -375,6 +378,7 @@ async def test_r3_contrastive_view_shows_everything_the_interview_needs(
     """§4.13 R3 — ① focal trajectory ② 평정·MC ③ 대안 순서 ④ 세 pair ⑤ researcher_only ⑥ flag."""
     created, _ = await helpers.open_and_join(client, "P00")
     await helpers.consent(client)
+    await helpers.presurvey(client)
     await helpers.confirm_checkpoint(client)
     await helpers.advance(client, "P3")
     await client.post("/api/focal/user1", json={"text": "비교만 해줘"})

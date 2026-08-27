@@ -1,7 +1,9 @@
 /**
- * P1 동의 · P2 checkpoint 확인·수정 (구현명세서 §4.1 · §4.2 · D-25 · D-39).
+ * P1 동의 · P1S 사전 설문 · P2 checkpoint 확인·수정 (§4.1 · v1.0.1 §4.2 · §4.2 · D-25 · D-39 · D-44).
  *
- * 두 화면 모두 문안·항목이 **서버 payload**로 온다.
+ * 세 화면 모두 문안·항목이 **서버 payload**로 온다. P1S는 문항 ID·역채점 메타가 내려오지
+ * 않고 **위치(position)**만 온다(v1.0.1 §4.2 · NT-05) — 그래서 이 파일에는 사전설문 문항
+ * ID를 다루는 코드가 아예 없다.
  *
  * **P2가 v2에서 완전히 달라졌다**(D-25). v1.0.1의 P3는 표시 전용이었지만(D-08 폐기), 이제
  * 참가자가 segment를 **직접 고친다**. 고친 값은 누적 저장되고 이후 화면·AI2 입력이 전부
@@ -21,7 +23,8 @@ import { ReactNode, useEffect, useState } from 'react'
 import { api } from '../api'
 import { Bubble } from '../components/Chat'
 import { DevAside, DevNote, DevScreenNote } from '../components/DevNote'
-import { AutoTextArea, Checks, SubmitBar } from '../components/Inputs'
+import { AutoTextArea, Cards, Checks, SubmitBar } from '../components/Inputs'
+import { LikertRow } from '../components/Likert'
 import { NEXT } from '../copy'
 import { ScreenProps, ScreenTitle, useSubmit } from './common'
 
@@ -61,6 +64,123 @@ export function Consent({ state, onState }: ScreenProps) {
         disabled={!allChecked}
         error={error}
         onClick={() => run(() => api.consent(values))}
+      />
+    </div>
+  )
+}
+
+// --------------------------------------------------------------------------- //
+// P1S — 사전 설문 (v1.0.1 §4.2 · §7.1 · D-44)
+// --------------------------------------------------------------------------- //
+
+interface PresurveyItem {
+  position: number
+  type: string
+  text: string
+  options?: { value: string; label: string }[]
+  scale_min?: number
+  scale_max?: number
+  scale_min_label?: string
+  scale_max_label?: string
+}
+
+/**
+ * 동의 직후·checkpoint 직전의 사전 설문.
+ *
+ * 여기 **없는 것**이 계약이다. ① 문항 ID·역채점·section — 서버가 내려주지 않는다(NT-05).
+ * ② 진행 표시(스텝 인디케이터) — 화면 공통 규율이다(`Inputs.tsx` 상단). ③ Study 1 사건을
+ * 떠올리게 하는 문장 — 이 화면은 checkpoint **앞**이라 사건을 건드리면 §4.2·§4.3의 선호
+ * 재활성화 금지와 같은 문제가 된다. 문안은 서버가 준다.
+ *
+ * 응답은 **위치 → 값**으로만 올라간다. 값의 모양은 문항 유형이 정한다: 단일 선택은 문자열,
+ * 복수 선택은 문자열 배열, 척도는 1–7 정수다.
+ */
+export function Presurvey({ state, onState }: ScreenProps) {
+  const items: PresurveyItem[] = state.data.items ?? []
+  const [values, setValues] = useState<Record<number, unknown>>({})
+  const { busy, error, run } = useSubmit(onState)
+  const answered = items.filter((item) => values[item.position] !== undefined).length
+
+  useEffect(() => {
+    api.event('screen_enter', { screen: 'P1S' })
+  }, [])
+
+  const setValue = (position: number, value: unknown) =>
+    setValues((prev) => ({ ...prev, [position]: value }))
+
+  // 복수 선택은 마지막 하나를 지우면 **미응답**으로 되돌린다 — 빈 배열을 응답으로 저장하면
+  // 서버가 400을 주고(선택지 1개 이상), 화면은 왜 막혔는지 설명하지 못한다.
+  const toggleMulti = (position: number, value: string) => {
+    const current = (values[position] as string[]) ?? []
+    const next = current.includes(value)
+      ? current.filter((entry) => entry !== value)
+      : [...current, value]
+    setValues((prev) => ({ ...prev, [position]: next.length ? next : undefined }))
+  }
+
+  return (
+    <div className="screen">
+      <DevScreenNote
+        screen="P1S"
+        term="Participant Characterization"
+        detail="§4.1S·§7.0 · 구 초안 §7.4 — 사용 빈도 5 · 빗나갔을 때 대응 1 · disclosure 2 · DDI 발췌 4. 표본 기술 전용이고 RQ3의 confirmatory moderator가 아니다. D-44로 복원, 문항 자산은 PI 확인·착지(PH-01 해소)."
+      />
+      <ScreenTitle>사전 설문</ScreenTitle>
+      <p className="callout mb-6 whitespace-pre-wrap">{state.data.intro}</p>
+
+      <div className="space-y-5">
+        {items.map((item) => (
+          <div key={item.position} className="sec">
+            <p className="text-base">{item.text}</p>
+            {item.type === 'single_choice' && (
+              <div className="mt-3">
+                <Cards
+                  cards={item.options ?? []}
+                  value={(values[item.position] as string) ?? null}
+                  onChange={(value) => setValue(item.position, value)}
+                />
+              </div>
+            )}
+            {item.type === 'multi_choice' && (
+              <div className="mt-3">
+                <Checks
+                  items={(item.options ?? []).map((option) => ({
+                    field: option.value,
+                    label: option.label,
+                  }))}
+                  values={Object.fromEntries(
+                    ((values[item.position] as string[]) ?? []).map((value) => [value, true]),
+                  )}
+                  onChange={(field) => toggleMulti(item.position, field)}
+                />
+              </div>
+            )}
+            {item.type.startsWith('likert') && (
+              <LikertRow
+                min={item.scale_min ?? 1}
+                max={item.scale_max ?? 7}
+                minLabel={item.scale_min_label}
+                maxLabel={item.scale_max_label}
+                value={(values[item.position] as number) ?? null}
+                onChange={(value) => setValue(item.position, value)}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+
+      <SubmitBar
+        label={state.data.submit_button ?? NEXT}
+        busy={busy}
+        disabled={items.length === 0 || answered !== items.length}
+        error={error}
+        onClick={() =>
+          run(() =>
+            api.presurvey(
+              items.map((item) => ({ position: item.position, value: values[item.position] })),
+            ),
+          )
+        }
       />
     </div>
   )

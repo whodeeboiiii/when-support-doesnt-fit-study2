@@ -29,6 +29,11 @@ LLM_ROOT = APP_ROOT / "llm"
 FORBIDDEN_MODULE = "app.assets.dossier_private"
 FORBIDDEN_TOKEN = "dossier_private"
 
+#: 같은 규율을 받는 두 번째 자산 — 사전설문(D-44). §1.2는 사전설문 응답을 어떤 LLM 호출에도
+#: 넣지 않는다(v1.0.1 NT-01). 런타임 검사(`tests/integration/test_evidence_boundary.py`)는
+#: "이번 호출에 안 들어갔다"를 보고, 여기는 **닿을 수 있는 경로 자체**를 막는다.
+PRESURVEY_TOKEN = "assets.presurvey"
+
 
 def module_name(path: Path) -> str:
     relative = path.relative_to(BACKEND).with_suffix("")
@@ -106,6 +111,35 @@ def test_nt04_llm_modules_do_not_import_dossier_private(path: Path) -> None:
         f"{path.relative_to(BACKEND)}: LLM 경로가 researcher_only 로더를 import했다 — {offenders} "
         "(§1.2 evidence boundary · NT-04)"
     )
+
+
+@pytest.mark.parametrize("path", python_files(LLM_ROOT), ids=lambda p: p.name)
+def test_llm_modules_do_not_import_the_presurvey_asset(path: Path) -> None:
+    """§1.2 · D-44 — 사전설문 로더는 LLM 경로에서 import되지 않는다."""
+    imports = imported_modules(path.read_text(encoding="utf-8"), module_name(path))
+    offenders = sorted(name for name in imports if PRESURVEY_TOKEN in name)
+    assert offenders == [], (
+        f"{path.relative_to(BACKEND)}: LLM 경로가 사전설문 자산을 import했다 — {offenders} "
+        "(§1.2 evidence boundary)"
+    )
+
+
+def test_llm_modules_do_not_reach_the_presurvey_asset_transitively() -> None:
+    """중간 모듈을 하나 끼우면 통과하는 검사는 검사가 아니다 — NT-04와 같은 폭으로 본다."""
+    graph = app_import_graph()
+    seen: set[str] = set()
+    stack = list(LLM_MODULES)
+    while stack:
+        current = stack.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        for target in graph.get(current, set()):
+            assert PRESURVEY_TOKEN not in target, (
+                f"LLM 경로가 전이적으로 사전설문 자산에 닿는다: {current} → {target}"
+            )
+            if target in graph and target not in seen:
+                stack.append(target)
 
 
 def test_nt04_llm_modules_do_not_reach_dossier_private_transitively() -> None:

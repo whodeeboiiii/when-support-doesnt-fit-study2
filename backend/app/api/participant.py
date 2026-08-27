@@ -1,7 +1,8 @@
 """참가자 API — 세션 수준 (구현명세서 §8.2 · §3 · §4).
 
 focal 수준 제출(§8.2의 `/focal/…`)은 `api/focal.py`, 대안 노출·pairwise는 `api/exposure.py`에
-있다. 여기는 접속·동의·checkpoint 수정·확인·화면 전이·focal 평정·디브리핑, 그리고 beacon이다.
+있다. 여기는 접속·동의·사전설문·checkpoint 수정·확인·화면 전이·focal 평정·디브리핑, 그리고
+beacon이다.
 
 전 엔드포인트가 같은 세 겹을 지난다.
 
@@ -26,7 +27,7 @@ from sqlalchemy import select
 from app.api import store
 from app.api.deps import CurrentSession, DbSession, require_active, set_session_cookie
 from app.api.state_payload import build_state, effective_checkpoint
-from app.assets import dossier_loader, rating_items, screen_copy
+from app.assets import dossier_loader, presurvey, rating_items, screen_copy
 from app.core import access_code, assignment
 from app.core.idempotency import is_replay_ss
 from app.core.state_machine import (
@@ -156,7 +157,7 @@ async def submit_consent(
     payload: ConsentRequest, session: CurrentSession, db: DbSession
 ) -> dict[str, Any]:
     require_active(session)
-    if is_replay_ss(SsState(session.ss_state), SsState.CHECKPOINT):
+    if is_replay_ss(SsState(session.ss_state), SsState.PRESURVEY):
         return await build_state(db, session)
 
     required = {item.field for item in screen_copy.CONSENT_ITEMS}
@@ -168,7 +169,66 @@ async def submit_consent(
     stamped = _now().isoformat()
     session.consent_items = {field: {"agreed": True, "at": stamped} for field in payload.items}
     session.consent_version = screen_copy.CONSENT_VERSION
+    await advance_ss(session, SsState.PRESURVEY)
+    await db.flush()
+    return await build_state(db, session)
+
+
+# --------------------------------------------------------------------------- #
+# P1S 사전 설문 (v1.0.1 §4.2 · §7.1 — D-44로 복원)
+# --------------------------------------------------------------------------- #
+
+
+class PresurveyAnswer(BaseModel):
+    #: **위치**다. 문항 ID는 화면에 내려가지 않으므로 돌아올 수도 없다(NT-05).
+    position: int = Field(ge=1)
+    value: Any
+
+
+class PresurveyRequest(BaseModel):
+    responses: list[PresurveyAnswer]
+
+
+@router.post("/presurvey")
+async def submit_presurvey(
+    payload: PresurveyRequest, session: CurrentSession, db: DbSession
+) -> dict[str, Any]:
+    """§8.2 — SS01S→SS02. **전 문항 필수**, 값 검증은 자산이 한다.
+
+    응답은 checkpoint를 보기 **전에** 끝난다. 사전설문이 여기 있는 이유가 그것이다 —
+    사건을 다시 읽은 뒤에 평소 사용 습관을 물으면 그 답이 사건에 물든다.
+
+    저장은 (item_id, value, display_order)다. 위치 → 문항 ID 환원은 서버에서만 일어난다.
+    """
+    require_active(session)
+    if is_replay_ss(SsState(session.ss_state), SsState.CHECKPOINT):
+        return await build_state(db, session)
+    if SsState(session.ss_state) is not SsState.PRESURVEY:
+        raise HTTPException(status.HTTP_409_CONFLICT, "사전 설문 단계가 아닙니다")
+
+    asset = presurvey.load()
+    positions = sorted(answer.position for answer in payload.responses)
+    if positions != list(range(1, asset.item_count + 1)):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, screen_copy.PRESURVEY_INCOMPLETE)
+
+    for answer in payload.responses:
+        try:
+            asset.validate_response(answer.position, answer.value)
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    for answer in payload.responses:
+        db.add(
+            tables.PresurveyResponse(
+                session_id=session.id,
+                # 위치 → 문항 ID 매핑은 서버만 안다(§4.2 · NT-05).
+                item_id=asset.item_at(answer.position).item_id,
+                value=answer.value,
+                display_order=answer.position,
+            )
+        )
     await advance_ss(session, SsState.CHECKPOINT)
+    await store.record_event(db, session.id, "submit", payload={"screen": "P1S"})
     await db.flush()
     return await build_state(db, session)
 

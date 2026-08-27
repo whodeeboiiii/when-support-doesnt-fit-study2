@@ -29,7 +29,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import store
-from app.assets import dossier_loader, pairwise_items, rating_items, screen_copy
+from app.assets import dossier_loader, pairwise_items, presurvey, rating_items, screen_copy
 from app.core import assignment
 from app.core.config import get_settings
 from app.core.state_machine import (
@@ -275,6 +275,14 @@ async def _screen_data(
             ],
             # §4.1 하단 고정 — PII 입력 금지(심의용 연구계획서 19번).
             "footnote": screen_copy.CONSENT_PII_NOTICE,
+        }
+    if screen == "P1S":
+        # v1.0.1 §4.2 · NT-05 — 위치와 보이는 것만 내려간다. 문항 ID·역채점·section은
+        # 서버에만 있다(규율 3과 같은 형태 — focal 평정·pairwise도 위치로만 오간다).
+        return {
+            "intro": screen_copy.PRESURVEY_INTRO,
+            "items": presurvey.load().participant_payload(),
+            "submit_button": screen_copy.PRESURVEY_SUBMIT_BUTTON,
         }
     if screen == "P2":
         edits = await store.effective_edits(db, session.id)

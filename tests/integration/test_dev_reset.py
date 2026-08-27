@@ -63,6 +63,8 @@ async def test_reset_wipes_progress_and_issues_a_new_code(
     await helpers.submit_ratings(client)
     assert await _count(session, tables.Rating) > 0
     assert await _count(session, tables.AltExposure) > 0
+    # D-44 — 지울 것이 실제로 있어야 아래 전수 검사가 공허하게 통과하지 않는다.
+    assert await _count(session, tables.PresurveyResponse) > 0
 
     response = await client.post("/api/dev/reset", json={"participant_no": "P00"})
     assert response.status_code == 200, response.text
@@ -78,6 +80,7 @@ async def test_reset_wipes_progress_and_issues_a_new_code(
         tables.LlmCall,
         tables.DownstreamAction,
         tables.CheckpointEdit,
+        tables.PresurveyResponse,
         tables.AltExposure,
         tables.PairwiseView,
         tables.PairwiseResponse,

@@ -78,6 +78,9 @@ async def purge_participant(db: DbSession, participant_no: str) -> dict[str, int
     await _wipe(tables.AltExposure, tables.AltExposure.session_id.in_(session_ids))
     await _wipe(tables.Rating, tables.Rating.session_id.in_(session_ids))
     await _wipe(tables.CheckpointEdit, tables.CheckpointEdit.session_id.in_(session_ids))
+    # D-44 — 사전설문 행도 `sessions`를 참조한다. 여기서 빠지면 세션을 지우는 순간
+    # 고아 행이 남고 Postgres에서는 FK 위반으로 초기화 자체가 실패한다.
+    await _wipe(tables.PresurveyResponse, tables.PresurveyResponse.session_id.in_(session_ids))
     await _wipe(tables.Event, tables.Event.session_id.in_(session_ids))
     await _wipe(tables.FocalRun, tables.FocalRun.session_id.in_(session_ids))
     await _wipe(tables.Session, tables.Session.participant_no == participant_no)

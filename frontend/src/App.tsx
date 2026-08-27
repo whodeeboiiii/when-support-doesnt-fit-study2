@@ -19,7 +19,7 @@ import { DESKTOP_ONLY, MIN_VIEWPORT_HEIGHT, MIN_VIEWPORT_WIDTH, RESTORING } from
 import DevBar, { DevPrefill } from './components/DevBar'
 import { AltExposure, Pairwise } from './screens/Exposure'
 import { Ai2, Chat, Downstream, Ratings, Reentry, Sidecar } from './screens/Focal'
-import { Checkpoint, Consent } from './screens/Intro'
+import { Checkpoint, Consent, Presurvey } from './screens/Intro'
 import Join from './screens/Join'
 import { Debrief, Ended, InterviewHold } from './screens/Wrap'
 
@@ -119,12 +119,14 @@ function transitionKey(state: AppState): string {
   return [state.screen, state.alt_index, state.pair_index].join(':')
 }
 
-/** 상태 → 화면 (P0–P12). 전이는 서버가 정하고 여기서는 받은 화면 ID를 그리기만 한다(§1.3). */
+/** 상태 → 화면 (P0–P12 + P1S). 전이는 서버가 정하고 여기서는 받은 화면 ID를 그리기만 한다(§1.3). */
 function Screen({ state, onState }: { state: AppState; onState: (next: AppState) => void }) {
   const props = { state, onState }
   switch (state.screen) {
     case 'P1':
       return <Consent {...props} />
+    case 'P1S':
+      return <Presurvey {...props} />
     case 'P2':
       return <Checkpoint {...props} />
     case 'P3':

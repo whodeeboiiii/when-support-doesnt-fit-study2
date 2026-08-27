@@ -134,6 +134,30 @@ async def consent(client: AsyncClient) -> dict[str, Any]:
     return response.json()
 
 
+async def presurvey(client: AsyncClient, likert: int = 4) -> dict[str, Any]:
+    """v1.0.1 §4.2 · D-44 — 전 문항 필수.
+
+    값은 **자산에서** 만든다. 문항 수도 유형도 placeholder라 바뀔 수 있고(PH-01), 여기에
+    응답표를 박아 두면 자산 교체가 관계없는 테스트를 깨뜨린다(`ratings_payload`와 같은 규율).
+    """
+    from app.assets import presurvey as asset
+
+    survey = asset.load()
+    responses: list[dict[str, Any]] = []
+    for position, item in enumerate(survey.items, start=1):
+        if item.type == "single_choice":
+            value: Any = item.options[0].value
+        elif item.type == "multi_choice":
+            value = [item.options[0].value]
+        else:
+            value = likert
+        responses.append({"position": position, "value": value})
+
+    response = await client.post("/api/presurvey", json={"responses": responses})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
 async def edit_checkpoint(client: AsyncClient, segment: str, text: str) -> dict[str, Any]:
     """§4.2 — segment 1건 수정 (D-25)."""
     response = await client.post(
@@ -150,9 +174,10 @@ async def confirm_checkpoint(client: AsyncClient) -> dict[str, Any]:
 
 
 async def reach_focal(client: AsyncClient, participant_no: str = "P00") -> dict[str, Any]:
-    """SS00 → SS04·F0까지 한 번에 (P0 → P1 → P2 → P3)."""
+    """SS00 → SS04·F0까지 한 번에 (P0 → P1 → P1S → P2 → P3)."""
     await open_and_join(client, participant_no)
     await consent(client)
+    await presurvey(client)
     await confirm_checkpoint(client)
     return await advance(client, "P3")
 

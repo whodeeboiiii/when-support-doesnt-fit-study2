@@ -29,7 +29,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 
 from app.api import admin, admin_views, console, exposure, focal, health, participant
-from app.assets import dossier_loader, pairwise_items, rating_items
+from app.assets import dossier_loader, pairwise_items, presurvey, rating_items
 from app.core import assignment
 from app.core.config import get_settings, is_local_db
 from app.llm import prompts
@@ -63,6 +63,7 @@ def validate_assets() -> None:
     prompts.verify()
     rating_items.validate()
     pairwise_items.validate()
+    presurvey.validate()
     dossiers = dossier_loader.validate_all()
     # §5.2 로더 — 24행·제약 전수. 위반이면 여기서 기동이 끊긴다(NT-32).
     table = assignment.validate()
@@ -83,11 +84,12 @@ def validate_assets() -> None:
             "dummy" if table.is_dummy else "실값",
         )
     logger.info(
-        "자산 검증 통과 — dossier %d건, 배정 %d행, 문항 %d+%d, prompt_config %s",
+        "자산 검증 통과 — dossier %d건, 배정 %d행, 문항 %d+%d(+사전설문 %d), prompt_config %s",
         len(dossiers),
         len(table.rows),
         rating_items.load().item_count,
         sum(len(entry.items) for entry in pairwise_items.load().sets.values()),
+        presurvey.load().item_count,
         prompts.config_hash()[:12],
     )
 

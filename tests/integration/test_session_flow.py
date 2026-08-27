@@ -36,6 +36,7 @@ async def test_full_session_reaches_ss10(client: AsyncClient, session: AsyncSess
     """SS00 → SS10 전 경로 — checkpoint 수정 포함, User2 reply."""
     await helpers.open_and_join(client)
     await helpers.consent(client)
+    await helpers.presurvey(client)
     # 수정은 SS02에서만 가능하다 — confirm 전에 한다(§4.2 · NT-35).
     await helpers.edit_checkpoint(client, "situation_summary", "수정된 상황 요약입니다.")
     await helpers.confirm_checkpoint(client)
@@ -64,7 +65,7 @@ async def test_full_session_reaches_ss10(client: AsyncClient, session: AsyncSess
 
 
 async def test_screens_visited_in_order(client: AsyncClient) -> None:
-    """§0.2 — P0 → … → P12. 화면이 건너뛰이지 않는다."""
+    """§0.2 — P0 → … → P12. 화면이 건너뛰이지 않는다. P1S는 D-44로 끼어든 자리다."""
     seen: list[str] = []
 
     async def note() -> str:
@@ -75,6 +76,8 @@ async def test_screens_visited_in_order(client: AsyncClient) -> None:
     await helpers.open_and_join(client)
     await note()  # P1
     await helpers.consent(client)
+    await note()  # P1S — 동의 직후·checkpoint 직전 (D-44)
+    await helpers.presurvey(client)
     await note()  # P2
     await helpers.confirm_checkpoint(client)
     await note()  # P3
@@ -93,7 +96,7 @@ async def test_screens_visited_in_order(client: AsyncClient) -> None:
     await helpers.advance(client, "P11")
     await note()  # P12
 
-    assert seen == ["P1", "P2", "P3", "P4", "P7", "P8", "P9", "P10", "P11", "P12"]
+    assert seen == ["P1", "P1S", "P2", "P3", "P4", "P7", "P8", "P9", "P10", "P11", "P12"]
 
 
 async def test_end_disposition_completes_too(client: AsyncClient, session: AsyncSession) -> None:
@@ -175,6 +178,7 @@ async def test_reconnect_restores_saved_position(
     """§3.5 — 쿠키를 지우고 다시 접속해도 저장 지점에서 복원된다. 재생성 0건."""
     created, _ = await helpers.open_and_join(client)
     await helpers.consent(client)
+    await helpers.presurvey(client)
     await helpers.confirm_checkpoint(client)
     await helpers.advance(client, "P3")
     await client.post("/api/focal/user1", json={"text": "장기 계획 말고 비교만 해줘"})
@@ -217,6 +221,131 @@ async def test_ai2_is_not_regenerated_on_refresh(
         ).scalar_one()
     )
     assert finals == 1, "final 생성물은 세션당 1행이다"
+
+
+# --------------------------------------------------------------------------- #
+# NT-46 — 사전 설문 경로 (§4.1S · D-44)
+# --------------------------------------------------------------------------- #
+
+
+def _presurvey_answers(likert: int = 4) -> list[dict[str, Any]]:
+    from app.assets import presurvey
+
+    answers: list[dict[str, Any]] = []
+    for position, item in enumerate(presurvey.load().items, start=1):
+        if item.type == "single_choice":
+            value: Any = item.options[0].value
+        elif item.type == "multi_choice":
+            value = [item.options[0].value]
+        else:
+            value = likert
+        answers.append({"position": position, "value": value})
+    return answers
+
+
+async def test_presurvey_sits_between_consent_and_checkpoint(client: AsyncClient) -> None:
+    """§3.1 — SS01 → SS01S → SS02. 동의 직후이고 checkpoint 직전이다."""
+    await helpers.open_and_join(client)
+    state = await helpers.consent(client)
+    assert state["screen"] == "P1S" and state["ss_state"] == "SS01S"
+
+    state = await helpers.presurvey(client)
+    assert state["screen"] == "P2" and state["ss_state"] == "SS02"
+
+
+async def test_presurvey_cannot_be_skipped(client: AsyncClient) -> None:
+    """NT-14 — 사전 설문을 건너뛰고 checkpoint를 확인할 수 없다."""
+    await helpers.open_and_join(client)
+    await helpers.consent(client)
+    assert (await client.post("/api/checkpoint/confirm")).status_code == 409
+    assert (
+        await client.post(
+            "/api/checkpoint/edit", json={"segment": "situation_summary", "text": "다른 요약"}
+        )
+    ).status_code == 409
+
+
+async def test_presurvey_requires_every_item(client: AsyncClient, session: AsyncSession) -> None:
+    """§4.1S — 전 문항 필수. 부분 제출은 400이고 **행이 남지 않는다**."""
+    await helpers.open_and_join(client)
+    await helpers.consent(client)
+
+    partial = _presurvey_answers()[:-1]
+    response = await client.post("/api/presurvey", json={"responses": partial})
+    assert response.status_code == 400
+    assert await _count(session, tables.PresurveyResponse) == 0, "거부된 제출이 저장됐다"
+
+
+async def test_presurvey_rejects_values_outside_the_asset(client: AsyncClient) -> None:
+    """§4.1S — 값 검증은 자산이 한다. 선택지 밖·척도 밖은 400이다."""
+    await helpers.open_and_join(client)
+    await helpers.consent(client)
+
+    for bad in ("없는_선택지", 99):
+        answers = _presurvey_answers()
+        # 1번은 single_choice, 마지막은 likert다 — 각각에 맞는 잘못된 값을 넣는다.
+        target = 0 if isinstance(bad, str) else -1
+        answers[target] = {**answers[target], "value": bad}
+        response = await client.post("/api/presurvey", json={"responses": answers})
+        assert response.status_code == 400, f"{bad!r}가 통과했다"
+
+
+async def test_presurvey_stores_item_ids_not_positions(
+    client: AsyncClient, session: AsyncSession
+) -> None:
+    """§8.1 · NT-05 — 위치로 받아 **문항 ID로** 저장한다. 환원은 서버에서만 일어난다."""
+    from app.assets import presurvey
+
+    await helpers.open_and_join(client)
+    await helpers.consent(client)
+    await helpers.presurvey(client)
+
+    rows = (await session.execute(select(tables.PresurveyResponse))).scalars().all()
+    asset = presurvey.load()
+    assert {row.item_id for row in rows} == {item.item_id for item in asset.items}
+    assert sorted(row.display_order for row in rows) == list(range(1, asset.item_count + 1))
+    # 복수 선택은 리스트 그대로 남는다(§8.1 value=jsonb).
+    stored = {row.item_id: row.value for row in rows}
+    multi = [item for item in asset.items if item.type == "multi_choice"]
+    assert multi, "복수 선택 문항이 없다 — 이 검사가 공허하게 통과한다"
+    for item in multi:
+        assert isinstance(stored[item.item_id], list)
+
+
+async def test_duplicate_presurvey_submission_is_idempotent(
+    client: AsyncClient, session: AsyncSession
+) -> None:
+    """NT-09 — 재제출은 200 + 저장 상태. 행이 늘지 않는다(§9.1 중복 제출)."""
+    from app.assets import presurvey
+
+    await helpers.open_and_join(client)
+    await helpers.consent(client)
+    await helpers.presurvey(client)
+    count = await _count(session, tables.PresurveyResponse)
+    assert count == presurvey.load().item_count
+
+    for _ in range(2):
+        response = await client.post("/api/presurvey", json={"responses": _presurvey_answers(7)})
+        assert response.status_code == 200
+        assert response.json()["screen"] == "P2"
+    assert await _count(session, tables.PresurveyResponse) == count, "재제출이 행을 늘렸다"
+
+
+async def test_presurvey_payload_carries_no_item_ids(client: AsyncClient) -> None:
+    """NT-05 — 참가자 payload에 문항 ID·`reverse`·section·`_note`가 없다."""
+    import json
+
+    from app.assets import presurvey
+
+    await helpers.open_and_join(client)
+    state = await helpers.consent(client)
+    serialized = json.dumps(state, ensure_ascii=False)
+
+    for item in presurvey.load().items:
+        assert item.item_id not in serialized, f"문항 ID 누출: {item.item_id}"
+        assert item.text in serialized, "문항 문면이 내려가지 않았다"
+    for meta in ("reverse", "_note", "section", "ddi_excerpt"):
+        assert meta not in serialized, f"연구자 메타 누출: {meta}"
 
 
 # --------------------------------------------------------------------------- #
@@ -396,6 +525,8 @@ async def test_no_alternative_stimulus_before_focal_measures(client: AsyncClient
     checkpoints = []
     checkpoints.append(await payload_text())  # P1
     await helpers.consent(client)
+    checkpoints.append(await payload_text())  # P1S
+    await helpers.presurvey(client)
     checkpoints.append(await payload_text())  # P2
     await helpers.confirm_checkpoint(client)
     checkpoints.append(await payload_text())  # P3

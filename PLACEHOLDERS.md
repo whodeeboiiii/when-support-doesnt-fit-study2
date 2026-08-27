@@ -16,16 +16,19 @@
 
 ## 0. 한눈에 — 지금 무엇이 막혀 있는가
 
-**코드로 닫을 수 있는 항목은 전부 닫혔다.** V2-0~V2-4 전환도, PI 결정 5건(PH-09·10·11·13·14)도, 문항 자산 2건(PH-06·07)도 끝났다. 남은 것은 **연구팀이 쓰는 자산 · IRB 승인 · 외부 실측**뿐이다. 개발자 단독 항목이던 PH-04도 2026-08-27 닫혔다 — 이제 개발자가 혼자 진행할 수 있는 placeholder는 없다.
+**코드로 닫을 수 있는 항목은 전부 닫혔다.** V2-0~V2-4 전환도, PI 결정 5건(PH-09·10·11·13·14)도, 문항 자산 2건(PH-06·07)도 끝났다. 남은 것은 **연구팀이 쓰는 자산 · IRB 승인 · 외부 실측**뿐이다. 개발자 단독 항목이던 PH-04도 2026-08-27 닫혔다.
+
+**2026-08-27 — PH-01이 되살아났다가 같은 날 닫혔다(D-44).** 연구자 지시로 사전 설문(v1.0.1 §4.2·§7.1)이 v2.0에 복원됐고(화면 P1S — 동의 직후·checkpoint 직전), **PI 확인으로 `presurvey_items_v1.json`이 착지**해 게이트가 다시 3건으로 돌아왔다. 논문 역반영(PH-P-7)은 시스템 밖 항목으로 남는다.
 
 ```bash
 DEV_MODE=true ./backend/.venv/bin/python scripts/freeze_study_version.py --check
-#   모집 게이트 3건(2026-08-26 현재): PH-03 · PH-IRB-1 · PH-IRB-2
+#   모집 게이트 3건(2026-08-27 현재): PH-03 · PH-IRB-1 · PH-IRB-2
 ```
 
 | 분류 | 건수 | 성격 | 본 모집 게이트(§11.2) |
 |---|---|---|---|
 | 자산 — 연구팀 작성 (PH-03·03b) | 2 | dossier 24건(R/U/Q·evidence code)·locus 목록 | PH-03 ⛔ |
+| ~~자산 — 사전설문 문항 (PH-01)~~ | 0 | **2026-08-27 D-44로 복원 → 같은 날 PI 확인·`_v1` 착지 — 게이트 소멸**(§3b) | — ✅ |
 | ~~자산 — 배정표 (PH-08)~~ | 0 | **2026-08-26 `assignment_v1` 생성·동결 — 게이트 소멸**(§2) | — ✅ |
 | ~~자산 — 문항 문면 (PH-06·07)~~ | 0 | **2026-08-24 `_v1` 착지 — 추천안 문면 확정, 게이트 소멸**(§3) | — ✅ |
 | ~~설계 잔여 결정 — PI (PH-09·10·11·13·14)~~ | 0 | **2026-08-24 전건 승인 — 전부 기본값 확정**(§4) | — ✅ |
@@ -35,13 +38,14 @@ DEV_MODE=true ./backend/.venv/bin/python scripts/freeze_study_version.py --check
 | `[파일럿 확정]` 파라미터 | 12 | soft launch 1회 조정 창 | — |
 | `[제안]` 화면 문안 | 28 | PI 승인 (코드 변경 0 예상). PH-09·10·13·14 관련 6건은 `[PI 승인 2026-08-24]`로 전환됨 | — |
 | 논문 역반영 (PH-P-1~6) | 6 | 시스템 밖 | — |
-| v1.0.1 소멸 항목 (✂) | 4 | 기록 | — |
+| v1.0.1 소멸 항목 (✂) | 3 | 기록 (PH-01은 D-44로 부활 — ✂에서 빠졌다) | — |
 
 ### 지금 열려 있는 것 — 누가 움직여야 하나
 
 | 주체 | 항목 | 다음 행동 | 막고 있는 것 |
 |---|---|---|---|
 | **연구팀** | PH-03 · PH-03b | dossier 24건 작성 → 2인 코딩·adjudication → QC → `lock_dossier.py` | 모집 ⛔ |
+| ~~연구팀·PI~~ | ~~PH-01~~ | **완료 2026-08-27** — PI 확인, 문면 변경 0건으로 `presurvey_items_v1.json` 승격 | — |
 | ~~연구팀+개발자~~ | ~~PH-08~~ | **완료 2026-08-26** — seed 20260826, 24행, 전 제약 통과 | **생성 후 변경 금지**(§1.4) — 재생성은 첫 세션 전까지만 |
 | **IRB** | PH-IRB-1~7 | 제출 → 승인 → 슬롯 3종 치환 → `screen_copy` 교체(§6 5단계) | 모집 ⛔ |
 | ~~PI~~ | ~~PH-12~~ | **완료 2026-08-26** — 문안 그대로 승인, `prompt_hash` 재계산 | — |
@@ -60,6 +64,7 @@ DEV_MODE=true ./backend/.venv/bin/python scripts/freeze_study_version.py --check
 
 | ID | 유형 | 무엇이 비어 있나 | 코드 위치 (V2 전환 후 기준) | v1.0.1 대조 | 해소 주체 | 상태 |
 |---|---|---|---|---|---|---|
+| PH-01 | 자산 | ~~사전설문 문항 원문~~ → **`fixtures/presurvey_items_v1.json` 착지(2026-08-27 · PI 확인)** — 12문항(빈도 5·빗나갔을 때 대응 1·disclosure 2·DDI 발췌 4), `_v0` 초안에서 **문면 변경 0건**. 순서 프라이밍 기각·회상 창 정합도 같은 날 PI 확정. 문면 관찰 4건은 미반영(§3b) | `fixtures/presurvey_items_v1.json` · `backend/app/assets/presurvey.py` · `backend/app/core/freeze.py` | **승계** (자산·로더·계약 테스트 전부 v1.0.1 그대로 — D-44) | 연구팀·PI | ✅ |
 | PH-03 | 자산 | dossier P01–P24(배정 참가자) 실값 — ai_visible(provenance 태그 포함)·researcher_only·evidence_code·**R/U/Q segment**·neutral_fallback·QC 기록·lock (§5.3) | `dossiers/schema_dummy/*` · `backend/app/assets/dossier_loader.py` · `scripts/lock_dossier.py` · `backend/app/core/freeze.py` | **개조** (3층 로더·계약 테스트 패턴 승계, 스키마 v2) | 연구팀 | ⬜ |
 | PH-03b | 자산 | `evidence_code.mismatch_locus` 허용값 목록(broad locus) 확정 — 초판: content_depth · affective_tone_intensity · context_memory_use · interpretation · trajectory_timing | `dossier_loader.MISMATCH_LOCI` · `scripts/make_assignment.py`(편중 최소화 입력) | 승계(v1 5종) | 연구팀 | ◐ |
 | PH-04 | 운영 | ~~배포 반입 절차~~ → ~~절차 확정~~ → **닫힘(2026-08-27)**. Railway CLI 5.44 문법 실측(`volume files upload/download`) · 백업 정책 확정(볼륨=대조용, 수집 데이터는 DB) · 스테이징 검증 신설. 반입 자체는 PH-03 착지분부터 순차 실행 | `scripts/stage_volume_assets.py`(신설) · `files.dossier_search_paths()` · `files.AssetLocationError` · `assignment.assignment_path()` · `freeze.asset_sources()` · `docs/배포_자산_반입_v1.md` v1.1 | 승계(권고 A: 볼륨) + 오버레이 개조 | 개발자 | ✅ |
@@ -80,12 +85,11 @@ DEV_MODE=true ./backend/.venv/bin/python scripts/freeze_study_version.py --check
 | PH-IRB-5 | 문안 | Study 1 자료 이용·dossier 보관 | (코드 없음) | 승계 | IRB | ◐ |
 | PH-IRB-6 | 문안 | 철회 절차 | (코드 없음) | 승계 | IRB | ◐ |
 | PH-IRB-7 | 문안 | 보상 문안(수동 지급) | (코드 없음) | 승계 | IRB | ◐ |
-| ~~PH-01~~ | ✂ | 사전 설문 — **삭제**(D-31, Q&A #1). 표본 기술은 Study 1 자료 재사용 | 파일 삭제(부록 H.1) | 사용 금지 | — | ✂ |
 | ~~PH-02~~ | ✂ | P10 cross-branch review sidecar 비표시 — 화면 자체 소멸. v2.0은 sidecar를 참가자에게 재표시하는 화면이 없다(P11 인터뷰 대기는 pair만) | — | — | — | ✂ |
 | ~~PH-05~~ | ✂ | normalization 패턴 — **삭제**(D-34) | 파일 삭제 | 사용 금지 | — | ✂ |
 | ~~PH-P-1~5 (v1)~~ | ✂ | v1 논문 역반영 5건은 구 §6–7 기준 — 신 §6–7로 대체됨. 아래 §9에 v2 목록 | — | — | — | ✂ |
 
-`tests/unit/test_placeholder_registry.py`가 코드·자산의 모든 `PH-nn` 참조를 이 표와 대조한다 — 표에 없는 placeholder가 코드에 남아 있으면 CI가 깨진다. **V2-0 전환 시 `PH-01`·`PH-02`·`PH-05` 참조는 코드에서 전부 제거해야 한다**(남으면 ✂ 항목이라 CI가 깨진다).
+`tests/unit/test_placeholder_registry.py`가 코드·자산의 모든 `PH-nn` 참조를 이 표와 대조한다 — 표에 없는 placeholder가 코드에 남아 있으면 CI가 깨진다. `PH-02`·`PH-05`는 ✂ 항목이므로 코드에 참조가 남아 있으면 안 된다. **`PH-01`은 2026-08-27 D-44로 살아 있는 항목이 됐다** — 코드 참조가 정상이다.
 
 ---
 
@@ -164,6 +168,45 @@ v1.0.1의 5종을 초판으로 유지한다. 초안 신 §7.2는 "broad mismatch
 **계약**: contrast당 2–3문항·target 유효·A/B 치환 정합·금지 표현 0건 — `test_item_assets.py`.
 
 **잔여**: PH-06과 동일 — 최종 문면 변경은 `_v1` 파일 수정으로(모집 전).
+
+---
+
+## 3b. 자산 — 사전설문 문항 (PH-01) ✅ **2026-08-27 복원 → 같은 날 `_v1` 착지**
+
+### 무슨 일이 있었나
+
+v2.0 정본은 D-31(Q&A #1)로 사전 설문을 삭제했다 — "표본 기술은 Study 1 자료로 대체(시스템 밖)". 2026-08-27 연구자 지시로 **v1.0.1 §4.2·§7.1 구성 그대로 복원**했다(D-44). 명세서 v2.0은 이 결정을 아직 반영하지 않았으므로, 정본과 코드가 갈라져 있는 상태다 — 명세 개정이 남아 있다(아래 "잔여").
+
+### 복원 범위 (되살린 것 / 되살리지 않은 것)
+
+| 되살린 것 | 되살리지 않은 것 |
+|---|---|
+| `fixtures/presurvey_items_v0.json` (v1.0.1 그대로) | v1.0.1의 다른 폐기 항목 — williams·normalization·no_reply·12문항 2블록 등은 **여전히 사용 금지** |
+| `backend/app/assets/presurvey.py` (v2 로더 규약으로 개조 — `ASSET_CANDIDATES`) | 사전설문을 moderator로 쓰는 분석 경로. §7.1의 "confirmatory moderator 아님"이 그대로다 |
+| `presurvey_responses` 테이블 (v1.0.1 §8.1 정의 그대로) | 합산·소계 열 — 자산에도 테이블에도 없다 |
+| 화면 1개 — **P1S**(동의 직후·checkpoint 직전) | 화면·상태 ID 재번호. P2–P12는 그대로다 |
+
+### 자산 착지 (2026-08-27 · PI 확인)
+
+`fixtures/presurvey_items_v1.json` — `_v0` 초안(2026-08-17)의 12문항을 **문면 변경 0건**으로 승격했다. 코드 변경도 0건이다(로더가 `_v1`을 먼저 본다 — PH-06·PH-07과 같은 경로). `_v0`은 **지우지 않는다**: `_v1`이 사라지면 로더가 내려가면서 게이트가 다시 울리는 것이 회귀 감지 장치다.
+
+**PI 확정 2건** (파일 `_pi_decisions`에도 기록):
+- **순서 프라이밍 기각** — ②(빗나갔을 때의 평소 대응)가 P2 재진입 직전에 correction repertoire를 활성화한다는 검토 의견은 채택하지 않는다. 화면 위치는 동의 직후·checkpoint 직전 그대로다.
+- **회상 창 정합** — 빈도 5문항의 "최근 6개월"은 표본과 맞는다. 모집이 **최근 6개월 이내 사건**을 조건으로 걸었다.
+
+**문면 관찰 4건 — 미반영**(승격은 문면 변경 0건이었다). 고치기로 하면 `_v1` 파일의 `text`만 수정하면 되고 게이트는 다시 열리지 않는다(§1.4 — 모집 전 변경).
+1. misfit 문항의 호칭 **"회원님"** — 연구 문안 전체에서 유일 1회(다른 곳은 "참여자님" 또는 무주어 존댓말).
+2. misfit 5지에 **"그 외"가 없는데 전 문항 필수** — 5개 중 어느 것도 아닌 참가자가 강제 선택된다(§7.4 downstream 6코드에는 `other`가 있다).
+3. `disclosure_1` ↔ `ai_use_freq_personal_concern` **문면 중복** — "개인적인 고민이나 신경 쓰이는 일"이 verbatim으로 겹친다.
+4. **DDI 발췌 근거 미기록** — 12문항 중 1·2·3·10을 고른 이유, ddi_1이 원문 "my friends"를 "가까운 사람"으로 넓힌 사실.
+
+**계약**: `tests/assets/test_presurvey_contract.py` — 구성 ①–④·문항 수·NT-05 메타키 미노출·유형별 응답 검증·역채점 2문항·배제 척도 4종 부재·`_v1` 우선·게이트 정합. 경로 테스트는 NT-46(`tests/integration/test_session_flow.py`).
+
+### 잔여
+
+- ~~문항 확정~~ → **완료 2026-08-27**(PI 확인).
+- ~~**명세서 v2.0 개정**~~ → **2026-08-27 완료.** §0.2·§0.3·§1.2·§2.3·§3.1·**§4.1S 신설**·**§7.0 신설**·§8.1·§8.2·§9.3·§10.5·§11.1·§11.2·부록 B·C(NT-05 부활·NT-46 신설)·D.1·E.1·E.2·E.4·G·H 반영.
+- **PH-P-7 (논문 역반영, §9) — 열려 있다.** 신 §6–7(정본)에 사전 설문 절이 **없다**. 이 12문항의 구성 근거는 **구 §7.4**이고, 구 §6–7은 더 이상 정본이 아니다(구현명세서 머리말). 모집 게이트는 아니지만, 논문에 절이 서기 전에는 "출처를 논문이 답하지 못하는 측정"이 남는다.
 
 ---
 
@@ -294,7 +337,7 @@ v1.0.1 내용 승계(안전 프로토콜·녹화·Study 1 연계·철회·보상
 
 ---
 
-## 9. 논문 역반영 (PH-P-1~6, v2) — 시스템 밖
+## 9. 논문 역반영 (PH-P-1~7, v2) — 시스템 밖
 
 | ID | 내용 |
 |---|---|
@@ -304,6 +347,7 @@ v1.0.1 내용 승계(안전 프로토콜·녹화·Study 1 연계·철회·보상
 | PH-P-4 | limitations: User1 강제 작성으로 AI1 직후 즉시 이탈은 관찰 불가(D-27·D-32) |
 | PH-P-5 | §7.8: sidecar 선택지 = **있음/없음 2종, 건너뛰기 없음**(PH-14 확정 2026-08-24) |
 | PH-P-6 | §7.5: LLM 역할 문장을 "인간 코딩 후 sensitivity/audit용 third reading" 허용으로 개정(결정로그 #4 확정 시). 파이프라인 flowchart A3 박스도 동일 |
+| **PH-P-7** | **신 §7에 participant characterization 절 신설**(D-44). 사전 설문 12문항의 구성 근거는 **구 §7.4**이고 신 §6–7(정본)에는 대응 절이 **없다** — 무엇을·왜 재는지, 어떻게 보고하는지, moderator가 아니라는 선언이 논문에 있어야 한다. 함께: 신 §7.11의 턴 수준 코드 `new support-relevant disclosure`와 사전설문의 성향 `disclosure_1·2`가 **같은 단어를 쓴다** — 보고 문면에서 갈라 쓴다. 이 항목은 **PH-01의 선행 조건**이다(구현명세서 §4.1S) |
 
 ---
 
@@ -311,7 +355,9 @@ v1.0.1 내용 승계(안전 프로토콜·녹화·Study 1 연계·철회·보상
 
 **가져오는 것(승계·개조)** — evidence firewall·NT-04 정적 검사 / dossier 3층 로더·기동 게이트·hash·lock 절차 / AI2 사다리(규칙+checker+재생성+fallback)·generations 기록 규약(fallback 별도 행·규칙 위반 시 checker 생략) / 게이트웨이·provider 고정·usage / Fernet·audit·복호화 지점 열거 테스트 / 접속 코드·idempotency·복구 / 콘솔 정적 HTML 1장·요청 단위 복호화 audit / fixture 러너·fake LLM 트리거 / 자산 착지 규율(문서 → 계약 테스트 → 착지 커밋 → hash 동결) / placeholder 레지스트리 테스트 / 화면 문안 서버 보관·[정본] 대조 테스트 / 국외 이전 문안·디브리핑 구조·핫라인 참고 자료.
 
-**가져오면 안 되는 것(사용 금지)** — `core/williams.py`·번호 순환 매핑 / `llm/normalization.py`·패턴·referent_map / `assets/presurvey.py`·사전설문 자산 / `Disposition(reply·no_reply·end)`·`has_ai2`·no_reply 분기 / 12문항 2블록·overreach·premature_withdrawal·autonomy·clarity 단독 문항 / downstream 7메뉴 / `analysis/tagging_flags.py`·first_opportunity·carryover / cue form 분류 / D-08 표시 전용 checkpoint / P10 cross-branch review 4열 / `branch_index`·`Branch` 테이블 / CLAUDE.md v1의 "AI1 원문 금지" 규칙(v2는 **포함**이 정책이다).
+**2026-08-27 이동(D-44)** — `assets/presurvey.py`·사전설문 자산은 "사용 금지"에서 **"승계"로 옮겼다**. 연구자 지시에 따른 복원이며, 되살린 범위는 §3b의 표가 정본이다. 이 한 건이 옮겨졌다고 아래 목록의 다른 항목이 함께 풀리는 것은 아니다.
+
+**가져오면 안 되는 것(사용 금지)** — `core/williams.py`·번호 순환 매핑 / `llm/normalization.py`·패턴·referent_map / `Disposition(reply·no_reply·end)`·`has_ai2`·no_reply 분기 / 12문항 2블록·overreach·premature_withdrawal·autonomy·clarity 단독 문항 / downstream 7메뉴 / `analysis/tagging_flags.py`·first_opportunity·carryover / cue form 분류 / D-08 표시 전용 checkpoint / P10 cross-branch review 4열 / `branch_index`·`Branch` 테이블 / CLAUDE.md v1의 "AI1 원문 금지" 규칙(v2는 **포함**이 정책이다).
 
 ---
 

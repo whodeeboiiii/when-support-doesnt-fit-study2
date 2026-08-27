@@ -9,7 +9,7 @@
  */
 
 export interface AppState {
-  /** P0–P12 · DONE · ABORTED */
+  /** P0 · P1 · P1S · P2–P12 · DONE · ABORTED */
   screen: string
   ss_state: string
   f_state: string | null
@@ -67,6 +67,10 @@ export const api = {
     }),
 
   consent: (items: Record<string, boolean>) => post<AppState>('/api/consent', { items }),
+
+  /** v1.0.1 §4.2 · D-44 — 위치로만 오간다(문항 ID 미노출 — NT-05). */
+  presurvey: (responses: { position: number; value: unknown }[]) =>
+    post<AppState>('/api/presurvey', { responses }),
 
   /** §4.2 · D-25 — segment 단위 수정. 누적 저장되고 확인 후에는 409다. */
   checkpointEdit: (segment: string, text: string) =>

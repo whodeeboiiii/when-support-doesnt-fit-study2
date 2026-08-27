@@ -59,10 +59,17 @@ def _print_sources() -> None:
         state = "dummy" if entry["is_dummy"] else "실값"
         print(f"  배정표           : {entry['path']} [{state} · {entry['version']} · {entry['rows']}행]")
 
-    for label, key in (("focal 문항", "focal_items"), ("pairwise 문항", "pairwise_items")):
+    # 라벨은 손으로 맞춘다 — 한글은 표시 폭이 2인데 `:<15`는 1로 세어서 열이 어긋난다
+    # (위의 「dossier 디렉터리」·「배정표」 줄과 같은 방식이다).
+    for label, key in (
+        ("focal 문항       ", "focal_items"),
+        ("pairwise 문항    ", "pairwise_items"),
+        # D-44 — 복원된 사전설문 자산도 같은 줄에 선다(게이트가 PH-01을 보고하는 근거).
+        ("사전설문 문항    ", "presurvey_items"),
+    ):
         item = sources[key]
         state = "placeholder" if item["is_placeholder"] else "실값"
-        print(f"  {label:<15}: {item['version']} [{state}]")
+        print(f"  {label}: {item['version']} [{state}]")
     print(f"  동의서 버전      : {sources['consent_version']}")
     print()
 

@@ -7,9 +7,10 @@
 2. **researcher_only layer는 이 파일에 존재하지 않는다**(§5.3·§8.1). dossier 자산 파일에만
    있고 DB로 내려오지 않는다. 컬럼을 추가하고 싶어지면 그건 §1.2 위반 신호다.
 
-**v2.0에서 삭제된 테이블**: `branches`(→ `focal_runs`) · `normalizations`(D-34) ·
-`presurvey_responses`(D-31). **신설**: `checkpoint_edits`(D-25) · `focal_runs` ·
-`alt_exposures`(D-29) · `pairwise_views` · `pairwise_responses`.
+**v2.0에서 삭제된 테이블**: `branches`(→ `focal_runs`) · `normalizations`(D-34).
+**신설**: `checkpoint_edits`(D-25) · `focal_runs` · `alt_exposures`(D-29) · `pairwise_views` ·
+`pairwise_responses`. `presurvey_responses`는 D-31로 삭제됐다가 **D-44로 복원**됐다 —
+v1.0.1 §8.1의 정의를 그대로 쓴다.
 
 합산 열은 어디에도 없다(§0.4 · §7.1 · §7.5 — overall preference index 산출 금지).
 """
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -86,6 +88,34 @@ class Session(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)  # active/done/abort/dropout
     abort_reason: Mapped[bytes | None] = mapped_column(LargeBinary)  # 🔒
     created_at: Mapped[datetime] = created_at_column()
+
+
+
+class PresurveyResponse(Base):
+    """§8.1 `presurvey_responses` (v1.0.1 §4.2 — D-44로 복원). 문항 1개 = 1행.
+
+    `value`가 JSON인 이유: 문항마다 응답 형식이 다르다 — 단일 선택은 문자열, 복수 선택은
+    문자열 배열, 척도는 정수다. 자산이 아직 placeholder라 형식이 더 늘 수도 있다
+    `<TODO: PH-01 — 문항 원문 확정 시 형식 고정>`.
+
+    **합산 열이 없다**(§7.1). 사전설문은 participant characterization 전용이고 RQ3의
+    confirmatory moderator가 아니다 — 총점을 저장할 자리를 만들면 그 규율이 흐려진다.
+
+    이 테이블은 **LLM 경로에서 접근하지 않는다**(§1.2 · NT-01). `sidecar_entries`와 같은
+    지위다.
+    """
+
+    __tablename__ = "presurvey_responses"
+    __table_args__ = (UniqueConstraint("session_id", "item_id"),)
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("sessions.id"), nullable=False, index=True
+    )
+    item_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    value: Mapped[Any | None] = mapped_column(JsonB)
+    #: 제시 위치(1-based) — 자산 순서 그대로다(§4.2 무작위 없음).
+    display_order: Mapped[int | None] = mapped_column(Integer)
 
 
 class CheckpointEdit(Base):

@@ -240,9 +240,13 @@ def test_no_acceptance_or_branch_named_columns() -> None:
 
 
 def test_deleted_tables_are_gone() -> None:
-    """§8.1 — `branches`·`normalizations`·`presurvey_responses` 삭제(D-31·D-34 · D-23)."""
+    """§8.1 — `branches`·`normalizations` 삭제(D-34 · D-23).
+
+    `presurvey_responses`는 D-31로 삭제됐다가 **D-44로 복원**됐다 — 그래서 삭제 목록이
+    아니라 아래 존재 검사 쪽에 있다.
+    """
     names = set(Base.metadata.tables)
-    assert not {"branches", "normalizations", "presurvey_responses"} & names
+    assert not {"branches", "normalizations"} & names
     # 신설 5종은 있다.
     assert {
         "checkpoint_edits",
@@ -251,6 +255,15 @@ def test_deleted_tables_are_gone() -> None:
         "pairwise_views",
         "pairwise_responses",
     } <= names
+
+
+def test_presurvey_table_is_restored_without_an_aggregate_column() -> None:
+    """§8.1 · D-44 — (item_id, value, display_order)뿐이다. **합산 열 없음**(§7.1)."""
+    assert "presurvey_responses" in set(Base.metadata.tables)
+    columns = set(tables.PresurveyResponse.__table__.columns.keys())
+    assert {"session_id", "item_id", "value", "display_order"} <= columns
+    for banned in ("total", "score", "sum", "reverse_scored"):
+        assert banned not in columns, f"사전설문에 합산·파생 열: {banned}"
 
 
 def test_turns_has_no_normalized_column() -> None:

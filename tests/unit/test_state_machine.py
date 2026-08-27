@@ -35,6 +35,8 @@ def test_ss_chain_is_linear_and_forward_only() -> None:
     order = [
         SsState.CREATED,
         SsState.CONSENT,
+        # D-44 — 사전설문이 동의와 checkpoint 사이에 끼어 있다(v1.0.1 §4.2 복원).
+        SsState.PRESURVEY,
         SsState.CHECKPOINT,
         SsState.REENTRY,
         SsState.FOCAL,
@@ -59,6 +61,9 @@ def test_ss_skipping_a_state_is_illegal() -> None:
     """NT-14 — checkpoint 없이 focal, focal 없이 대안 노출."""
     with pytest.raises(IllegalTransition):
         assert_ss_transition(SsState.CONSENT, SsState.FOCAL)
+    # D-44 — 사전설문을 건너뛰고 checkpoint로 갈 수 없다.
+    with pytest.raises(IllegalTransition):
+        assert_ss_transition(SsState.CONSENT, SsState.CHECKPOINT)
     with pytest.raises(IllegalTransition):
         assert_ss_transition(SsState.FOCAL, SsState.ALT_EXPOSURE)
     with pytest.raises(IllegalTransition):
@@ -173,6 +178,7 @@ def test_alt_exposure_allowed_only_after_focal_measures() -> None:
     [
         (SsState.CREATED, None, "P0"),
         (SsState.CONSENT, None, "P1"),
+        (SsState.PRESURVEY, None, "P1S"),
         (SsState.CHECKPOINT, None, "P2"),
         (SsState.REENTRY, None, "P3"),
         (SsState.FOCAL, FState.AI1_PENDING, "P4"),
@@ -192,7 +198,7 @@ def test_alt_exposure_allowed_only_after_focal_measures() -> None:
     ],
 )
 def test_screen_mapping(ss_state: SsState, f_state: FState | None, screen: str) -> None:
-    """§0.2 — 상태 → 화면. 13종(P0–P12) 전부 매핑된다."""
+    """§0.2 — 상태 → 화면. 13종(P0–P12) + P1S(D-44)가 전부 매핑된다."""
     assert screen_for(ss_state, f_state) == screen
 
 
@@ -209,3 +215,6 @@ def test_all_screens_p0_to_p12_are_reachable() -> None:
         screen_for(state, None) for state in SsState if state is not SsState.FOCAL
     }
     assert {f"P{index}" for index in range(13)} <= reachable
+    # D-44 — 재번호 대신 끼워 넣은 화면. P0–P12를 밀지 않았다는 것이 이 두 줄이다.
+    assert "P1S" in reachable
+    assert screen_for(SsState.CHECKPOINT, None) == "P2"

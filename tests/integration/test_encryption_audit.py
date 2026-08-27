@@ -63,6 +63,7 @@ async def _dump_all_rows(session) -> str:
 async def _run_session(client: AsyncClient) -> str:
     created, _ = await helpers.open_and_join(client, "P00")
     await helpers.consent(client)
+    await helpers.presurvey(client)
     # §2.9 v2 신설 — checkpoint 수정본도 🔒 대상이다(D-25).
     await helpers.edit_checkpoint(client, "situation_summary", EDIT_TEXT)
     await helpers.confirm_checkpoint(client)

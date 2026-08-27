@@ -100,6 +100,7 @@ async def _run_to_focal(client: AsyncClient, *, edits: list[tuple[str, str]] | N
     created = await helpers.create_session(client, "P00")
     await helpers.join(client, "P00", created["access_code"])
     await helpers.consent(client)
+    await helpers.presurvey(client)
     for segment, text in edits or []:
         response = await client.post(
             "/api/checkpoint/edit", json={"segment": segment, "text": text}

@@ -35,6 +35,7 @@ async def exported(client: AsyncClient, session: AsyncSession):
     """자유 텍스트를 전부 심은 완주 세션 1건."""
     await helpers.open_and_join(client)
     await helpers.consent(client)
+    await helpers.presurvey(client)
     await helpers.edit_checkpoint(client, "problematic_ai_response", EDIT_TEXT)
     await helpers.confirm_checkpoint(client)
     await helpers.advance(client, "P3")
@@ -131,12 +132,16 @@ async def test_export_records_audit_regardless_of_flag(exported: AsyncSession) -
 
 
 async def test_all_seven_default_files_exist(exported: AsyncSession) -> None:
-    """부록 H.2 — trajectory·checkpoint_edits·ratings·pairwise·alt_exposure·integrity·events."""
+    """부록 H.2 — trajectory·checkpoint_edits·ratings·pairwise·alt_exposure·integrity·events.
+
+    D-44로 `presurvey.csv`가 한 장 늘었다.
+    """
     files = await export_trajectory.collect(exported, actor="tester")
     names = set(files.as_files())
     assert names == {
         export_trajectory.TRAJECTORY_FILE,
         export_trajectory.CHECKPOINT_EDITS_FILE,
+        export_trajectory.PRESURVEY_FILE,
         export_trajectory.RATINGS_FILE,
         export_trajectory.PAIRWISE_FILE,
         export_trajectory.ALT_EXPOSURE_FILE,

@@ -33,6 +33,10 @@ class SsState(StrEnum):
 
     CREATED = "SS00"
     CONSENT = "SS01"
+    #: 사전설문 (v1.0.1 §4.2 — D-44로 복원). 번호가 `SS01S`인 이유는 §0.2의 SS02–SS10을
+    #: 밀지 않기 위해서다 — 한 화면을 끼우자고 상태·화면 ID 전체를 재번호하면 명세서·콘솔·
+    #: rewind 대상(P8–P11)·문서가 전부 갈라진다. 진행 순위는 `SS_NEXT` 사슬이 정한다.
+    PRESURVEY = "SS01S"
     CHECKPOINT = "SS02"
     REENTRY = "SS03"
     FOCAL = "SS04"
@@ -87,7 +91,8 @@ PAIR_POSITIONS = 3
 SS_NEXT: Mapping[SsState, SsState] = MappingProxyType(
     {
         SsState.CREATED: SsState.CONSENT,
-        SsState.CONSENT: SsState.CHECKPOINT,
+        SsState.CONSENT: SsState.PRESURVEY,
+        SsState.PRESURVEY: SsState.CHECKPOINT,
         SsState.CHECKPOINT: SsState.REENTRY,
         SsState.REENTRY: SsState.FOCAL,
         SsState.FOCAL: SsState.FOCAL_MEASURES,
@@ -242,6 +247,7 @@ _SS_SCREEN: Mapping[SsState, str] = MappingProxyType(
     {
         SsState.CREATED: "P0",
         SsState.CONSENT: "P1",
+        SsState.PRESURVEY: "P1S",
         SsState.CHECKPOINT: "P2",
         SsState.REENTRY: "P3",
         SsState.FOCAL_MEASURES: "P8",
