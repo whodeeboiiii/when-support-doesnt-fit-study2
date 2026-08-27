@@ -27,6 +27,27 @@ def is_local_db(url: str) -> bool:
     return url.startswith(LOCAL_DB_SCHEME)
 
 
+#: 우리가 설치한 Postgres 드라이버는 psycopg3 하나뿐이다(pyproject — `psycopg[binary]`).
+#: 그런데 SQLAlchemy는 드라이버가 빠진 `postgresql://`를 **psycopg2**(동기·미설치)로 해석한다.
+#: Supabase·Railway 콘솔이 복사해 주는 URL이 정확히 그 형태여서, 그대로 붙이면 기동이
+#: `ModuleNotFoundError: No module named 'psycopg2'`로 죽는다 — 원인이 URL에 있다는 단서가
+#: 어디에도 없고, 하필 배포 도중에 터진다.
+#:
+#: 그래서 **드라이버만** 명시해 준다. 연결 대상(host·db·자격)은 한 글자도 바뀌지 않으므로
+#: §2.4가 막으려는 "조용한 흘러내림"(=의도와 다른 DB에 붙는 것)과는 다른 층위다. 붙일
+#: 드라이버에 선택지가 없다는 점이 이 정규화를 안전하게 만든다.
+_BARE_PG_SCHEMES = ("postgresql://", "postgres://")
+PG_ASYNC_URL_PREFIX = "postgresql+psycopg://"
+
+
+def normalize_db_url(url: str) -> str:
+    """드라이버가 빠진 Postgres URL에 psycopg3를 명시한다. 그 외 URL은 그대로 둔다."""
+    for scheme in _BARE_PG_SCHEMES:
+        if url.startswith(scheme):
+            return PG_ASYNC_URL_PREFIX + url[len(scheme) :]
+    return url
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -87,7 +108,7 @@ class Settings(BaseSettings):
                     "'fake LLM + 로컬 DB' 구성이다). 시연 데이터가 배포 DB로 들어가는 것을 막는다. "
                     "DATABASE_URL을 비우거나(로컬 SQLite로 수렴) DEV_MODE=false로 두어라."
                 )
-            return self.database_url
+            return normalize_db_url(self.database_url)
         if self.dev_mode:
             return DEV_DATABASE_URL
         raise RuntimeError("DATABASE_URL이 설정되지 않았다 (§2.4). DEV_MODE=true가 아니면 필수다.")

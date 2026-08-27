@@ -1061,6 +1061,116 @@ MAIN `anthropic/claude-opus-4.8` · VALIDATOR `openai/gpt-5.4` · temperature 0.
 다만 prohibited_inference 오탐의 주원인은 아니었다 — 그건 목록↔evidence 충돌(⑧)이었고,
 둘은 별개 결함이다. 명세 §5.3에 `ai_visible` 문체 규칙을 `<TODO: PH-15>`로 걸어 뒀다.
 
+## 배포 준비 — PH-04 닫기 · Postgres 경로 실측 (2026-08-27)
+
+**왜 지금.** 인터뷰 세션을 연구자 2인이 각자 진행하기로 하면서 상시 구동 배포가 필요해졌다.
+로컬 터널 구성은 호스팅하는 사람의 노트북이 세션 일정에 묶이고, 절전·네트워크 전환 한 번에
+참가자 화면이 끊긴다 — §9.1이 막는 dead-end를 운영 층위에서 만든다.
+
+배포에서 처음 만나는 미지수를 줄이려고 **로컬에서 배포 구성을 그대로 재현해 때려봤다.**
+컨테이너 + Postgres 16 + 볼륨 오버레이 + 실값 배정표 조합이다.
+
+### 실측 결과
+
+| 확인 | 방법 | 결과 |
+|---|---|---|
+| 이미지 빌드 | `docker build .` | 성공 · 354MB |
+| Postgres DDL | `init_db.py` → PG 16 | 16 테이블 |
+| **세션 SS00→SS10 전 구간** | Postgres 대상 full-flow(FakeLLM 주입, `DEV_MODE=false`) | 완주 · 14/16 테이블 기록 |
+| 🔒 필드 | `turns.text` = `bytea` | Fernet 토큰 저장 확인 |
+| **transaction-mode 풀러** | pgbouncer 1.25 경유 full-flow + 동일 쿼리 25회 | 완주 · prepared statement 문제 없음 |
+| 볼륨 오버레이 | 스테이징 산출물을 `/data`로 마운트 | 실값 3건 + 더미 21건 · 「자산 출처」 일치 |
+| 콘솔 인증 | `/admin/console` | 무인증 401 · Basic 200 |
+| 로컬→PG 이관 | 580행 이관 후 실키 복호화 | 시각·암호문 무손실 |
+
+풀러를 굳이 때려본 이유: Supabase 접속 경로가 direct / session pooler / transaction pooler로
+갈리는데, transaction 모드는 커넥션이 문장 단위로 갈려 `SET search_path`가 날아갈 수 있다.
+`models/session.py`가 **트랜잭션마다 다시 거는** 방식으로 이미 대비돼 있었고, 그 설계가
+실제로 유효함을 확인했다. (그래도 배포 기본값은 보수적으로 session pooler로 둔다.)
+
+### 발견 ① — 콘솔이 주는 DB URL 그대로는 기동이 죽는다
+
+Supabase·Railway가 복사해 주는 형태는 `postgresql://…`다. SQLAlchemy는 드라이버가 빠진 이
+형태를 **psycopg2**(동기·미설치)로 해석하므로 `ModuleNotFoundError: No module named 'psycopg2'`
+로 기동이 끊긴다. 원인이 URL에 있다는 단서가 어디에도 없고, 하필 배포 도중에 터진다.
+
+`core/config.normalize_db_url()`을 신설해 **드라이버만** 명시한다(`postgresql+psycopg://`).
+연결 대상은 한 글자도 바뀌지 않으므로 §2.4가 막는 "조용한 흘러내림"(=의도와 다른 DB에
+붙는 것)과는 층위가 다르고, 우리가 설치한 async 드라이버가 psycopg3 하나뿐이라 붙일
+드라이버에 선택지가 없다는 점이 이 정규화를 안전하게 만든다. 테스트 5건 추가
+(`tests/unit/test_config.py`) — DEV_MODE 구멍이 다시 열리지 않는지도 함께 건다.
+
+### 발견 ② — 배포 구성에서 세션 쿠키는 `Secure`다
+
+`api/deps.py`가 `secure=not settings.dev_mode`로 쿠키를 굽는다. 즉 **참가자 링크가 `http://`면
+P0에서 더 나아가지 못한다.** Railway가 HTTPS를 주므로 실제 문제는 아니지만, 포트 포워딩이나
+평문 커스텀 도메인으로 접근하면 그 자리에서 막힌다. 런북 2.5에 경고로 박았다.
+
+### PH-04 닫기
+
+남아 있던 2건을 실측으로 닫았다.
+
+- **호스트 CLI 문법** — Railway CLI v5.44.1 기준 `railway volume files upload <local-dir>
+  <remote-dir> --overwrite`가 디렉터리째 올린다. 종전 문서의 `railway ssh -- cat >` 24회
+  반복보다 정확하고, 전송 요건 셋(TLS · 중간 저장소 없음 · 파일명 보존)을 그대로 만족한다.
+- **볼륨 백업 정책** — 볼륨에 있는 것은 로컬에 원본이 있는 lock 파일이고, 세션이 시작되면
+  수집 데이터는 DB에 쌓인다. 그러므로 **볼륨 백업의 목적은 복구가 아니라 반입 상태의 대조**로
+  두고(`railway volume files download`), 실제 백업 대상은 DB로 규정했다. 장기 보관은
+  PH-IRB-4의 오프라인 백업이 정본이다.
+
+**`scripts/stage_volume_assets.py`를 신설했다.** 올린 뒤에 발견하는 실수는 그 참가자의 세션이
+실제로 뜬 다음에야 티가 난다. 그래서 올리기 전에 기계로 건다 — 파일명↔`participant_no` 일치 ·
+dossier 계약 · lock 완료(§5.3) · 배정표에 있는 번호 · P00 제외. 하나라도 어긋나면 반입본을
+만들지 않는다. 현재 P08·P10·P23 3건이 반입 가능이고 나머지 21명은 더미로 뜬다(정상).
+
+### 로컬 파일럿 데이터
+
+`proto_v2_local.sqlite3`에 **P08(완주 SS10)** 과 **P23(진행 중 SS08 · active)** 이 있다. 배포로
+옮기면 따라오지 않는다 — P08은 export가 두 곳으로 갈리고, **P23은 배포에서 재개할 수 없다**.
+
+`scripts/migrate_local_to_deploy.py`를 신설했다(기본 미리보기, `--apply`로 실행). 대상 schema가
+비어 있어야 돌고, SQLite의 tz 없는 값에 UTC를 명시해 넣는다 — 이 변환이 없으면 세션 시각이
+조용히 밀린다. 580행 이관 후 **실 `FERNET_KEY`로 복호화까지 확인**했다.
+
+**옮길지 말지는 연구 판단이라 실행하지 않았다.** 파일럿을 §10.3 조정용으로만 쓰면 옮기지
+않는 것이 맞고, P23을 재개할 생각이면 옮겨야 한다.
+
+### 문서
+
+- **`docs/배포_실행_v1.md` 신설** — 배포 전체 절차의 정본. 외부 사이트에서 사람이 해야 하는
+  일(Railway·Supabase·OpenRouter·Discord)을 순서대로, 검증 체크리스트와 사고 대응까지.
+- `docs/배포_자산_반입_v1.md` → **v1.1** — §3.3 실측 문법 · §7 백업 정책 신설.
+- `PLACEHOLDERS.md` — PH-04 ◐ → ✅. 개발자 단독 항목이 이제 없다.
+
+### 명세에 없어 내가 정한 것 (전부 되돌리기 쉬운 형태)
+
+| # | 정한 것 | 근거 | 되돌리려면 |
+|---|---|---|---|
+| 1 | 드라이버 없는 Postgres URL을 `postgresql+psycopg://`로 정규화 | §2.4는 `DATABASE_URL`만 말하고 드라이버 표기를 규정하지 않는다. 콘솔이 주는 형태로 기동이 죽는 것이 더 나쁜 결과이며, 연결 대상은 불변이라 §2.4의 취지를 건드리지 않는다 | `config.normalize_db_url()` 삭제 + 호출부 1줄 · 테스트 5건 |
+| 2 | 볼륨 백업 = 복구가 아니라 대조 | 볼륨 내용은 로컬에 원본이 있고, 수집 데이터는 DB에 쌓인다. PH-04가 열어둔 결정 | `배포_자산_반입_v1.md` §7 |
+| 3 | 반입 전 스테이징 검증을 **기계로** 건다 | 반입 문서 §3.3의 요건이 사람 눈 대조로만 남아 있었다 | `scripts/stage_volume_assets.py` 삭제 |
+| 4 | 로컬→배포 이관 도구를 만들되 **실행하지 않는다** | 이관 여부는 연구 판단이고, 도구 부재로 선택지가 닫히는 것은 피한다 | `scripts/migrate_local_to_deploy.py` 삭제 |
+| 5 | 배포 기본 접속 경로를 session pooler로 권고 | transaction 모드도 실측 통과했으나 검증은 pgbouncer 대역이고 Supavisor 실물이 아니다 | `배포_실행_v1.md` 2.2 |
+
+### 사람이 해야 했던 결정 — 2026-08-27 착지
+
+| 항목 | 결정 | 여파 |
+|---|---|---|
+| **콘솔 계정 분리** | **하지 않는다** — §2.7의 HTTP Basic 단일 자격 유지 | 코드·명세 변경 0건. 연구자 2인이 같은 자격을 쓰므로 `audit_logs`로는 행위자가 구분되지 않는다 → **세션마다 진행자를 연구 기록에 수기 기입**하는 것이 IRB 문안 4항의 이행 수단이다 |
+| **파일럿 데이터 이관** | **한다** (P08 완주 · P23 진행 중) | 첫 배포 직후·세션 생성 전에 `migrate_local_to_deploy.py --apply`. P23은 `active`(SS08)로 옮겨져 재접속 시 이어진다 |
+| **Supabase 리전** | **서울**(Northeast Asia) | 수집 데이터는 국내 |
+| **Railway 리전** | **싱가포르** | **서울 리전이 존재하지 않는다** — 2026-08-27 확인, 지원 리전은 US West·US East·EU West·Southeast Asia 넷뿐. dossier 실값 볼륨이 국외에 놓인다 |
+
+**남은 미확정 하나** — 국내 잔류가 IRB 요건이 되면 Railway로는 풀 수 없다. Dockerfile이
+플랫폼 중립이라 Cloud Run `asia-northeast3`·Fly.io `icn`이 같은 이미지를 받지만, 호스트 교체는
+별도 사안이다.
+
+### 테스트
+
+871 passed → **876 passed** (42 skipped 동일). 기준선 불감소.
+
+---
+
 ---
 
 <details>

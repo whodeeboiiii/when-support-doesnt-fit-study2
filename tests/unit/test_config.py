@@ -71,3 +71,50 @@ def test_schema_defaults_are_the_new_lineage() -> None:
     # v1 schema에 쓰기가 열리면 수집 데이터가 구 설계의 테이블로 들어간다.
     assert not settings.db_schema.endswith("_v1")
     assert not settings.db_schema.startswith("pilot")
+
+
+# --------------------------------------------------------------------------- #
+# 드라이버 정규화 — 배포 콘솔이 주는 URL 그대로 붙였을 때 기동이 죽지 않게 한다.
+#
+# Supabase·Railway는 `postgresql://…` 형태를 복사해 준다. SQLAlchemy는 드라이버가 빠진
+# 그 형태를 psycopg2(동기·미설치)로 해석하므로 배포 도중 `ModuleNotFoundError`로 끊긴다.
+# 여기서 바꾸는 것은 **드라이버뿐**이고 연결 대상은 그대로다 — 위 파일 상단이 막는
+# "다른 DB에 조용히 붙는" 문제와는 층위가 다르다.
+# --------------------------------------------------------------------------- #
+
+BARE_URL = "postgresql://user:secret@db.example.supabase.co:5432/postgres"
+
+
+def test_bare_postgres_url_gets_the_installed_driver() -> None:
+    settings = Settings(dev_mode=False, database_url=BARE_URL)
+    resolved = settings.resolved_database_url
+    assert resolved.startswith("postgresql+psycopg://")
+    # 연결 대상은 한 글자도 바뀌지 않는다.
+    assert resolved.endswith("user:secret@db.example.supabase.co:5432/postgres")
+
+
+def test_postgres_legacy_scheme_is_normalized_too() -> None:
+    """일부 호스트는 아직 `postgres://`를 준다."""
+    settings = Settings(dev_mode=False, database_url="postgres://u:p@h:5432/db")
+    assert settings.resolved_database_url == "postgresql+psycopg://u:p@h:5432/db"
+
+
+def test_normalization_never_touches_sqlite() -> None:
+    settings = Settings(dev_mode=True, database_url="sqlite+aiosqlite:///./tmp.sqlite3")
+    assert settings.resolved_database_url == "sqlite+aiosqlite:///./tmp.sqlite3"
+
+
+def test_normalization_does_not_reopen_the_dev_mode_hole() -> None:
+    """드라이버가 빠진 원격 URL도 DEV_MODE에서는 여전히 기동 실패여야 한다."""
+    settings = Settings(dev_mode=True, database_url=BARE_URL)
+    with pytest.raises(RuntimeError, match="DEV_MODE"):
+        _ = settings.resolved_database_url
+
+
+def test_only_the_installed_async_driver_is_used() -> None:
+    """psycopg3 외의 async 드라이버는 설치돼 있지 않다 — 정규화 대상을 하나로 묶어둔다."""
+    from app.core.config import PG_ASYNC_URL_PREFIX
+
+    assert PG_ASYNC_URL_PREFIX == "postgresql+psycopg://"
+    with pytest.raises(ModuleNotFoundError):
+        __import__("psycopg2")

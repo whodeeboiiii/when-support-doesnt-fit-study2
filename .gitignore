@@ -89,3 +89,10 @@ _to_delete/
 
 # 세션 DB 백업 (🔒 참가자 데이터)
 backups/
+
+# 볼륨 반입본 (PH-04 — `scripts/stage_volume_assets.py --out`). 실값 dossier·배정표의
+# **사본**이라 위 두 블록과 같은 취급이다. 반입 확인이 끝나면 지우는 것이 원칙이지만,
+# 지우기 전에 커밋될 여지를 남기지 않는다.
+.volume_staging/
+backup/dossiers/
+backup/assignments/
