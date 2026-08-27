@@ -23,6 +23,17 @@ from app.models import tables  # noqa: E402,F401  (모델 등록)
 from app.models.session import create_engine, ensure_schema  # noqa: E402
 
 
+def _safe(url: str) -> str:
+    """로그에 실릴 URL에서 **비밀번호를 가린다**(§2.9 — 비밀정보는 환경변수 전용).
+
+    이 한 줄은 배포 기동 로그로 나가고 Railway 로그에 그대로 남는다. 원문을 찍으면
+    프로젝트 접근 권한이 있는 사람 전원에게 DB 비밀번호가 평문으로 보인다.
+    """
+    from sqlalchemy.engine import make_url
+
+    return make_url(url).render_as_string(hide_password=True)
+
+
 async def main() -> None:
     settings = get_settings()
     url = settings.resolved_database_url
@@ -31,7 +42,7 @@ async def main() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await engine.dispose()
-    print(f"created {len(Base.metadata.tables)} tables — url={url} schema={settings.db_schema}")
+    print(f"created {len(Base.metadata.tables)} tables — url={_safe(url)} schema={settings.db_schema}")
 
 
 if __name__ == "__main__":
