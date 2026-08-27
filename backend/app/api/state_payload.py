@@ -289,17 +289,9 @@ async def _screen_data(
         effective = dossier_loader.build_effective(dossier.ai_visible, edits)
         return _checkpoint_edit_view(effective, edits)
     if screen == "P3":
-        # §4.3 [파일럿 확정] 30초 비활성 · 60초 보조문. **DEV_MODE에서만** 대기를 0으로 둔다 —
-        # 시연·QA에서 화면을 넘길 때마다 30초를 기다리면 워크스루가 성립하지 않는다.
-        # 임계값을 서버가 내려주는 구조라 클라이언트에는 "지금이 개발이다" 플래그가 없다
-        # (DevBar·DevNote와 같은 규율). 참가자 구성(DEV_MODE=false)은 30/60 그대로다.
-        waived = get_settings().dev_mode
-        return {
-            "notice": screen_copy.REENTRY_NOTICE,
-            "ready_notice": screen_copy.REENTRY_READY_NOTICE,
-            "min_seconds": 0 if waived else screen_copy.REENTRY_MIN_SECONDS,
-            "hint_seconds": 0 if waived else screen_copy.REENTRY_HINT_SECONDS,
-        }
+        # §4.3 · D-46 — **타이머 없음**. 진행 버튼은 처음부터 활성이다. 대기 임계값을 서버가
+        # 내려주던 구조(DEV_MODE 면제 포함)가 통째로 사라졌으므로 payload는 문안 하나다.
+        return {"notice": screen_copy.REENTRY_NOTICE}
 
     # --- SS04 focal (P4–P7) -------------------------------------------------
     if run is not None and screen in {"P4", "P5", "P6", "P7"}:

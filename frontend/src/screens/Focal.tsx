@@ -25,38 +25,27 @@ import { CheckpointCard } from './Intro'
 import { ScreenProps, ScreenTitle, useSubmit } from './common'
 
 // --------------------------------------------------------------------------- //
-// P3 — interactional re-entry 타이머 (§4.3)
+// P3 — interactional re-entry (§4.3)
 // --------------------------------------------------------------------------- //
 
 export function Reentry({ state, onState }: ScreenProps) {
   const { busy, error, run } = useSubmit(onState)
-  const minSeconds: number = state.data.min_seconds ?? 30
-  const hintSeconds: number = state.data.hint_seconds ?? 60
-  const [elapsed, setElapsed] = useState(0)
 
-  useEffect(() => {
-    // §4.3 [파일럿 확정] — 30초 동안 버튼 비활성, 60초에 보조문.
-    const timer = window.setInterval(() => setElapsed((value) => value + 1), 1000)
-    return () => window.clearInterval(timer)
-  }, [])
-
+  // D-46 — 타이머 없음. 진행 버튼은 처음부터 활성이고, 회상 시간은 동석한 연구자의
+  // 구두 안내가 정한다. 화면이 강제로 잡아 두던 30초/60초는 제거됐다.
   return (
     <div className="screen">
       <DevScreenNote
         screen="P3"
         term="Incident-Grounded Interactional Re-entry"
-        detail="§7.3 — verification 이후 30–60초 회상. DEV_MODE에서는 대기 없이 바로 진행된다(실세션은 30초 비활성·60초 보조문). 특정 감정·선호·전략은 묻지 않는다."
+        detail="§7.3 — verification 이후 회상. 대기 타이머는 없다(D-46) — 진행 속도는 연구자 구두 안내가 정한다. 특정 감정·선호·전략은 묻지 않는다."
       />
       <ScreenTitle>잠시 떠올려 주세요</ScreenTitle>
       {/* 감정·선호·correction 전략을 묻는 문구를 두지 않는다(§4.3 · 초안 §7.3). */}
       <p className="whitespace-pre-wrap">{state.data.notice}</p>
-      {elapsed >= hintSeconds && (
-        <p className="mt-4 text-sm text-gray-600">{state.data.ready_notice}</p>
-      )}
       <SubmitBar
         label={START}
         busy={busy}
-        disabled={elapsed < minSeconds}
         error={error}
         onClick={() => run(() => api.advance('P3'))}
       />

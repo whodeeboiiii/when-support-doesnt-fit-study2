@@ -158,31 +158,21 @@ def _p3_payload(dev_mode: bool, monkeypatch) -> dict:
     monkeypatch.setattr(
         state_payload, "get_settings", lambda: SimpleNamespace(dev_mode=dev_mode)
     )
-    return {
-        "notice": state_payload.screen_copy.REENTRY_NOTICE,
-        "ready_notice": state_payload.screen_copy.REENTRY_READY_NOTICE,
-        "min_seconds": 0 if dev_mode else state_payload.screen_copy.REENTRY_MIN_SECONDS,
-        "hint_seconds": 0 if dev_mode else state_payload.screen_copy.REENTRY_HINT_SECONDS,
-    }
+    return {"notice": state_payload.screen_copy.REENTRY_NOTICE}
 
 
-def test_reentry_timer_is_waived_only_in_dev_mode(monkeypatch) -> None:
-    """실세션은 §0.5 [파일럿 확정] 30/60을 그대로 쓴다 — 면제는 DEV_MODE 전용이다.
+def test_reentry_has_no_timer_in_either_configuration(monkeypatch) -> None:
+    """D-46 — P3에 대기 타이머가 없다. 진행 버튼은 처음부터 활성이다.
 
-    시연 편의로 뺀 대기가 참가자 구성까지 따라가면 초안 §7.3의 interactional re-entry
-    절차(30–60초 회상)가 사라진다. 그래서 두 방향을 같이 못박는다.
+    이전에는 실세션 30초 비활성·60초 보조문에 DEV_MODE 면제가 붙어 있었다. 그 구조가
+    통째로 사라졌으므로 **구성에 따라 달라지는 값이 남아 있으면 안 된다** — 남아 있으면
+    시연과 실세션의 P3가 다시 갈린다. 회상 속도는 화면이 아니라 연구자 구두 안내가 정한다.
     """
     from app.assets import screen_copy
 
-    assert screen_copy.REENTRY_MIN_SECONDS == 30
-    assert screen_copy.REENTRY_HINT_SECONDS == 60
+    for removed in ("REENTRY_MIN_SECONDS", "REENTRY_HINT_SECONDS", "REENTRY_READY_NOTICE"):
+        assert not hasattr(screen_copy, removed), f"{removed}가 남아 있다 (D-46)"
 
     production = _p3_payload(False, monkeypatch)
-    assert production["min_seconds"] == 30
-    assert production["hint_seconds"] == 60
-
     demo = _p3_payload(True, monkeypatch)
-    assert demo["min_seconds"] == 0
-    assert demo["hint_seconds"] == 0
-    # 문안은 구성과 무관하게 같다 — 면제는 대기 시간만 건드린다.
-    assert demo["notice"] == production["notice"]
+    assert production == demo == {"notice": screen_copy.REENTRY_NOTICE}

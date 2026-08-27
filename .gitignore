@@ -66,6 +66,11 @@ dossiers/P28.json
 dossiers/P29.json
 dossiers/P30.json
 
+# lock 대기 중인 dossier 실값 작업 디렉터리. `dossiers/`와 같은 취급이다 — 위 목록은
+# `dossiers/Pnn.json` 경로만 막으므로, 다른 디렉터리에 둔 실값은 그 목록이 잡지 못한다.
+dossiers_pending/
+dossier_prep/_pending_lock/
+
 # §5.2 배정표 실값 — 생성 후 금지(§1.4)이고 커밋 대상이 아니다.
 # `assignments/assignment_dummy.json`(+ .log)만 커밋한다.
 assignments/assignment_v*.json
