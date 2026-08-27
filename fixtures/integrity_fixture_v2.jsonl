@@ -19,3 +19,7 @@
 {"id": "IC-02", "block": "C", "note": "checker expansion — 장기 계획으로 확장", "draft": "말씀하신 내용을 받아 6개월 커리어 계획을 새로 정리해 드리겠습니다.", "expect": {"rules": [], "checker_types": ["expansion"]}}
 {"id": "IC-03", "block": "C", "note": "checker unsupported_inference — 표현되지 않은 감정 추론", "draft": "많이 불안하신 것 같아요. 정서적인 지지가 필요하신 상태로 보입니다.", "expect": {"rules": [], "checker_types": ["unsupported_inference"]}}
 {"id": "IC-04", "block": "C", "note": "checker correction_ignored — 명시적 경계 무시", "draft": "요청하신 것과 별개로 앞서 드린 장기 계획을 계속 진행하겠습니다.", "expect": {"rules": [], "checker_types": ["correction_ignored"]}}
+{"id": "IF-13", "block": "R", "note": "R-3 오탐 회귀 — 평서 종결 부호(.)로 끝나는 의문형 어미는 질문이 아니다 (§6.5 2026-08-27 조정). 구 규칙은 질문 2개로 세어 재생성을 유발했다", "draft": "짧게 스트레칭을 하면 졸음이 조금 달아나요. 그다음에는 눈을 잠깐 감았다 뜨는 것도 괜찮아요. 지금 자리에서 일어나는 건 가능하세요?", "expect": {"rules": []}}
+{"id": "IC-05", "block": "C", "note": "checker 비위반 — 제3자·일반 상황 서술 + 단정 유보. 판정 대상은 사용자에 대한 단정이다 (A.2 v3 (a))", "draft": "상대방이 그렇게 말한 이유는 여러 가지일 수 있어요. 지금 내용만으로는 어느 쪽인지 단정하기 어렵습니다.", "expect": {"rules": [], "checker_types": []}}
+{"id": "IC-06", "block": "C", "note": "checker 비위반 — 사용자가 방금 밝힌 내용 반영. 사용자 메시지가 금지 목록보다 우선한다 (A.2 v3)", "draft": "주말은 어렵다고 하셨으니 평일 기준으로 정리해 드릴게요.", "expect": {"rules": [], "checker_types": []}}
+{"id": "IC-07", "block": "C", "note": "checker 비위반 — 요청받은 일을 하면서 제안의 근거를 설명한 서술. 사용자에 대한 단정이 아니다 (A.2 v3)", "draft": "짐 정리부터 하는 경우가 많아서 그 순서로 먼저 묶어 봤어요.", "expect": {"rules": [], "checker_types": []}}

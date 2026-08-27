@@ -64,7 +64,11 @@ export function AltExposure({ state, onState }: ScreenProps) {
       <div className="chat mt-4">
         {/* 대안 AI1 — focal AI1(P4)·AI2(P6)와 **완전히 같은** `isNew`다(D-39).
             하이라이트가 조건마다 다르면 그 자체가 조작이 된다. */}
-        {shown ? <Bubble role="ai" text={state.data.ai1} isNew /> : <TypingIndicator />}
+        {shown ? (
+          <Bubble role="ai" text={state.data.ai1} note={state.data.ai1_note} isNew />
+        ) : (
+          <TypingIndicator />
+        )}
       </div>
 
       {/* 입력창 없음 — 답장을 작성하지 않는다(§4.9). */}
@@ -138,7 +142,7 @@ export function Pairwise({ state, onState }: ScreenProps) {
               {side.label}
             </h2>
             <div className="chat">
-              <Bubble role="ai" text={side.ai1} wide />
+              <Bubble role="ai" text={side.ai1} note={state.data.ai1_note} wide />
             </div>
           </section>
         ))}

@@ -18,6 +18,7 @@ import pytest
 
 from app.core import assignment
 from app.core.assignment import (
+    CANONICAL_PAIR_ORDER,
     CONTRAST_PAIR,
     CONTRASTS,
     EXPECTED_N,
@@ -83,16 +84,26 @@ def test_alt_order_excludes_focal_and_covers_six_permutations(
         assert len(orders) == len(set(orders)), f"focal {condition}: alt_order 중복"
 
 
-def test_pair_order_six_permutations_four_times_each(
+def test_pair_order_is_the_canonical_order_for_every_row(
     table: assignment.AssignmentTable,
 ) -> None:
-    """§5.2 ③ — pair_order 6순열이 focal group마다 1:1 → 전체 각 4회."""
-    counts: dict[tuple[str, ...], int] = {}
+    """§5.2 ③ [D-41] — pair 순서는 전 참가자 고정이다: sequence → scope → stopping.
+
+    구판(6순열 각 4회)의 counterbalance는 폐기됐다. 세 대비의 난이도가 같지 않아서
+    stopping을 먼저 만난 참가자가 무엇을 묻는지 세우지 못한다는 것이 파일럿의 관찰이다.
+    """
+    assert CANONICAL_PAIR_ORDER == ("sequence", "scope", "stopping")
     for row in _rows(table):
-        assert sorted(row.pair_order) == sorted(CONTRASTS)
-        counts[row.pair_order] = counts.get(row.pair_order, 0) + 1
-    assert len(counts) == 6
-    assert set(counts.values()) == {EXPECTED_N // 6}
+        assert row.pair_order == CANONICAL_PAIR_ORDER, row.participant_no
+
+
+def test_rejects_a_shuffled_pair_order() -> None:
+    """D-41 — 순열이기만 하면 통과하던 자리를 **정본 순서**로 좁혔다."""
+    document = json.loads(DUMMY_PATH.read_text(encoding="utf-8"))
+    document["rows"][0]["pair_order"] = ["stopping", "scope", "sequence"]
+    rows = [assignment._parse_row(raw, index, []) for index, raw in enumerate(document["rows"])]
+    problems = check_constraints([row for row in rows if row is not None])
+    assert any("pair_order" in problem for problem in problems)
 
 
 def test_side_balance_twelve_twelve(table: assignment.AssignmentTable) -> None:
@@ -132,7 +143,7 @@ def test_strata_spread_is_reported(table: assignment.AssignmentTable) -> None:
 def test_constraints_checked_flags_are_true(table: assignment.AssignmentTable) -> None:
     """§5.2 스키마 — 생성기가 남긴 자기 보고. 로더의 검증과 별개로 파일에 남아 있어야 한다."""
     checked = dict(table.constraints_checked)
-    for key in ("focal_balance", "alt_order_latin", "pair_order_4x", "side_balance"):
+    for key in ("focal_balance", "alt_order_latin", "pair_order_canonical", "side_balance"):
         assert checked.get(key) is True, f"{key}가 참이 아니다"
 
 

@@ -11,6 +11,8 @@
                    원문 그대로가 아니다. overlay는 `EffectiveAiVisible`이 만든다.
 - `stimulus`     : R/U/Q segment + 조립 계량 + neutral_fallback + QC. 참가자에게는 **조립된
                    AI1 문자열만** 나가고 segment 구분·조건 라벨은 나가지 않는다(§1.2).
+                   조립에는 둘이 있다 — `assemble()`은 자산 그대로(hash·계량·계약의 기준),
+                   `presented()`는 거기에 무대지시를 얹은 표시·전달본이다(D-40).
 - `evidence_code`: 연구자 코딩 층. 콘솔·export·배정표 생성에만 쓰이고, `llm/`에는
                    `prohibited_inference` 하나만 전달된다(§5.3 layer 접근 규율).
 - `researcher_only` : 이 모듈의 관할이 아니다.
@@ -51,6 +53,23 @@ SEGMENT_KEYS: tuple[str, ...] = ("r", "u", "q")
 QUESTION_COUNT_BY_CONDITION: Mapping[str, int] = MappingProxyType(
     {"C1": 0, "C2": 1, "C3": 0, "C4": 1}
 )
+
+#: §4.4 [PI 확정 2026-08-26 · §10.3 파일럿 조정 · D-40] — u(uptake) 뒤에 붙는 **무대지시**.
+#:
+#: u는 "그 단정을 접고 …해 보겠습니다"처럼 **하겠다는 선언**으로 끝난다. 그대로 두면 참가자가
+#: "왜 해준다고만 하고 실제로는 안 하지?"라고 읽는다(P08 세션에서 실제로 나온 반응). 실제
+#: 지원이 이어졌다고 **가정한다**는 것을 알리는 한 줄이 그 자리에 있어야 한다.
+#:
+#: 자극 본문이 아니라 무대지시이므로 화면에서는 **회색**으로 표시하지만(§4.4), 문자열 자체는
+#: 참가자가 본 AI1의 일부다 — 그래서 `presented()`가 만드는 표시·전달본에 들어가고 AI2
+#: payload의 focal AI1에도 그대로 실린다(D-40). `assemble()`(locked 자산의 결정론 조립)은
+#: 손대지 않는다: hash·`stimuli_meta`·자산 계약이 그 문자열을 기준으로 걸려 있다.
+UPTAKE_NOTE = "(그 후 적절한 추천 제공)"
+
+#: 무대지시가 붙는 자리 — u **바로 뒤**다. C3(r u)는 문말, C4(r u q)는 q 앞이 된다.
+#: q 뒤가 아닌 이유: q는 "다음 응답을 위해 남은 질문"이라 마지막에 있어야 하고(STO1 문항이
+#: "마지막에 한 질문"을 지칭한다), 무대지시가 가리키는 것은 u가 약속한 지원이기 때문이다.
+UPTAKE_NOTE_AFTER = "u"
 
 #: §5.3 — evidence-bounded actionability. **incident descriptor다**(§1.5-4).
 #: 조건·분기·검증의 입력으로 쓰면 결함이다. 배정표 제약과 export 열에만 쓴다.
@@ -344,16 +363,45 @@ class Dossier:
         """§5.3 lock 절차 완료 여부. locked_at·hash가 있고 현재 내용과 일치해야 한다."""
         return bool(self.locked_at) and self.locked_hash == self.content_hash
 
+    def _parts(self, condition: str, *, with_note: bool) -> tuple[str, ...]:
+        """§5.4 조립 레시피를 한 번만 걷는다 — `assemble()`·`presented()`의 공통 몸통."""
+        recipe = STIMULUS_RECIPE.get(condition)
+        if recipe is None:
+            raise KeyError(f"알 수 없는 조건: {condition!r}")
+        parts: list[str] = []
+        for key in recipe:
+            parts.append(self.stimulus.segment(key))
+            if with_note and key == UPTAKE_NOTE_AFTER:
+                parts.append(UPTAKE_NOTE)
+        return tuple(parts)
+
     def assemble(self, condition: str) -> str:
         """§5.4 AI1 자극 = R/U/Q segment의 **결정론 조립** (D-35).
 
         AI1은 checkpoint 수정과 무관하게 locked 그대로다(§3.4) — 이 함수에 수정본이 들어올
         자리가 없다는 것이 그 불변식의 구현이다.
+
+        ⚠ 이것은 **자산의 조립 결과**다 — hash(`stimulus_hash`)·`stimuli_meta`·자산 계약
+        테스트가 이 문자열을 본다. 참가자에게 보이고 AI2에 실리는 것은 `presented()`이고,
+        둘은 C3·C4에서 무대지시 한 줄만큼 다르다(D-40).
         """
-        recipe = STIMULUS_RECIPE.get(condition)
-        if recipe is None:
-            raise KeyError(f"알 수 없는 조건: {condition!r}")
-        return " ".join(self.stimulus.segment(key) for key in recipe)
+        return " ".join(self._parts(condition, with_note=False))
+
+    def presented(self, condition: str) -> str:
+        """§4.4 · D-40 — **참가자가 본 AI1**. 조립 자극 + (u가 있으면) 무대지시.
+
+        화면(P4·P6·P7·P8 카드·P9·P10·P11) · AI2 payload의 focal AI1 · `turns.ai1` 기록이
+        전부 이 함수를 쓴다. 한 함수인 것이 요점이다 — 화면에는 무대지시가 있고 AI2에는
+        없으면, 참가자는 "이미 추천을 받은 대화"를 이어가는데 AI2는 그 사실을 모른 채
+        추천을 처음부터 다시 하게 된다(P6에서 AI1과 AI2가 나란히 보이므로 바로 어긋나 보인다).
+
+        C1·C2에는 u가 없으므로 `assemble()`과 같은 문자열이다.
+        """
+        return " ".join(self._parts(condition, with_note=True))
+
+    def has_uptake_note(self, condition: str) -> bool:
+        """이 조건의 AI1에 무대지시가 붙는가 (C3·C4)."""
+        return UPTAKE_NOTE_AFTER in STIMULUS_RECIPE.get(condition, ())
 
     def stimulus_hash(self, condition: str) -> str:
         """§8.1 `focal_runs.stimulus_hash`·`alt_exposures.stimulus_hash` — 조립 결과의 sha256."""

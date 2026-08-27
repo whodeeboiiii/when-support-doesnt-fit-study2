@@ -21,5 +21,10 @@ n: 24
 - interpretation: 5명
 - trajectory_timing: 4명
 
+## D-41 적용 (2026-08-26, §10.3 파일럿 조정)
+- pair_order를 전 행 정본 순서(sequence → scope → stopping)로 고침. 다른 열은 그대로다.
+- 재생성이 아니라 **한 열 수정**이다: `--dummy` 재생성은 실값 dossier(P08·P10·P23)가
+  착지한 뒤로 strata가 달라져 이 표를 더 이상 재현하지 않는다(생성 당시 표를 보존한다).
+
 ## 제약 재검증 (NT-32)
 - ✅ 전 제약 통과

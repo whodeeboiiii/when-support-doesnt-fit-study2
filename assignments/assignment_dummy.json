@@ -6,7 +6,7 @@
   "constraints_checked": {
     "focal_balance": true,
     "alt_order_latin": true,
-    "pair_order_4x": true,
+    "pair_order_canonical": true,
     "side_balance": true,
     "strata_spread": "max_diff<=0"
   },
@@ -22,9 +22,9 @@
         "C2"
       ],
       "pair_order": [
-        "stopping",
         "sequence",
-        "scope"
+        "scope",
+        "stopping"
       ],
       "pair_sides": {
         "sequence": [
@@ -52,9 +52,9 @@
         "C1"
       ],
       "pair_order": [
+        "sequence",
         "scope",
-        "stopping",
-        "sequence"
+        "stopping"
       ],
       "pair_sides": {
         "sequence": [
@@ -82,8 +82,8 @@
         "C3"
       ],
       "pair_order": [
-        "scope",
         "sequence",
+        "scope",
         "stopping"
       ],
       "pair_sides": {
@@ -112,9 +112,9 @@
         "C3"
       ],
       "pair_order": [
-        "stopping",
+        "sequence",
         "scope",
-        "sequence"
+        "stopping"
       ],
       "pair_sides": {
         "sequence": [
@@ -143,8 +143,8 @@
       ],
       "pair_order": [
         "sequence",
-        "stopping",
-        "scope"
+        "scope",
+        "stopping"
       ],
       "pair_sides": {
         "sequence": [
@@ -172,9 +172,9 @@
         "C4"
       ],
       "pair_order": [
-        "stopping",
         "sequence",
-        "scope"
+        "scope",
+        "stopping"
       ],
       "pair_sides": {
         "sequence": [
@@ -202,9 +202,9 @@
         "C1"
       ],
       "pair_order": [
+        "sequence",
         "scope",
-        "stopping",
-        "sequence"
+        "stopping"
       ],
       "pair_sides": {
         "sequence": [
@@ -232,9 +232,9 @@
         "C3"
       ],
       "pair_order": [
-        "stopping",
         "sequence",
-        "scope"
+        "scope",
+        "stopping"
       ],
       "pair_sides": {
         "sequence": [
@@ -262,9 +262,9 @@
         "C4"
       ],
       "pair_order": [
-        "stopping",
+        "sequence",
         "scope",
-        "sequence"
+        "stopping"
       ],
       "pair_sides": {
         "sequence": [
@@ -292,9 +292,9 @@
         "C2"
       ],
       "pair_order": [
+        "sequence",
         "scope",
-        "stopping",
-        "sequence"
+        "stopping"
       ],
       "pair_sides": {
         "sequence": [
@@ -322,9 +322,9 @@
         "C1"
       ],
       "pair_order": [
+        "sequence",
         "scope",
-        "stopping",
-        "sequence"
+        "stopping"
       ],
       "pair_sides": {
         "sequence": [
@@ -383,8 +383,8 @@
       ],
       "pair_order": [
         "sequence",
-        "stopping",
-        "scope"
+        "scope",
+        "stopping"
       ],
       "pair_sides": {
         "sequence": [
@@ -412,8 +412,8 @@
         "C3"
       ],
       "pair_order": [
-        "scope",
         "sequence",
+        "scope",
         "stopping"
       ],
       "pair_sides": {
@@ -442,9 +442,9 @@
         "C3"
       ],
       "pair_order": [
-        "stopping",
+        "sequence",
         "scope",
-        "sequence"
+        "stopping"
       ],
       "pair_sides": {
         "sequence": [
@@ -472,8 +472,8 @@
         "C2"
       ],
       "pair_order": [
-        "scope",
         "sequence",
+        "scope",
         "stopping"
       ],
       "pair_sides": {
@@ -532,9 +532,9 @@
         "C2"
       ],
       "pair_order": [
-        "stopping",
+        "sequence",
         "scope",
-        "sequence"
+        "stopping"
       ],
       "pair_sides": {
         "sequence": [
@@ -562,8 +562,8 @@
         "C4"
       ],
       "pair_order": [
-        "scope",
         "sequence",
+        "scope",
         "stopping"
       ],
       "pair_sides": {
@@ -623,8 +623,8 @@
       ],
       "pair_order": [
         "sequence",
-        "stopping",
-        "scope"
+        "scope",
+        "stopping"
       ],
       "pair_sides": {
         "sequence": [
@@ -682,9 +682,9 @@
         "C4"
       ],
       "pair_order": [
-        "stopping",
         "sequence",
-        "scope"
+        "scope",
+        "stopping"
       ],
       "pair_sides": {
         "sequence": [
@@ -713,8 +713,8 @@
       ],
       "pair_order": [
         "sequence",
-        "stopping",
-        "scope"
+        "scope",
+        "stopping"
       ],
       "pair_sides": {
         "sequence": [

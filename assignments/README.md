@@ -22,7 +22,7 @@
   "mismatch_locus": "content_depth",
   "focal_condition": "C3",
   "alt_order": ["C1", "C4", "C2"],
-  "pair_order": ["scope", "sequence", "stopping"],
+  "pair_order": ["sequence", "scope", "stopping"],
   "pair_sides": { "sequence": ["C4", "C2"], "scope": ["C1", "C3"], "stopping": ["C3", "C4"] }
 }
 ```
@@ -30,7 +30,9 @@
 - `focal_condition` — 이 참가자가 **완전한 상호작용으로 경험하는 1조건**(§0.4).
 - `alt_order` — focal 측정(SS05) 완료 후 P9에서 순차 노출할 나머지 세 조건의 순서.
   **focal을 포함하면 기동이 실패한다**(§3.3 · NT-32).
-- `pair_order` — P10에서 제시할 세 contrast의 순서.
+- `pair_order` — P10에서 제시할 세 contrast의 순서. **전 행 정본 순서 고정**이다
+  (sequence → scope → stopping — D-41, 2026-08-26 파일럿 조정). 열이 남아 있는 이유는
+  런타임이 순서를 계산하지 않는다는 규율(§0.3) 때문이다 — 값의 출처는 여전히 이 표다.
 - `pair_sides[contrast] = [left, right]` — 「응답 A」(좌)·「응답 B」(우)에 놓일 조건.
 
 세 값 모두 **최초 진입 시 DB에 복사·고정**되고 이후 불변이다(NT-07·33). 표를 나중에 고쳐도
@@ -57,7 +59,7 @@ python scripts/make_assignment.py --self-test
 1. 24행, 참가자 번호 중복 없음
 2. focal 6명/조건
 3. focal group(6명) 내 `alt_order` 6순열 각 1회
-4. `pair_order` 6순열이 focal group마다 1:1 → 전체 각 4회
+4. `pair_order`가 전 행 정본 순서(`["sequence", "scope", "stopping"]` — D-41)
 5. 좌우: contrast별 전체 12/12, focal group 내 3/3
 6. `alt_order`에 focal 미포함
 7. strata 편중: A-level별 조건 간 max−min ≤ 1 — **가능한 범위**
@@ -65,6 +67,19 @@ python scripts/make_assignment.py --self-test
 7번만 성격이 다르다. A0가 1–2건이면 네 조건 분산이 산술적으로 불가능하므로, 생성기는 이를
 **오류가 아니라 로그의 경고**로 남기고 로더도 기동을 끊지 않는다(§5.2). 표본이 그렇게 생긴
 것을 시스템이 판정할 일이 아니다.
+
+## D-41 (2026-08-26) — 한 열 수정
+
+파일럿 조정(§10.3)으로 `pair_order`를 정본 순서로 고정했다. **전원 재배정이 아니다**:
+같은 seed(20260826)·같은 strata로 다시 생성했고 `pair_order`를 뺀 전 열이 이전 표와 동일하다
+— 생성기가 pair 순서 draw를 소비만 하고 버려서 rng 스트림이 보존된다(`make_assignment.py` ③).
+표 버전만 `assignment_v1` → `assignment_v1.1`로 올렸고, 이미 진행한 세션(P08·P23)은
+`participants.assignment_version`으로 구분된다. **P08은 stopping 먼저로 진행했고**, 그 세션의
+정본은 DB(`participants.pair_order`·`pairwise_views`)다.
+
+⚠ `--dummy` 재생성은 이제 이 리포의 커밋된 더미 표를 재현하지 않는다 — `_dummy_strata()`가
+`dossier_loader.load()`로 strata를 읽는데 실값 dossier(P08·P10·P23)가 착지한 뒤로 그 세 행의
+a_level·locus가 schema_dummy와 달라졌기 때문이다. 커밋된 표는 생성 당시 값을 보존한다.
 
 ## 재생성
 

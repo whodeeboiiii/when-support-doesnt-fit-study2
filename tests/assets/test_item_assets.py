@@ -196,12 +196,50 @@ def test_rendered_text_never_leaks_condition_labels(
                 assert label not in text
 
 
-def test_presentation_order_is_stable_within_contrast() -> None:
-    """§4.10 · §0.5 — contrast 내 무작위, 같은 시드에 같은 순서(NT-08)."""
-    first = pairwise_items.presentation_order("scope", "C1", "C3", "session-a")
-    second = pairwise_items.presentation_order("scope", "C1", "C3", "session-a")
-    assert [entry.item.item_id for entry in first] == [entry.item.item_id for entry in second]
-    assert [entry.position for entry in first] == list(range(1, len(first) + 1))
+def test_presentation_order_is_the_asset_order(pairwise: pairwise_items.PairwiseAsset) -> None:
+    """§4.10 · §0.5 [D-42] — contrast 내 **무작위 없음**. 자산 파일 순서가 곧 제시 순서다.
+
+    세 세트의 문면이 논증 순서로 쓰여 있다(정당성·필요성 → 과잉·부족 → 남은 비용·종합).
+    특히 종합 선호 문항(SEQ3)이 먼저 나오면 나머지 두 문항이 그 판단에 anchoring된다.
+    """
+    for contrast in CONTRASTS:
+        left, right = sorted(CONTRAST_PAIR[contrast])
+        presented = pairwise_items.presentation_order(contrast, left, right)
+        assert [entry.item.item_id for entry in presented] == [
+            item.item_id for item in pairwise.items_for(contrast)
+        ], f"{contrast}: 자산 순서와 제시 순서가 다르다"
+        assert [entry.position for entry in presented] == list(range(1, len(presented) + 1))
+
+
+def test_presentation_order_does_not_depend_on_the_session(
+    pairwise: pairwise_items.PairwiseAsset,
+) -> None:
+    """D-42 — 참가자·세션이 달라도 같은 순서다. 시드를 받는 자리 자체가 없다(시그니처 계약)."""
+    import inspect
+
+    signature = inspect.signature(pairwise_items.presentation_order)
+    assert list(signature.parameters) == ["contrast", "left_condition", "right_condition"]
+
+    first = pairwise_items.presentation_order("scope", "C1", "C3")
+    second = pairwise_items.presentation_order("scope", "C3", "C1")
+    assert [entry.item.item_id for entry in first] == [entry.item.item_id for entry in second], (
+        "좌우 배정이 문항 순서를 바꿨다 — 좌우는 치환에만 영향을 준다"
+    )
+
+
+def test_comparative_preference_item_is_last(pairwise: pairwise_items.PairwiseAsset) -> None:
+    """D-42 — 양쪽을 함께 지칭하는 종합 문항(`{other}`)은 그 세트의 **마지막**이어야 한다.
+
+    고정 순서의 값어치가 여기 있다: 구체 판단을 마친 뒤에 종합 선호를 묻는다. 자산 문면을
+    고치다 이 문항이 앞으로 오면 이 테스트가 잡는다.
+    """
+    for contrast in CONTRASTS:
+        items = pairwise.items_for(contrast)
+        comparative = [
+            index for index, item in enumerate(items) if pairwise_items.OTHER_PLACEHOLDER in item.text
+        ]
+        for index in comparative:
+            assert index == len(items) - 1, f"{contrast}: 비교 문항이 마지막이 아니다"
 
 
 def test_no_overall_index_in_asset() -> None:

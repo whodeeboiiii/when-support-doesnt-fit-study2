@@ -223,6 +223,33 @@ async def test_ai2_payload_contains_the_three_allowed_inputs(
         assert dossier.ai_visible.original_request in payload
 
 
+async def test_ai2_payload_carries_the_uptake_note_for_a_c3_focal(
+    client: AsyncClient, llm
+) -> None:
+    """D-40 — focal AI1은 **참가자가 본 그대로** 간다: C3·C4는 무대지시까지 함께다.
+
+    화면에만 무대지시가 있고 AI2에는 없으면, 참가자는 "추천을 이미 받은 대화"를 이어가는데
+    AI2는 그 사실을 모른 채 그 추천을 처음부터 다시 한다 — P6에서 AI1과 AI2가 나란히 보이므로
+    참가자 눈에 바로 어긋나 보인다. [PI 결정 2026-08-26]
+    """
+    dossier = dossier_loader.load("P05")  # dummy 배정표에서 focal C3
+
+    await helpers.reach_focal(client, "P05")
+    await client.post("/api/focal/user1", json={"text": "그 판단은 좀 아닌 것 같아"})
+    await client.post("/api/focal/sidecar", json={"has_more": False})
+    await client.post("/api/focal/ai2")
+
+    payloads = llm.sent_texts(prompts.AI2_PROMPT_KEY)
+    assert payloads
+    for payload in payloads:
+        assert dossier.presented("C3") in payload
+        assert dossier_loader.UPTAKE_NOTE in payload
+    # 그래도 **대안**은 들어가지 않는다 — 경계가 옮겨간 것이 아니라 focal 한 줄이 늘었을 뿐이다.
+    for payload in payloads:
+        assert dossier.presented("C4") not in payload
+        assert dossier.stimulus.q not in payload
+
+
 async def test_checker_payload_carries_only_the_allowed_five(
     client: AsyncClient, llm
 ) -> None:

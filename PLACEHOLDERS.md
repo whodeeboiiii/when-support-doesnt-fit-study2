@@ -72,6 +72,7 @@ DEV_MODE=true ./backend/.venv/bin/python scripts/freeze_study_version.py --check
 | PH-12 | 승인 | ~~AI2·checker 프롬프트 v2 PI 승인·lock~~ → **2026-08-26 승인·lock. 문안 변경 0건** — A.1은 ai_visible만 본다는 설계, A.2 문안 전건 확인. `prompt_hash` 재계산 완료 | `prompts/prompt_config_v2.json` · `backend/app/llm/context.py` | **개조** (원칙 5항 승계, 입력 블록 추가) | PI | ✅ |
 | PH-13 | 승인 | ~~checkpoint 직접 수정 UI 문안 + trouble_cue 대응 규칙~~ → **현행 UI·문안 확정**(segment 단위 수정 유지 — 범위 축소안 미채택) | `screen_copy.CHECKPOINT_EDIT_*` — `<TODO>` 제거 | **사용 금지** (v1 D-08 표시 전용 폐기) | PI | ✅ |
 | PH-14 | 결정 | ~~sidecar 1단 「건너뛰기」 유지 여부~~ → **두지 않는다.** 「있어요」/「없어요」 2종 | `screen_copy.SIDECAR_HAS_MORE_CHOICES` — `<TODO>` 제거. `tables.SidecarEntry.has_more`는 `nullable=False` 유지(무응답 상태 없음) | **개조** (v1은 없음/있음/건너뛰기) | PI | ✅ |
+| PH-15 | 문안 | `ai_visible` 문체 규칙 — 주어 없는 서술, **연구 어휘(참가자·피험자·조건·자극) 금지**. 이 층은 참가자 화면(checkpoint 카드)과 AI2 payload [대화 맥락]에 동시에 나간다. P08 `prior_evidence`의 "참가자"가 AI2 초안에 그대로 새어 나왔다(3회 중 2회, 제거본 0회) | `dossiers/Pnn.json` `ai_visible` · 명세 §5.3 · 미작성 21건 작성 지침 | 선례 없음 | PI | ☐ |
 | PH-IRB-1 | 문안 | 동의서 정본 — **항목 ⑥ 대안 노출 신설**, 국외 이전 전송 항목을 "재구성 대화(수정 반영)·첫 AI 응답·답장"으로 갱신 (§4.1·§9.3) | **초안 착지**: `screen_copy.CONSENT_NOTICE`·`CONSENT_ITEMS`(6키)·`CONSENT_PII_NOTICE`·`CONSENT_VERSION` / 게이트 표식 `CONSENT_TODO` 존치 · `core/freeze.py` | 승계(국외 이전 6항목·30일 상한) + 개조 | IRB | ◐ |
 | PH-IRB-2 | 문안 | 디브리핑 정본 — 공개 7항목(§4.12: 대안 응답·"정답 없음"·checkpoint 수정 이용 범위 추가) | **초안 착지**: `screen_copy.DEBRIEF_BODY` / 게이트 표식 `DEBRIEF_TODO` 존치 | 승계(구조) + 개조(내용) | IRB | ◐ |
 | PH-IRB-3 | 문안 | 연구자 안전 대응 프로토콜 (§9.2) | (코드 없음) | 승계 | IRB | ◐ |
@@ -155,9 +156,9 @@ v1.0.1의 5종을 초판으로 유지한다. 초안 신 §7.2는 "broad mismatch
 ### PH-07 — pairwise 3 contrast ✅
 
 **착지 내용** (`fixtures/pairwise_items_v1.json`, contrast당 3문항 — 2026-08-26 PI 문면 개정):
-- **Sequence**(C2–C4): `SEQ1_Q_CONSEQUENTIALITY`(양측 공통 Q의 결과성 — target 없음) · `SEQ2_PRIOR_SYSTEM_WORK`(without_u — 질문 전 처리 가능했던 몫) · `SEQ3_ORDER_PREFERENCE`(순서 직접 비교 — `{side}`=C4 / `{other}`=C2).
+- **Sequence**(C2–C4): `SEQ1_Q_CONSEQUENTIALITY`(양측 공통 Q의 결과성 — target 없음) · `SEQ2_PRIOR_SYSTEM_WORK`(without_u — 먼저 바꿀 수 있었던 것을 두고 질문부터 했다 · 2026-08-27 문면 개정) · `SEQ3_ORDER_PREFERENCE`(순서 직접 비교 — `{side}`=C4 / `{other}`=C2).
 - **Scope**(C1–C3): `SCO1_WARRANTED_UPTAKE`(with_u) · `SCO2_INFERENCE_OVERREACH`(with_u) · `SCO3_UNPERFORMED_SYSTEM_WORK`(without_u — 알아차리고도 수정 미수행).
-- **Stopping**(C3–C4): `STO1_Q_NEED_AFTER_UPTAKE`(with_q) · `STO2_PREMATURE_STOPPING`(without_q) · `STO3_ADDITIONAL_EXPLANATION_BURDEN`(with_q).
+- **Stopping**(C3–C4): `STO1_Q_NEED_AFTER_UPTAKE`(with_q) · `STO2_PREMATURE_STOPPING`(without_q) · `STO3_ADDITIONAL_EXPLANATION_BURDEN`(with_q — 이미 말한 것의 재설명 부담 · 2026-08-27 문면 개정).
 - **응답 형식 확정**: 7점 동의 척도(focal과 동일) + 이유 구술만(F4-ⓒ — PH-11 확정 정합). 한쪽 지칭은 전부 `target`/`{side}` 치환, 양쪽을 함께 지칭하는 SEQ3만 `{other}`를 함께 쓴다 — 서술형 지칭 폐기(PROGRESS 확인 ⑦ 해소).
 
 **계약**: contrast당 2–3문항·target 유효·A/B 치환 정합·금지 표현 0건 — `test_item_assets.py`.

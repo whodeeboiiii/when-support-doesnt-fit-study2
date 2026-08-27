@@ -367,6 +367,9 @@ def _asset_texts() -> list[str]:
         *dossier.all_stimuli().values(),
         *(dossier.stimulus.segment(key) for key in dossier_loader.SEGMENT_KEYS),
         dossier.stimulus.neutral_fallback,
+        # 무대지시도 서버가 `ai1_note`로 내려주는 자산 문면이다 — 번들에 박으면 클라이언트가
+        # 조건별 표시를 스스로 정하게 된다(D-40).
+        dossier_loader.UPTAKE_NOTE,
         *(item.text for item in rating_items.load().items),
         *(
             item.text
@@ -387,6 +390,32 @@ def test_nt13_no_stimulus_or_item_text_in_frontend_sources() -> None:
         text = path.read_text(encoding="utf-8")
         for asset_text in _asset_texts():
             assert asset_text not in text, f"{path.name}: 자산 원문이 클라이언트에 있다"
+
+
+def test_uptake_note_is_rendered_from_one_place() -> None:
+    """D-40 — 무대지시의 회색 표시는 `StimulusText` 한 곳에서만 정의된다.
+
+    `.bubble-new`와 같은 규율이다(D-39): 자극의 표시가 호출부마다 갈리면 그 자체가 조작이
+    된다. 색은 `index.css`의 `.stim-note` 하나뿐이고, 화면은 서버가 준 문면을 넘기기만 한다.
+    """
+    chat = (FRONTEND_SRC / "components" / "Chat.tsx").read_text(encoding="utf-8")
+    assert "export function StimulusText" in chat
+    assert chat.count("stim-note") == 1, "무대지시 색이 두 곳에서 정의됐다"
+
+    css = (FRONTEND_SRC / "index.css").read_text(encoding="utf-8")
+    assert css.count(".stim-note") == 1
+
+    # 화면은 문면을 만들지 않는다 — 서버 필드를 그대로 넘긴다.
+    for name in ("screens/Focal.tsx", "screens/Exposure.tsx", "screens/Wrap.tsx"):
+        text = (FRONTEND_SRC / name).read_text(encoding="utf-8")
+        assert "ai1_note" in text, f"{name}: 무대지시 필드를 넘기지 않는다"
+
+
+def test_uptake_note_color_is_achromatic() -> None:
+    """무대지시도 자극 안이다 — 색조를 넣지 않는다(`stim` 토큰 규율 그대로)."""
+    config = (REPO_ROOT / "frontend" / "tailwind.config.js").read_text(encoding="utf-8")
+    block = re.search(r"stim:\s*\{(.*?)\}", config, flags=re.DOTALL)
+    assert block and "note:" in block.group(1), "무대지시 색이 stim 토큰 밖에 있다"
 
 
 def test_nt31_no_condition_label_in_frontend_sources() -> None:

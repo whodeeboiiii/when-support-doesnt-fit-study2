@@ -97,7 +97,7 @@ async def _ensure_participant(db: DbSession, participant_no: str) -> tables.Part
     elif participant_no == QA_PARTICIPANT_NO:
         focal = "C1"
         alt_order = ["C2", "C3", "C4"]
-        pair_order = list(assignment.CONTRASTS)
+        pair_order = list(assignment.CANONICAL_PAIR_ORDER)
         pair_sides = {
             contrast: sorted(assignment.CONTRAST_PAIR[contrast])
             for contrast in assignment.CONTRASTS

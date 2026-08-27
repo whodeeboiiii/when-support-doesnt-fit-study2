@@ -28,6 +28,10 @@ _INTERROGATIVE_ENDING = re.compile(
     r"(나요|가요|까요|은가요|는가요|습니까|ㅂ니까|입니까|을까|ㄹ까|는지요|나\?|냐|니)$"
 )
 
+#: §6.5 [파일럿 확정 2026-08-27 · 검출 규칙 1회 조정] — 평서 종결 부호. 이걸로 끝나면
+#: 의문형 어미 검사를 건너뛴다. 아래 `is_question` 주석 참조.
+_DECLARATIVE_END = (".", "!")
+
 #: 문장 말미에서 떼어내는 따옴표·괄호류.
 _TRAILING_WRAPPERS = "\"'”’)]》』」〉 \t"
 
@@ -60,11 +64,29 @@ def split_sentences(text: str) -> list[str]:
 
 
 def is_question(sentence: str) -> bool:
-    """문장 1개가 질문인지 — 의문부호 우선, 없으면 의문형 종결 어미(§6.5 휴리스틱)."""
+    """문장 1개가 질문인지 — 의문부호 우선, **부호가 없을 때만** 의문형 종결 어미.
+
+    §6.5 [파일럿 확정 2026-08-27 — "검출 규칙 1회 조정 가능" 창 안에서 1회 사용].
+
+    구판은 `.`·`!`를 떼어낸 뒤 어미를 봤다. 그래서 평서문이 질문으로 잡혔다 —
+    `냐|니` 어미가 **아무 단어 끝에나** 걸리기 때문이다("어머니.", "그러니.",
+    "도움이 될 거니."가 전부 질문이었다). P23 세션에서 R-3(질문 수 > 1)이 이 경로로
+    오탐했고, 그 결과는 재생성 1회 + neutral_fallback이다.
+
+    고친 규칙: **평서 종결 부호로 끝나면 질문이 아니다.** 글쓴이가 종결을 명시했는데
+    어미 모양으로 뒤집지 않는다. 부호가 없는 진짜 질문("…잠이 깨나요")은 그대로 잡힌다.
+
+    부작용 검증: 실값 3 + schema_dummy 21 + P00의 조립 결과·segment·neutral_fallback
+    **어디에서도 질문 수가 바뀌지 않는다**(NT-22·23 무영향 — `test_text_metrics`가 지킨다).
+    자산 준비 도구(`finalize_dossier.py`)가 `questions = text.count("?")`로 세고 있어
+    런타임 계량이 그쪽에 한 걸음 가까워지는 효과도 있다.
+    """
     stripped = sentence.strip().rstrip(_TRAILING_WRAPPERS)
     if stripped.endswith("?"):
         return True
-    body = stripped.rstrip(".!…" + _TRAILING_WRAPPERS)
+    if stripped.endswith(_DECLARATIVE_END):
+        return False
+    body = stripped.rstrip("…" + _TRAILING_WRAPPERS)
     return bool(_INTERROGATIVE_ENDING.search(body))
 
 

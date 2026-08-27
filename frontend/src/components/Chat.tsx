@@ -18,9 +18,34 @@
 
 import { ReactNode } from 'react'
 
+/**
+ * 자극 본문 + **무대지시**(D-40).
+ *
+ * 어떤 AI1은 "…해 보겠습니다"로 끝나는 문장 뒤에 괄호 한 줄이 붙는다. 그 줄은 AI 발화가
+ * 아니라 "실제 지원이 이어졌다고 가정한다"는 표시이므로 회색으로 구분해서 그린다.
+ *
+ * ⚠ 무대지시 문면을 **여기에 적지 않는다** — 서버가 `ai1_note`로 내려준다(NT-13: 자산 원문은
+ * 번들에 사전 로드하지 않는다). 그리고 그 필드는 조건과 무관하게 **항상** 내려온다: 조건에
+ * 따라 있고 없으면 필드의 유무 자체가 조건 단서가 된다(§1.2 · NT-31). 그래서 이 함수는
+ * "받은 문면이 본문 안에 있으면 그 자리를 회색으로"만 하고, 없으면 그냥 본문을 그린다.
+ */
+export function StimulusText({ text, note }: { text: string; note?: string | null }) {
+  const at = note ? text.indexOf(note) : -1
+  if (at < 0) return <>{text}</>
+  return (
+    <>
+      {text.slice(0, at)}
+      <span className="stim-note">{note}</span>
+      {text.slice(at + (note as string).length)}
+    </>
+  )
+}
+
 interface BubbleProps {
   role: 'ai' | 'user'
   text: string
+  /** 자극 안의 무대지시 문면(서버 `ai1_note`). 본문에 있으면 그 자리만 회색이 된다(D-40). */
+  note?: string | null
   /** 이 화면에서 **새로 도착한** 응답인가. 하이라이트 스타일·타이밍은 전 조건 동일하다. */
   isNew?: boolean
   /** 말풍선 위에 얹을 것(P2 수정 아이콘 등). 자극 화면에서는 쓰지 않는다. */
@@ -29,7 +54,7 @@ interface BubbleProps {
   wide?: boolean
 }
 
-export function Bubble({ role, text, isNew = false, overlay, wide = false }: BubbleProps) {
+export function Bubble({ role, text, note, isNew = false, overlay, wide = false }: BubbleProps) {
   const mine = role === 'user'
   return (
     <div className={`chat-row ${mine ? 'justify-end' : 'justify-start'}`}>
@@ -39,7 +64,7 @@ export function Bubble({ role, text, isNew = false, overlay, wide = false }: Bub
         <p
           className={`bubble ${mine ? 'bubble-user' : 'bubble-ai'} ${isNew ? 'bubble-new' : ''}`}
         >
-          {text}
+          <StimulusText text={text} note={note} />
         </p>
         {overlay}
       </div>

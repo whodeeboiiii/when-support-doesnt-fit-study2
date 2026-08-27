@@ -15,7 +15,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
-import { Bubble, ChatInput, TypingIndicator } from '../components/Chat'
+import { Bubble, ChatInput, StimulusText, TypingIndicator } from '../components/Chat'
 import { AutoTextArea, Cards, SubmitBar } from '../components/Inputs'
 import { LikertList } from '../components/Likert'
 import Loading from '../components/Loading'
@@ -105,7 +105,11 @@ export function Chat({ state, onState }: ScreenProps) {
       <CheckpointCard checkpoint={state.data.checkpoint} />
       <div className="chat mt-4">
         {/* focal AI1 — 이 화면의 새 응답. 대안 AI1·AI2와 **같은** `isNew`를 쓴다(D-39). */}
-        {shown ? <Bubble role="ai" text={state.data.ai1} isNew /> : <TypingIndicator />}
+        {shown ? (
+          <Bubble role="ai" text={state.data.ai1} note={state.data.ai1_note} isNew />
+        ) : (
+          <TypingIndicator />
+        )}
       </div>
       {shown && (
         <div className="mt-8 border-t border-hair pt-5">
@@ -248,7 +252,7 @@ function FocalTranscript({
     <>
       <CheckpointCard checkpoint={data.checkpoint} />
       <div className="chat mt-4">
-        {data.ai1 && <Bubble role="ai" text={data.ai1} />}
+        {data.ai1 && <Bubble role="ai" text={data.ai1} note={data.ai1_note} />}
         {data.user1 && <Bubble role="user" text={data.user1} />}
         {/* 이 화면의 **새 응답**은 AI2다. AI1은 이미 P4에서 본 것이라 표시하지 않는다 —
             화면마다 하이라이트는 지금 판단 대상인 AI 응답 하나뿐이다(D-39). */}
@@ -457,7 +461,9 @@ export function Ratings({ state, onState }: ScreenProps) {
             {/* §4.8 — MC 블록 상단에 focal AI1 원문을 카드로 재표시(앵커).
                 자극의 재표시이므로 채팅과 같은 무채색이다 — 색조를 넣지 않는다. */}
             {block.ai1_card && (
-              <div className="bubble bubble-ai mb-5 max-w-none">{block.ai1_card}</div>
+              <div className="bubble bubble-ai mb-5 max-w-none">
+                <StimulusText text={block.ai1_card} note={state.data.ai1_note} />
+              </div>
             )}
             <LikertList
               instruction={block.instruction}

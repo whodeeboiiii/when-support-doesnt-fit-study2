@@ -49,7 +49,12 @@ export function InterviewHold({ state, onState }: ScreenProps) {
           <h2 className="mb-3 text-sm font-semibold text-gray-600">{state.data.focal_title}</h2>
           <div className="chat">
             {focalTurns.map((turn, index) => (
-              <Bubble key={index} role={turn.role} text={turn.text} />
+              <Bubble
+                key={index}
+                role={turn.role}
+                text={turn.text}
+                note={turn.role === 'ai' ? state.data.ai1_note : null}
+              />
             ))}
           </div>
         </section>
@@ -66,7 +71,7 @@ export function InterviewHold({ state, onState }: ScreenProps) {
               <div key={alternative.label} className="sec">
                 <p className="mb-3 text-sm font-semibold text-gray-600">{alternative.label}</p>
                 <div className="chat">
-                  <Bubble role="ai" text={alternative.ai1} />
+                  <Bubble role="ai" text={alternative.ai1} note={state.data.ai1_note} />
                 </div>
               </div>
             ))}

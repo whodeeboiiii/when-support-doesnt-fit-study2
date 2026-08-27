@@ -12,6 +12,7 @@ v1.0.1에서 달라진 검사(부록 H.2):
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -193,6 +194,143 @@ def test_assembly_is_deterministic(participant_no: str, dossiers: dict[str, Doss
     # 네 조건의 hash가 서로 달라야 한다(자극이 실제로 다르다).
     hashes = {dossier.stimulus_hash(condition) for condition in CONDITIONS}
     assert len(hashes) == len(CONDITIONS)
+
+
+# --------------------------------------------------------------------------- #
+# NT-44 — prohibited_inference 작성 규칙 v2 (§5.3 · D-43)
+# --------------------------------------------------------------------------- #
+
+#: D-43 §2-1 — 주어는 반드시 사용자다. 제3자·일반 상황 서술은 항목이 아니다.
+_PI_SUBJECT_PREFIXES = ("사용자가 ", "사용자의 ")
+#: D-43 §2-1 — 단정형. 위반은 초안이 그 내용을 **사용자에 관한 사실로 전제**할 때만 성립한다.
+_PI_ASSERTION_ENDINGS = ("단정하는 것", "전제하는 것")
+_PI_MIN_ITEMS, _PI_MAX_ITEMS = 3, 5
+
+
+@pytest.mark.parametrize("participant_no", ALL)
+def test_prohibited_inference_follows_the_v2_authoring_rules(
+    participant_no: str, dossiers: dict[str, Dossier]
+) -> None:
+    """D-43 — 주어(사용자) · 단정형 · 3–5개.
+
+    구판은 주어가 없어서("표현되지 않은 감정 추론") checker가 제3자·일반 상식 서술까지
+    잡았고, 두 실참가자(P08·P23) 모두 그 경로로 `neutral_fallback`에 착지했다. 형식을
+    문자로 고정하는 것이 그 재발을 막는 유일한 장치다.
+
+    schema_dummy는 `<TODO: PH-03>` placeholder라 제외한다 — 실값이 들어올 때 이 테스트가
+    형식을 강제한다.
+    """
+    dossier = dossiers[participant_no]
+    if dossier.is_dummy:
+        pytest.skip("schema_dummy — 실값 미착지 (PH-03)")
+
+    items = dossier.evidence_code.prohibited_inference
+    assert _PI_MIN_ITEMS <= len(items) <= _PI_MAX_ITEMS, (
+        f"{participant_no}: {len(items)}개 — 사건에서 실제로 유혹이 큰 것만 "
+        f"{_PI_MIN_ITEMS}–{_PI_MAX_ITEMS}개 (D-43 §2-1)"
+    )
+    for item in items:
+        assert item.startswith(_PI_SUBJECT_PREFIXES), f"{participant_no}: 주어가 사용자가 아니다 — {item!r}"
+        assert item.endswith(_PI_ASSERTION_ENDINGS), (
+            f"{participant_no}: 단정형이 아니다 — {item!r}. AI 행위 제약(새 방향·새 방법 생성 "
+            f"금지)은 이 목록이 아니라 permitted_operation에 둔다 (D-43 §1-2)"
+        )
+        # 이 목록은 LLM payload로 나간다 — 연구 어휘가 섞이면 그것부터가 조작 노출이다(§1.2).
+        assert "참가자" not in item, f"{participant_no}: 연구 어휘 '참가자' — LLM에는 '사용자'다"
+
+
+@pytest.mark.parametrize("participant_no", ALL)
+def test_prohibited_inference_does_not_collide_with_the_evidence(
+    participant_no: str, dossiers: dict[str, Dossier]
+) -> None:
+    """D-43 ⑧ — **대화 맥락에 이미 있는 감정·사정은 항목에 넣지 않는다.**
+
+    금지 항목이 evidence와 겹치면 checker가 "대화에 있는 내용"을 위반으로 잡는다. 실모델
+    재검에서 P08이 그 경로로 두 번 fallback했다(목록에 "서운함", 맥락에 "속상하다") — 조건
+    (c)와 "이미 쓴 표현 되짚기" 비위반 사유가 목록에 눌렸다.
+
+    ⚠ 이 테스트가 잡는 것은 **글자 그대로 겹치는 항목**뿐이다("장소"를 금지하면서 맥락에
+    "파티 장소는 파티룸"이 있는 경우). 같은 감정군인지("서운함" ↔ "속상하다")는 코딩
+    판단이고, A.2 v3.1이 프롬프트 쪽에서 한 번 더 막는다.
+    """
+    dossier = dossiers[participant_no]
+    if dossier.is_dummy:
+        pytest.skip("schema_dummy — 실값 미착지 (PH-03)")
+
+    visible = dossier.ai_visible
+    evidence = " ".join(
+        [
+            visible.situation_summary,
+            *visible.prior_evidence,
+            visible.original_request,
+            visible.problematic_ai_response,
+            visible.trouble_cue,
+        ]
+    )
+    for item in dossier.evidence_code.prohibited_inference:
+        listed = re.search(r"([^,]+?) 등 대화에", item)
+        if not listed:
+            continue
+        for term in (part.strip() for part in listed.group(1).split("·")):
+            term = term.removeprefix("사용자가 ").removeprefix("사용자의 ").strip()
+            stem = term.rstrip("함감움") if len(term) > 2 else term
+            assert stem and stem not in evidence, (
+                f"{participant_no}: 금지 항목의 {term!r}가 대화 맥락에 이미 있다 — "
+                f"그 항목은 evidence와 충돌한다 (D-43 ⑧)"
+            )
+
+
+# --------------------------------------------------------------------------- #
+# NT-43 — 표시본(무대지시) 계약 (§4.4 · D-40)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("participant_no", ALL)
+def test_presented_adds_the_uptake_note_only_where_u_exists(
+    participant_no: str, dossiers: dict[str, Dossier]
+) -> None:
+    """D-40 — u가 있는 조건(C3·C4)에만 무대지시가 붙는다. C1·C2는 조립 결과 그대로다."""
+    dossier = dossiers[participant_no]
+    for condition in CONDITIONS:
+        presented = dossier.presented(condition)
+        if condition in {"C3", "C4"}:
+            assert dossier.has_uptake_note(condition)
+            assert presented.count(dossier_loader.UPTAKE_NOTE) == 1
+        else:
+            assert not dossier.has_uptake_note(condition)
+            assert presented == dossier.assemble(condition)
+
+
+@pytest.mark.parametrize("participant_no", ALL)
+def test_uptake_note_sits_right_after_u(
+    participant_no: str, dossiers: dict[str, Dossier]
+) -> None:
+    """D-40 — C3는 문말, C4는 **q 앞**이다.
+
+    q 뒤가 아닌 이유: q는 "다음 응답을 위해 남은 질문"이라 마지막에 있어야 하고(STO 문항이
+    "마지막에 한 질문"을 지칭한다), 무대지시가 가리키는 것은 u가 약속한 지원이다.
+    """
+    dossier = dossiers[participant_no]
+    stimulus = dossier.stimulus
+    note = dossier_loader.UPTAKE_NOTE
+    assert dossier.presented("C3") == f"{stimulus.r} {stimulus.u} {note}"
+    assert dossier.presented("C4") == f"{stimulus.r} {stimulus.u} {note} {stimulus.q}"
+
+
+@pytest.mark.parametrize("participant_no", ALL)
+def test_assemble_is_untouched_by_the_note(
+    participant_no: str, dossiers: dict[str, Dossier]
+) -> None:
+    """D-40 — 무대지시는 **자산의 조립 결과에 들어가지 않는다**.
+
+    `assemble()`에 들어가면 `stimulus_hash`·`stimuli_meta`·lock hash가 전부 흔들린다.
+    표시·전달본과 자산 조립을 나눈 이유가 그것이다.
+    """
+    dossier = dossiers[participant_no]
+    for condition in CONDITIONS:
+        assert dossier_loader.UPTAKE_NOTE not in dossier.assemble(condition)
+    # 무대지시는 질문 수 계약도 건드리지 않는다(물음표가 없다).
+    assert count_questions(dossier_loader.UPTAKE_NOTE) == 0
 
 
 # --------------------------------------------------------------------------- #

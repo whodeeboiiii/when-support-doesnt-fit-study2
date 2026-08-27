@@ -1,12 +1,18 @@
 {
   "version": "pairwise_items_v1",
-  "_note": "PH-07 실값 v1 (2026-08-24 착지 · 2026-08-26 PI 문면 개정). 한쪽 지칭은 전부 target/{side} 치환으로 통일한다(서술형 지칭 폐기). 양쪽을 함께 지칭하는 문항(SEQ3)은 target이 가리키는 쪽이 {side}, 나머지가 {other}다. 두 응답에 공통인 것을 묻는 문항(SEQ1)은 target 없이 치환도 없다. 이유는 구술만(F4-ⓒ, PH-11 확정과 정합). PI 최종 문면 확정 시 이 파일만 수정한다(모집 전 가능).",
+  "_note": "PH-07 실값 v1 (2026-08-24 착지 · 2026-08-26 PI 문면 개정). 한쪽 지칭은 전부 target/{side} 치환으로 통일한다(서술형 지칭 폐기). 양쪽을 함께 지칭하는 문항(SEQ3)은 target이 가리키는 쪽이 {side}, 나머지가 {other}다. 두 응답에 공통인 것을 묻는 문항(SEQ1)은 target 없이 치환도 없다. 이유는 구술만(F4-ⓒ, PH-11 확정과 정합). PI 최종 문면 확정 시 이 파일만 수정한다(모집 전 가능). 2026-08-27 PI 문면 개정 2건: SEQ2_PRIOR_SYSTEM_WORK(상태 서술 '남아 있었다' → 행위 서술 '바꾸지 않은 채 질문부터 했다' — 순서 위반을 직접 지칭) · STO3_ADDITIONAL_EXPLANATION_BURDEN('설명해야 할 일이 늘어난' → '이미 말한 것을 다시 설명하게 만드는' — 부담의 종류를 재설명으로 특정). **문항 순서 = 제시 순서다**(D-42, 2026-08-26 — contrast 내 무작위 폐기): 세 세트가 정당성·필요성 → 과잉·부족 → 남은 비용·종합의 논증 순서로 쓰여 있어 섞으면 그 순서가 깨진다. 문면을 고칠 때 순서도 함께 본다.",
   "_target_note": "target이 있는 문항은 서버가 좌우 배정에 맞춰 {side}(=target 쪽)와 {other}(=반대쪽)를 '응답 A'/'응답 B'로 치환한다(부록 A.5 말미). 클라이언트는 조건을 모른다 — 치환된 문면만 받는다(NT-38).",
-  "scale": { "min": 1, "max": 7 },
+  "scale": {
+    "min": 1,
+    "max": 7
+  },
   "contrasts": [
     {
       "contrast": "sequence",
-      "pair": ["C2", "C4"],
+      "pair": [
+        "C2",
+        "C4"
+      ],
       "items": [
         {
           "item_id": "SEQ1_Q_CONSEQUENTIALITY",
@@ -16,7 +22,7 @@
         {
           "item_id": "SEQ2_PRIOR_SYSTEM_WORK",
           "target": "without_u",
-          "text": "{side}에서는, AI가 나에게 질문하기 전에 먼저 처리할 수 있었던 부분이 남아 있었다."
+          "text": "{side}는 AI가 먼저 바꿀 수 있었던 부분을 바꾸지 않은 채 나에게 질문부터 했다."
         },
         {
           "item_id": "SEQ3_ORDER_PREFERENCE",
@@ -27,7 +33,10 @@
     },
     {
       "contrast": "scope",
-      "pair": ["C1", "C3"],
+      "pair": [
+        "C1",
+        "C3"
+      ],
       "items": [
         {
           "item_id": "SCO1_WARRANTED_UPTAKE",
@@ -48,7 +57,10 @@
     },
     {
       "contrast": "stopping",
-      "pair": ["C3", "C4"],
+      "pair": [
+        "C3",
+        "C4"
+      ],
       "items": [
         {
           "item_id": "STO1_Q_NEED_AFTER_UPTAKE",
@@ -63,7 +75,7 @@
         {
           "item_id": "STO3_ADDITIONAL_EXPLANATION_BURDEN",
           "target": "with_q",
-          "text": "{side}의 마지막 질문 때문에, 내가 추가로 설명해야 할 일이 늘어난 느낌이 들었다."
+          "text": "{side}의 마지막 질문은, 내가 이미 말한 것을 다시 설명하게 만드는 느낌이 들었다."
         }
       ]
     }

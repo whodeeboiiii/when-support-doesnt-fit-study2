@@ -142,6 +142,18 @@ def build_ai2_payload(
     return payload
 
 
+def render_prohibited_inference(items: Sequence[str]) -> str:
+    """§6.4 · A.2 v3 (D-43) — 항목당 한 줄. `"; "` 이어붙이기를 대체한다.
+
+    한 줄로 이어 붙이면 checker가 항목 경계를 잃고 목록 전체를 하나의 포괄 규칙처럼 읽는다
+    — "감정 추론 금지"가 제3자 감정 서술까지 덮은 것이 그 증상이었다(P08·P23 오탐).
+    항목이 각각 "사용자가 …라고 단정하는 것" 형식이므로, 줄로 끊어야 그 형식이 보인다.
+    """
+    if not items:
+        return "(없음)"
+    return "\n".join(f"- {item}" for item in items)
+
+
 def build_checker_payload(
     effective: EffectiveAiVisible,
     focal_ai1: str,
@@ -156,7 +168,7 @@ def build_checker_payload(
     """
     system = prompts.system_template(prompts.CHECKER_PROMPT_KEY).replace(
         _CHECKER_PLACEHOLDER,
-        "; ".join(prohibited_inference) if prohibited_inference else "(없음)",
+        render_prohibited_inference(prohibited_inference),
     )
     _assert_filled(system, (_CHECKER_PLACEHOLDER,))
     user = "\n\n".join(

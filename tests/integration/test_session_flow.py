@@ -595,8 +595,9 @@ async def test_p11_alternatives_are_the_three_non_focal_conditions(
         .scalars()
         .all()
     )
-    assert shown == [dossier.assemble(row.condition) for row in exposures]
-    assert dossier.assemble(run.condition) not in shown, "focal이 '나머지 셋'에 섞였다"
+    # 화면에 나가는 것은 표시본이다 — 조립 자극 + (C3·C4) 무대지시(D-40).
+    assert shown == [dossier.presented(row.condition) for row in exposures]
+    assert dossier.presented(run.condition) not in shown, "focal이 '나머지 셋'에 섞였다"
 
 
 async def test_p11_no_longer_carries_the_pairwise_layout(client: AsyncClient) -> None:
@@ -604,3 +605,73 @@ async def test_p11_no_longer_carries_the_pairwise_layout(client: AsyncClient) ->
     state = await _reach_interview(client)
     assert "pairs" not in state["data"]
     assert "sides" not in str(state["data"])
+
+
+# --------------------------------------------------------------------------- #
+# NT-43 — AI1 무대지시가 화면에 실린다 (§4.4 · D-40)
+# --------------------------------------------------------------------------- #
+
+
+async def test_p4_carries_the_uptake_note_for_a_c3_focal(client: AsyncClient) -> None:
+    """D-40 — uptake가 있는 조건의 AI1은 "(그 후 …)"까지가 참가자가 보는 문면이다.
+
+    P05는 dummy 배정표에서 focal C3다. u가 "…해 보겠습니다"로 끝나므로 무대지시가 없으면
+    참가자는 "왜 해준다고만 하고 안 하지?"를 묻게 된다(P08 세션의 실제 반응).
+    """
+    state = await helpers.reach_focal(client, "P05")
+    dossier = dossier_loader.load("P05")
+
+    assert state["screen"] == "P4"
+    assert state["data"]["ai1"] == dossier.presented("C3")
+    assert state["data"]["ai1"].endswith(dossier_loader.UPTAKE_NOTE)
+
+
+async def test_uptake_note_field_ships_regardless_of_condition(client: AsyncClient) -> None:
+    """§1.2 · NT-31 — `ai1_note`는 **조건과 무관하게 항상** 내려간다.
+
+    회색으로 그릴 자리를 클라이언트가 찾으려면 문면이 필요한데(NT-13 — 번들에 박지 않는다),
+    그 필드가 조건에 따라 있고 없으면 **필드의 유무가 조건 단서**가 된다. C1 세션에서도
+    같은 값이 내려가고, 다만 본문에 그 문자열이 없을 뿐이다.
+    """
+    state = await helpers.reach_focal(client, "P00")  # QA = focal C1
+    dossier = dossier_loader.load("P00")
+
+    assert state["data"]["ai1_note"] == dossier_loader.UPTAKE_NOTE
+    assert dossier_loader.UPTAKE_NOTE not in state["data"]["ai1"]
+    assert state["data"]["ai1"] == dossier.assemble("C1")
+
+
+async def test_stored_ai1_turn_matches_what_was_shown(
+    client: AsyncClient, session: AsyncSession
+) -> None:
+    """D-40 — `turns.ai1` 기록 = 화면 문면 = AI2 payload. 세 곳이 갈라지면 기록이 무의미하다."""
+    from app.security import fernet
+
+    state = await helpers.reach_focal(client, "P05")
+    turn = (
+        (await session.execute(select(tables.Turn).where(tables.Turn.role == "ai1")))
+        .scalars()
+        .one()
+    )
+    assert fernet.decrypt(turn.text) == state["data"]["ai1"]
+
+
+async def test_pairwise_sides_carry_the_note_only_where_it_belongs(
+    client: AsyncClient,
+) -> None:
+    """§4.10 — 두 열 중 u를 가진 쪽에만 무대지시가 붙는다(Scope = C1 vs C3)."""
+    await helpers.reach_focal(client, "P00")
+    await helpers.complete_focal(client)
+    await helpers.advance(client, "P7")
+    await helpers.submit_ratings(client)
+    await helpers.complete_alt_exposures(client)
+
+    state = await helpers.state(client)
+    dossier = dossier_loader.load("P00")
+    assert state["screen"] == "P10"
+
+    assert state["data"]["ai1_note"] == dossier_loader.UPTAKE_NOTE
+    texts = [side["ai1"] for side in state["data"]["sides"]]
+    # 첫 pair는 정본 순서상 sequence(C2 vs C4) — C4 쪽 하나에만 붙는다(D-41).
+    assert sum(dossier_loader.UPTAKE_NOTE in text for text in texts) == 1
+    assert set(texts) == {dossier.presented("C2"), dossier.presented("C4")}

@@ -209,8 +209,10 @@ async def run_ai2(session: CurrentSession, db: DbSession) -> dict[str, Any]:
 
     # §6.2 allowlist ② — **effective checkpoint**(참가자 수정 반영). 원문이 아니다(D-25).
     effective = await effective_checkpoint(db, session)
-    # §6.2 ③ — focal AI1 **원문**. v1.0.1과 정반대의 정책이다(D-34).
-    focal_ai1 = dossier.assemble(run.condition) if run.condition else ""
+    # §6.2 ③ — focal AI1 **참가자가 본 그대로**. v1.0.1과 정반대의 정책이다(D-34).
+    # C3·C4에는 무대지시 한 줄이 붙어 있고 그것까지 함께 간다(D-40): 참가자는 "추천을 이미
+    # 받은 대화"를 이어가는데 AI2만 그 사실을 모르면, AI2가 그 추천을 처음부터 다시 한다.
+    focal_ai1 = dossier.presented(run.condition) if run.condition else ""
 
     # R-1 대조 문자열 — **판정에만** 쓰이고 어떤 프롬프트에도 실리지 않는다(§6.4).
     forbidden = await leakage_sources.collect(

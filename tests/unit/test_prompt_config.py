@@ -74,6 +74,87 @@ def test_checker_prompt_asks_for_the_three_violation_types() -> None:
     assert "{prohibited_inference}" in system
 
 
+def test_checker_v3_fixes_the_referent_and_the_assertion_form() -> None:
+    """부록 A.2 v3 (D-43) — 오탐의 세 원인을 프롬프트가 문자로 막는다.
+
+    ① 판정 대상을 초안으로 한정하고 AI1 오귀속을 금지한다 — P23에서 checker가 **AI1의
+       `u` segment 원문**을 AI2 초안의 위반으로 잡았다. D-40으로 AI1에 무대지시가 붙은
+       뒤로 AI2가 uptake를 이어받을 유인이 더 커져서 이 조항의 무게가 커졌다.
+    ② unsupported_inference의 성립 조건 (a)(b)(c) — 특히 (a) 대상이 사용자 본인.
+    ③ [사용자 메시지]가 금지 목록보다 우선한다 — 목록은 checkpoint 시점 기준이고
+       초안은 User1 **이후**의 turn이라, 이 규칙이 없으면 correction_ignored와 충돌한다.
+    """
+    system = prompts.system_template(prompts.CHECKER_PROMPT_KEY)
+    assert "판정 대상은 [AI 응답 초안] 하나뿐입니다" in system
+    assert "초안의 위반으로" in system and "귀속하지 마세요" in system
+    for condition in ("(a)", "(b)", "(c)"):
+        assert condition in system, f"성립 조건 {condition}이 없다"
+    assert "사용자 본인이다" in system
+    assert "사용자 메시지는 아래" in system and "금지 목록보다 우선합니다" in system
+    assert "참고 목록입니다" in system, "금지 목록이 여전히 독립 규칙으로 읽힌다"
+
+
+def test_checker_v31_gives_the_context_precedence_over_the_list() -> None:
+    """A.2 v3.1 — 맥락 우선. 실모델 재검에서 남은 오탐 두 갈래를 프롬프트로 막는다.
+
+    ① 맥락에 이미 있는 감정을 잡던 것(P08) → (c)에 "맥락에 있으면 위반이 아니다" 명시.
+    ② 금지 목록이 맥락을 이기던 것 → "목록의 항목이 맥락에 있는 내용을 가리키면 적용하지
+       않는다". 목록은 대화 **전에** 적은 것이고 초안은 User1 **이후**의 turn이다.
+    """
+    system = prompts.system_template(prompts.CHECKER_PROMPT_KEY)
+    assert "(c)를 만족하지 않으므로" in system
+    assert "그 항목은 이 사건에서 적용하지 않습니다" in system
+    assert "대화에 실제로 나온 내용을 이기지 못합니다" in system
+    # 설계 근거·되짚기 예시가 각각 하나씩은 있어야 한다.
+    assert system.count("비위반:") >= 5
+
+
+def test_checker_prompt_carries_no_text_from_any_incident() -> None:
+    """§1.2 — 프롬프트는 **전 조건·전 참가자 동일**이다. 특정 사건의 문구가 들어가면 안 된다.
+
+    대조 예시를 쓸 때 실제 dossier에서 문면을 끌어오기 쉽다. 그건 기능적 위반은 아니지만
+    (R-1은 AI2 **출력**만 본다) 전 참가자 공통 lock 프롬프트에 한 참가자의 문구가 박히는
+    것이라, 방화벽의 외관을 해친다. 공백을 지운 8자 연속 일치를 본다(§5.4 LEAK_MATCH_CHARS).
+
+    실값 dossier가 없는 CI에서는 대조 대상이 없어 자동 통과한다 — 실값이 있는 곳에서 잡는다.
+    """
+    import re
+
+    from app.assets import dossier_loader, dossier_private, files
+
+    def squash(text: str) -> str:
+        return re.sub(r"\s+", "", text)
+
+    config_text = squash(prompts.PROMPT_CONFIG_PATH.read_text(encoding="utf-8"))
+    window = dossier_loader.LEAK_MATCH_CHARS
+
+    for participant_no in files.available_participant_numbers():
+        dossier = dossier_loader.load(participant_no)
+        if dossier.is_dummy:
+            continue
+        visible = dossier.ai_visible
+        sources = [
+            *(str(value) for value in dossier_private.load_researcher_only(participant_no).values()),
+            visible.situation_summary,
+            visible.original_request,
+            visible.problematic_ai_response,
+            visible.trouble_cue,
+            *visible.prior_evidence,
+            dossier.stimulus.r,
+            dossier.stimulus.u,
+            dossier.stimulus.q,
+            dossier.stimulus.neutral_fallback,
+        ]
+        for source in sources:
+            text = squash(str(source))
+            for index in range(len(text) - window + 1):
+                chunk = text[index : index + window]
+                assert chunk not in config_text, (
+                    f"{participant_no}의 문구가 프롬프트에 있다: {chunk!r} — "
+                    "대조 예시는 중립 도메인에서 만든다"
+                )
+
+
 def test_prompt_role_mapping_is_dual_provider() -> None:
     """§2.2.1 D-18 이원화 — 생성은 MAIN, 검증은 VALIDATOR."""
     assert prompts.PROMPT_KEY_ROLE[prompts.AI2_PROMPT_KEY] == "main"

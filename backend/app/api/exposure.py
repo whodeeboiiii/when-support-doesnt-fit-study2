@@ -5,8 +5,8 @@ v2.0 신설(부록 H.3). 이 구간의 불변식 셋.
 1. **focal 측정(SS05) 완료 후에만 존재한다**(NT-31). 상태로 강제된다 — SS06·SS07은
    `POST /ratings`를 지나야 도달하고, 그 전에는 `alt_exposures`·`pairwise_views` 행 자체가
    없어서 화면 조립기가 대안 자극을 만들 자료를 갖지 못한다.
-2. **순서·좌우는 배정표가 정한다**(NT-33·38). 이 파일에 무작위가 없다 — 무작위는 pairwise
-   **문항 순서**뿐이고 그건 자산 로더가 시드로 재현한다.
+2. **순서·좌우는 배정표가 정한다**(NT-33·38). 이 파일에 무작위가 없다 — pairwise **문항
+   순서**도 D-42 이후 자산 파일 순서 그대로다(런타임 무작위는 P8 평정 블록 내부뿐이다).
 3. **position 건너뛰기 불가**(NT-33). 서버가 `alt_index`·`pair_index`를 소유하고, 요청이
    그 값과 다르면 409다.
 
@@ -162,7 +162,7 @@ async def submit_pairwise(
 
     asset = pairwise_items.load()
     presented = pairwise_items.presentation_order(
-        view.contrast, view.left_condition, view.right_condition, session.id
+        view.contrast, view.left_condition, view.right_condition
     )
     positions = sorted(answer.position for answer in payload.items)
     if positions != list(range(1, len(presented) + 1)):

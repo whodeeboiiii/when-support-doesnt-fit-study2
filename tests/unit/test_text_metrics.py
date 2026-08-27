@@ -26,6 +26,40 @@ def test_interrogative_ending_without_question_mark_counts() -> None:
     assert count_questions("어느 쪽이 더 도움이 될까요") == 1
 
 
+def test_declarative_ending_is_not_a_question_even_with_interrogative_morpheme() -> None:
+    """§6.5 [파일럿 확정 2026-08-27] — 평서 종결 부호로 끝나면 질문이 아니다.
+
+    `냐|니` 어미가 아무 단어 끝에나 걸려서 평서문이 질문으로 잡혔다. P23 세션의 R-3
+    오탐이 이 경로였고 결과는 재생성 1회 + neutral_fallback이다.
+    """
+    for sentence in ("커피를 마시면 잠이 살아나요.", "어머니.", "그러니.", "도움이 될 거니.", "정리해 봤어요!"):
+        assert count_questions(sentence) == 0, sentence
+
+
+def test_unpunctuated_question_still_counts() -> None:
+    """오탐만 죽인다 — 부호 없는 진짜 질문의 검출(recall)은 그대로다."""
+    assert count_questions("커피를 마시면 잠이 깨나요") == 1
+    assert count_questions("지금 필요한 게 무엇인가요") == 1
+
+
+def test_declarative_fix_does_not_move_any_locked_asset() -> None:
+    """규칙 조정의 조건: 자산 계약(NT-22·23)이 한 건도 움직이지 않아야 한다.
+
+    `stimuli_meta`는 lock된 파일에 적힌 숫자다 — 계량 규칙이 바뀌어 이 숫자와 어긋나면
+    기동 게이트가 전 dossier를 거부한다. 그래서 규칙을 고칠 때마다 여기서 전수 대조한다.
+    """
+    from app.assets import dossier_loader, files
+
+    for participant_no in files.available_participant_numbers():
+        dossier = dossier_loader.load(participant_no)
+        for condition in dossier_loader.CONDITIONS:
+            assert (
+                count_questions(dossier.assemble(condition))
+                == dossier.stimulus.stimuli_meta[condition].questions
+            ), f"{participant_no}/{condition}"
+        assert count_questions(dossier.stimulus.neutral_fallback) == 0, participant_no
+
+
 def test_two_questions_are_counted_separately() -> None:
     assert count_questions("지금 무엇이 필요하세요? 다음은 어떻게 할까요?") == 2
 

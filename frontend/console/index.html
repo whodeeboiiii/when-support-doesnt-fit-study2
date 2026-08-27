@@ -432,6 +432,7 @@ async function viewR4(participantNo) {
   const stimuli = d.stimuli.map((s) => `<div class="card"><h3>${esc(s.condition)}
       <span class="muted mono">= ${s.recipe.map(esc).join(" + ")}</span></h3>
       <div class="turn">${esc(s.text)}</div>
+      ${s.presented && s.presented !== s.text ? `<div class="turn muted">참가자 표시본: ${esc(s.presented)}</div>` : ""}
       <div class="muted mono">${esc(s.meta.chars)}자 · ${esc(s.meta.sentences)}문장 · 질문 ${esc(s.meta.questions)} · ${esc(short(s.hash))}</div></div>`).join("");
   const segments = Object.entries(d.segments).map(([key, value]) =>
     `<tr><td class="mono" style="width:60px">${esc(key)}</td><td>${esc(value)}</td></tr>`).join("");

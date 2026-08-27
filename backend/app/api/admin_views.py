@@ -253,7 +253,7 @@ async def review(session_id: uuid.UUID, actor: AdminActor, db: DbSession) -> dic
         turns = {turn.role: turn for turn in await store.turns(db, run.id)}
         trajectory = {
             "condition": run.condition,
-            "ai1": dossier.assemble(run.condition) if run.condition else None,
+            "ai1": dossier.presented(run.condition) if run.condition else None,
             "user1": _decrypt(turns["user1"].text) if "user1" in turns else None,
             "sidecar": (
                 {
@@ -299,7 +299,7 @@ async def review(session_id: uuid.UUID, actor: AdminActor, db: DbSession) -> dic
         presented = {
             entry.item.item_id: entry
             for entry in pairwise_items.presentation_order(
-                view.contrast, view.left_condition, view.right_condition, session.id
+                view.contrast, view.left_condition, view.right_condition
             )
         }
         pairs.append(
@@ -308,11 +308,11 @@ async def review(session_id: uuid.UUID, actor: AdminActor, db: DbSession) -> dic
                 "contrast": view.contrast,
                 "left": {
                     "condition": view.left_condition,
-                    "ai1": dossier.assemble(view.left_condition),
+                    "ai1": dossier.presented(view.left_condition),
                 },
                 "right": {
                     "condition": view.right_condition,
-                    "ai1": dossier.assemble(view.right_condition),
+                    "ai1": dossier.presented(view.right_condition),
                 },
                 "focal_included": view.focal_included,
                 "focal_side": view.focal_side,
@@ -357,7 +357,7 @@ async def review(session_id: uuid.UUID, actor: AdminActor, db: DbSession) -> dic
             {
                 "position": row.position,
                 "condition": row.condition,
-                "ai1": dossier.assemble(row.condition),
+                "ai1": dossier.presented(row.condition),
                 "rendered_at": _iso(row.rendered_at),
                 "advanced_at": _iso(row.advanced_at),
             }
@@ -416,6 +416,7 @@ async def dossier_view(participant_no: str, actor: AdminActor, db: DbSession) ->
                 "condition": condition,
                 "recipe": list(dossier_loader.STIMULUS_RECIPE[condition]),
                 "text": dossier.assemble(condition),
+                "presented": dossier.presented(condition),
                 "meta": stimulus.stimuli_meta[condition].as_dict(),
                 "hash": dossier.stimulus_hash(condition),
             }

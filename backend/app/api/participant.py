@@ -335,7 +335,10 @@ async def _start_focal(db: DbSession, session: tables.Session) -> dict[str, Any]
             tables.Turn(
                 focal_run_id=run.id,
                 role="ai1",
-                text=fernet.encrypt(dossier.assemble(condition)),
+                # 화면·AI2 payload와 **같은** 문자열을 남긴다 — 기록이 참가자가 본 것과
+                # 어긋나면 export·콘솔이 다른 대화를 보게 된다(D-40). `stimulus_hash`는
+                # 위에서 locked 자산의 조립(`assemble`)으로 남는다 — 자산 대조는 그쪽이다.
+                text=fernet.encrypt(dossier.presented(condition)),
                 rendered_at=_now(),
             )
         )

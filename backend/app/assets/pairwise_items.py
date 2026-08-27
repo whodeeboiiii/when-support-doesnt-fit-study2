@@ -5,7 +5,10 @@
 (`core/assignment.CONTRAST_PAIR`가 배정 쪽 정본이다), 여기서는 자산이 그 목록과 일치하는지를
 검증한다 — 두 곳이 갈라지면 배정표의 좌우와 문항의 A/B 지칭이 어긋난다.
 
-**A/B 치환이 이 모듈의 핵심**이다(부록 A.5 말미). 어떤 문항은 두 응답 중 **한쪽**을 지칭한다
+**제시 순서는 자산 파일 순서 그대로다**(D-42) — 이 모듈에 무작위가 없다. 문면이 논증 순서로
+쓰여 있어서(정당성 → 과잉·부족 → 종합) 섞으면 그 순서가 깨진다.
+
+**A/B 치환이 이 모듈의 또 다른 핵심**이다(부록 A.5 말미). 어떤 문항은 두 응답 중 **한쪽**을 지칭한다
 ("{side}의 조정은 … 정당했다"). 어떤 문항은 양쪽을 함께 지칭하며, 그때 나머지 한쪽은
 `{other}`로 적는다("{side}의 방식이 {other}의 방식보다 …"). 자산은 지칭하는 쪽을 조건이
 아니라 **성질**로 적는다:
@@ -28,7 +31,6 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from app.core.assignment import CONTRAST_PAIR, CONTRASTS
-from app.core.randomization import seeded_order
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURES_DIR = REPO_ROOT / "fixtures"
@@ -254,12 +256,24 @@ class PresentedPairwiseItem:
 
 
 def presentation_order(
-    contrast: str, left_condition: str, right_condition: str, *seed_parts: object
+    contrast: str, left_condition: str, right_condition: str
 ) -> tuple[PresentedPairwiseItem, ...]:
-    """§4.10·§0.5 — contrast 내 무작위. contrast 순서·좌우는 배정표가 정한다(무작위 아님).
+    """§4.10·§0.5 [PI 확정 2026-08-26 · D-42] — **자산 파일 순서 그대로**. 무작위가 없다.
 
-    같은 시드에는 항상 같은 순서다(NT-08). 시드에 contrast를 섞어 세 pair가 같은 순열을
-    쓰지 않게 한다.
+    구판은 contrast 내에서 시드로 섞었다. 세 세트의 문면이 **논증 순서**로 쓰여 있다는 것이
+    폐기 이유다(부록 A.5): 정당성·필요성 → 과잉·부족 → 남은 비용·종합. 특히 SEQ3는 종합 선호
+    판단이라 마지막이어야 하는데, 무작위면 1/3 확률로 먼저 나와 나머지 두 문항이 그 판단에
+    anchoring된다. scope처럼 같은 쪽을 연속으로 묻는 세트도 섞이면 A/B가 매 문항 교대한다.
+
+    무작위화가 여기서 통제하는 교락도 없다: 문항 순서는 전 참가자·전 조건에 같은 자산이고,
+    A/B 비교는 문항 **안에서** 일어난다(`{side}`/`{other}` 치환). 게다가 N=24·3문항이면
+    6순열에 4명씩이라 균형이 아니라 잡음이다 — contrast 순서를 고정한 D-41과 같은 논거다.
+
+    ⚠ 이 결정 이후 **자산 파일의 문항 순서가 곧 제시 순서**다. 문면을 고칠 때 순서도 함께
+    본다(`_note` 참조). 순서 효과는 전 참가자에게 같은 방향으로 실린다.
+
+    P8 focal 평정은 그대로 블록 내 무작위다(`rating_items`) — 그쪽은 construct별 독립 측정이라
+    같은 construct 문항이 붙어 나오면 오히려 일관성 압력이 생긴다.
     """
     items = load().items_for(contrast)
     return tuple(
@@ -268,7 +282,7 @@ def presentation_order(
             item=item,
             text=item.render(left_condition, right_condition),
         )
-        for position, item in enumerate(seeded_order(items, *seed_parts, contrast), start=1)
+        for position, item in enumerate(items, start=1)
     )
 
 

@@ -21,7 +21,7 @@
     ① focal 배정 — restricted randomization: 각 A-level의 참가자를 네 조건에 가능한 한
       균등(조건 간 max−min ≤ 1)하게, 동률이면 mismatch_locus 편중 최소화, 그 안에서 seed 무작위
     ② focal group(6명)마다 나머지 세 조건의 순열 6종을 무작위 1:1 배정
-    ③ pair 순서 6종을 focal group마다 1:1(전체 각 4회)
+    ③ pair 순서는 전 참가자 정본 순서 고정 (sequence → scope → stopping — D-41)
     ④ 좌우: contrast별로 전체 12/12, focal group 내 3/3
     ⑤ 제약 전수 재검증 → 실패 시 seed+1 재시도(재시도 횟수 기록)
     ⑥ 생성 로그(`assignment_v1.log`: seed, 시도 횟수, strata 분포표)를 함께 산출
@@ -49,6 +49,7 @@ sys.path.insert(0, str(REPO_ROOT / "backend"))
 from app.assets.dossier_loader import CONDITIONS  # noqa: E402
 from app.assets.files import DUMMY_PARTICIPANT_NUMBERS  # noqa: E402
 from app.core.assignment import (  # noqa: E402
+    CANONICAL_PAIR_ORDER,
     CONTRAST_PAIR,
     CONTRASTS,
     EXPECTED_N,
@@ -176,9 +177,12 @@ def _build_rows(
         # ② 나머지 세 조건의 순열 6종을 group에 1:1.
         alt_orders = list(permutations(sorted(set(CONDITIONS) - {condition})))
         rng.shuffle(alt_orders)
-        # ③ pair 순서 6종도 group에 1:1 → 네 group 합계 각 4회.
-        group_pair_orders = list(pair_orders)
-        rng.shuffle(group_pair_orders)
+        # ③ pair 순서는 정본 고정이다(D-41) — 뽑을 것이 없다. **뽑기는 남겨 둔다**:
+        # 이 draw를 빼면 rng 스트림이 밀려 아래 ④ 좌우와 ② alt_order가 통째로 달라지고,
+        # 그러면 같은 seed로 다시 만든 표가 **이미 세션을 돌린 참가자의 배정과 어긋난다**.
+        # 값만 버리고 소비는 유지한다.
+        _unused_pair_orders = list(pair_orders)
+        rng.shuffle(_unused_pair_orders)
 
         # ④ 좌우: group 내 3/3. contrast마다 절반은 뒤집는다.
         flips: dict[str, list[bool]] = {}
@@ -201,7 +205,7 @@ def _build_rows(
                     mismatch_locus=member["mismatch_locus"],
                     focal_condition=condition,
                     alt_order=alt_orders[index % len(alt_orders)],
-                    pair_order=group_pair_orders[index % len(group_pair_orders)],
+                    pair_order=CANONICAL_PAIR_ORDER,
                     pair_sides=sides,
                 )
             )
@@ -245,7 +249,7 @@ def _document(rows: Sequence[AssignmentRow], *, version: str, seed: int, now: st
         "constraints_checked": {
             "focal_balance": not problems,
             "alt_order_latin": not problems,
-            "pair_order_4x": not problems,
+            "pair_order_canonical": not problems,
             "side_balance": not problems,
             "strata_spread": f"max_diff<={_max_diff(rows)}",
         },

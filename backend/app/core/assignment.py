@@ -7,9 +7,11 @@
 
 이 모듈이 하는 일은 둘이다.
 
-1. **읽기** — 참가자 번호 → 배정 행(focal condition · 대안 노출 순서 · pair 순서 · 좌우).
+1. **읽기** — 참가자 번호 → 참가자 1명의 배정 전부(focal condition · 대안 노출 순서 · 좌우).
+   pair 순서는 D-41 이후 전 참가자 고정이지만 **열은 남는다** — 표가 여전히 그 값의 출처이고,
+   런타임이 순서를 계산하지 않는다는 규율(§0.3)은 고정 순서에도 그대로 적용된다.
 2. **기동 시 전수 검증**(NT-32) — 24행·focal 6/조건·focal group 내 alt_order 6순열 각 1회·
-   pair_order 6순열 각 4회·좌우 12/12·alt_order에 focal 미포함·strata 편중. 위반이면
+   pair_order 정본 순서·좌우 12/12·alt_order에 focal 미포함·strata 편중. 위반이면
    **기동을 실패시킨다**(§5.2 로더 항). 배정이 깨진 채 세션을 받으면 그 세션은 설계 밖이다.
 
 `ASSIGNMENT_PATH` 미존재 시 `assignment_dummy.json`으로 내려가며 `is_dummy=True`로 표시한다
@@ -57,10 +59,18 @@ CONTRAST_PAIR: Mapping[str, frozenset[str]] = MappingProxyType(
 
 #: §5.2 ② focal group(6명)마다 나머지 세 조건의 순열 6종 각 1회.
 ALT_ORDER_COUNT = 6
-#: §5.2 ③ pair 순서 6종을 focal group마다 1:1 → 전체 각 4회.
-PAIR_ORDER_REPEATS = EXPECTED_N // ALT_ORDER_COUNT
 
-PAIR_ORDER_PERMUTATIONS: tuple[tuple[str, ...], ...] = tuple(permutations(CONTRASTS))
+#: §5.2 ③ [PI 확정 2026-08-26 · §10.3 파일럿 조정 · D-41] — pair 순서는 **전 참가자 고정**이다.
+#:
+#: 구판은 6순열을 각 4회 배정해 순서를 counterbalance했다. P08 세션에서 그 표가 준 순서는
+#: stopping(C3 vs C4) → scope → sequence였고, 참가자는 가장 미세한 대비를 먼저 만났다.
+#: 세 대비는 난이도가 같지 않다 — sequence(질문 위치)·scope(바꾼 내용의 폭)를 먼저 보고
+#: 나서야 stopping(질문을 더 하느냐)이 무엇을 묻는지가 선다. PI가 그 순서를 정본으로 고정했다.
+#:
+#: 대가는 명시해 둔다: **pair 순서의 counterbalance를 포기한다.** 순서 효과는 이제 전
+#: 참가자에게 같은 방향으로 실리므로, contrast 간 비교에서 순서와 대비가 교락한다
+#: (같은 방향이라 참가자 간 분산에는 들어오지 않는다). 좌우(pair_sides) 균형은 그대로다.
+CANONICAL_PAIR_ORDER: tuple[str, ...] = CONTRASTS
 
 #: §5.2 ⑤ strata 편중 제약. "가능한 범위"이며 산술적으로 불가능하면 경고에 그친다.
 STRATA_MAX_DIFF = 1
@@ -284,23 +294,13 @@ def check_constraints(rows: Sequence[AssignmentRow], *, strict_n: bool = True) -
                 f"실제 {len(set(orders))}종"
             )
 
-    # ③ pair_order 6순열 각 4회 (focal group마다 1:1).
-    if strict_n:
-        for condition, group in sorted(by_focal.items()):
-            orders = [row.pair_order for row in group]
-            if sorted(orders) != sorted(PAIR_ORDER_PERMUTATIONS):
-                problems.append(
-                    f"focal {condition}: pair_order 6순열이 각 1회여야 한다 (§5.2 ③)"
-                )
-        counts = {perm: 0 for perm in PAIR_ORDER_PERMUTATIONS}
-        for row in rows:
-            if row.pair_order in counts:
-                counts[row.pair_order] += 1
-        off = {perm: n for perm, n in counts.items() if n != PAIR_ORDER_REPEATS}
-        if off:
-            problems.append(
-                f"pair_order 전체 분포: 각 {PAIR_ORDER_REPEATS}회여야 한다 — 어긋난 순열 {len(off)}종 (NT-32)"
-            )
+    # ③ pair_order — 전 행이 정본 순서다 (§5.2 ③ · D-41). N과 무관하게 본다.
+    off_order = [row.participant_no for row in rows if row.pair_order != CANONICAL_PAIR_ORDER]
+    if off_order:
+        problems.append(
+            f"pair_order: 전 행이 {list(CANONICAL_PAIR_ORDER)}여야 한다 (§5.2 ③ · D-41) — "
+            f"어긋난 행 {off_order}"
+        )
 
     # ④ 좌우 균형 — contrast별 전체 12/12, focal group 내 3/3.
     if strict_n:
