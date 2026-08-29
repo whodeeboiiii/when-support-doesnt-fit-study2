@@ -98,11 +98,15 @@ def test_volume_may_carry_its_own_dummies(volume) -> None:
 
 def test_every_assigned_participant_resolves_under_a_volume(volume) -> None:
     """부분 착지 상태에서도 기동 게이트(§5.4)가 통과해야 한다 — 전수 로드가 성립한다."""
-    _real_dossier(volume, "P03")
+    landed = _still_dummy(volume)
+    _real_dossier(volume, landed)
     dossiers = dossier_loader.load_all()
     assert len(dossiers) >= 25, "P00 + 배정표 24명이 전부 잡혀야 한다"
-    assert dossiers["P03"].is_dummy is False
-    assert dossiers["P04"].is_dummy is True
+    assert dossiers[landed].is_dummy is False
+    # 볼륨에 놓지 않은 번호는 더미로 내려간다. **번호를 박지 않는다** — `_still_dummy`가
+    # 있는 이유와 같다(§2.9 실값 미커밋 + PH-03 한 명씩 lock). P04에 실값이 착지한 날
+    # 이 줄이 깨졌다.
+    assert dossiers[_still_dummy(volume)].is_dummy is True
 
 
 # --------------------------------------------------------------------------- #

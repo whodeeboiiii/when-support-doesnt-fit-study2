@@ -149,6 +149,13 @@ def test_checker_prompt_carries_no_text_from_any_incident() -> None:
             text = squash(str(source))
             for index in range(len(text) - window + 1):
                 chunk = text[index : index + window]
+                # 한글이 한 글자도 없는 조각은 대조에서 뺀다. 사건 문면에 섞여 든 영문
+                # 낱말(`correction`·`AI`·기업명 라틴 표기)이 프롬프트의 **규칙 어휘**와
+                # 겹치는 것은 누출이 아니다 — P19의 `correcti`가 A.2의
+                # `correction_ignored`와 걸린 것이 그 경우다. 막으려는 것은 참가자 발화가
+                # 프롬프트 예시에 박히는 것이고, 그건 한글 조각으로 나타난다.
+                if not any("가" <= ch <= "힣" for ch in chunk):
+                    continue
                 assert chunk not in config_text, (
                     f"{participant_no}의 문구가 프롬프트에 있다: {chunk!r} — "
                     "대조 예시는 중립 도메인에서 만든다"
