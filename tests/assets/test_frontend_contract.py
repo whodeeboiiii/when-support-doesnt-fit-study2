@@ -368,8 +368,9 @@ def _asset_texts() -> list[str]:
         *(dossier.stimulus.segment(key) for key in dossier_loader.SEGMENT_KEYS),
         dossier.stimulus.neutral_fallback,
         # 무대지시도 서버가 `ai1_note`로 내려주는 자산 문면이다 — 번들에 박으면 클라이언트가
-        # 조건별 표시를 스스로 정하게 된다(D-40).
-        dossier_loader.UPTAKE_NOTE,
+        # 조건별 표시를 스스로 정하게 된다(D-40). A-level별 3종 전부를 본다(D-47 — A0은 빈
+        # 문자열이라 대조 대상이 아니다: 빈 문자열은 어떤 파일에도 "들어 있다").
+        *(note for note in dossier_loader.UPTAKE_NOTE_BY_A_LEVEL.values() if note),
         *(item.text for item in rating_items.load().items),
         *(
             item.text

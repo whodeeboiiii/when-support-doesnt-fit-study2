@@ -16,7 +16,9 @@
 5. **AI1은 `presented()`로 낸다.** 화면에 나가는 AI1은 조립 자극 + (C3·C4) 무대지시이고
    (D-40), 같은 문자열이 AI2 payload·`turns.ai1`에도 간다. 회색으로 그릴 자리를 클라이언트가
    찾을 수 있게 `ai1_note`를 **조건과 무관하게 항상** 같이 내린다 — 조건에 따라 있고 없으면
-   그 필드 자체가 조건 단서가 된다(§1.2 · NT-31).
+   그 필드 자체가 조건 단서가 된다(§1.2 · NT-31). 문면은 `dossier.uptake_note` 한 곳에서
+   나온다(D-47 — A-level별 1종, A0은 빈 문자열). **참가자 1명에게는 전 화면 같은 값**이므로
+   조건 단서가 되지 않는다: 갈리는 축이 조건이 아니라 사건이다.
 
 P6·P11에서 참가자 자신의 텍스트를 복호화한다. §2.9의 복호화 지점 열거에 "참가자 본인 화면
 재표시(P6 AI2·P11 pair 참조)"가 명시돼 있다 — 연구자 접근이 아니므로 audit 대상이 아니다.
@@ -121,7 +123,7 @@ def _checkpoint_edit_view(
     }
 
 
-def _ratings_view(session_id: object, focal_ai1: str) -> dict[str, Any]:
+def _ratings_view(session_id: object, focal_ai1: str, uptake_note: str) -> dict[str, Any]:
     """§4.8 — 블록 1(focal 5 construct) → 블록 2(MC + AI1 카드). 블록 내 순서는 시드 고정."""
     asset = rating_items.load()
     presented = rating_items.presentation_order(session_id)
@@ -140,7 +142,7 @@ def _ratings_view(session_id: object, focal_ai1: str) -> dict[str, Any]:
                 ],
             }
         )
-    return {"blocks": blocks, "scale": _scale(), "ai1_note": dossier_loader.UPTAKE_NOTE}
+    return {"blocks": blocks, "scale": _scale(), "ai1_note": uptake_note}
 
 
 async def _alt_view(
@@ -165,7 +167,7 @@ async def _alt_view(
         "checkpoint": checkpoint_chat(effective),
         # 조건 라벨이 아니라 **표시본 문자열**만 나간다(D-40).
         "ai1": dossier.presented(row.condition),
-        "ai1_note": dossier_loader.UPTAKE_NOTE,
+        "ai1_note": dossier.uptake_note,
         "typing_ms": screen_copy.TYPING_INDICATOR_MS,
         "button": screen_copy.ALT_LAST_BUTTON if last else screen_copy.ALT_NEXT_BUTTON,
     }
@@ -200,7 +202,7 @@ async def _pairwise_view(
                 "ai1": dossier.presented(row.right_condition),
             },
         ],
-        "ai1_note": dossier_loader.UPTAKE_NOTE,
+        "ai1_note": dossier.uptake_note,
         # 문항 ID는 내려가지 않는다 — 위치와 (치환된) 문면만.
         "items": [{"position": entry.position, "text": entry.text} for entry in presented],
         "scale": _scale(),
@@ -253,7 +255,7 @@ async def _interview_view(
         "focal_turns": focal_turns,
         "alternatives_title": screen_copy.INTERVIEW_ALTERNATIVES_TITLE,
         "alternatives": alternatives,
-        "ai1_note": dossier_loader.UPTAKE_NOTE,
+        "ai1_note": dossier.uptake_note,
         "button": screen_copy.INTERVIEW_HOLD_BUTTON,
     }
 
@@ -304,7 +306,7 @@ async def _screen_data(
             return {
                 "checkpoint": checkpoint_chat(effective),
                 "ai1": focal_ai1,
-                "ai1_note": dossier_loader.UPTAKE_NOTE,
+                "ai1_note": dossier.uptake_note,
                 "typing_ms": screen_copy.TYPING_INDICATOR_MS,
                 "instruction": screen_copy.USER1_INSTRUCTION,
                 "send_button": screen_copy.SEND_BUTTON,
@@ -333,7 +335,7 @@ async def _screen_data(
             return {
                 "checkpoint": checkpoint_chat(effective),
                 "ai1": focal_ai1,
-                "ai1_note": dossier_loader.UPTAKE_NOTE,
+                "ai1_note": dossier.uptake_note,
                 "user1": _decrypt((await store.turn(db, run.id, "user1")).text)
                 if await store.turn(db, run.id, "user1")
                 else None,
@@ -354,7 +356,7 @@ async def _screen_data(
                 # 판단인지의 근거가 화면에서 사라진다.
                 "checkpoint": checkpoint_chat(effective),
                 "ai1": focal_ai1,
-                "ai1_note": dossier_loader.UPTAKE_NOTE,
+                "ai1_note": dossier.uptake_note,
                 "user1": _decrypt(user1.text) if user1 else None,
                 "instruction": screen_copy.DOWNSTREAM_INSTRUCTION,
                 "ai2": _decrypt(ai2.text) if ai2 else None,
@@ -380,7 +382,7 @@ async def _screen_data(
 
     if screen == "P8":
         focal_ai1 = dossier.presented(run.condition) if run and run.condition else ""
-        return _ratings_view(session.id, focal_ai1)
+        return _ratings_view(session.id, focal_ai1, dossier.uptake_note)
 
     # --- 대안 노출 이후 (§1.2 · NT-31) --------------------------------------
     if screen in {"P9", "P10", "P11"}:

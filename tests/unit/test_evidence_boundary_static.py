@@ -183,3 +183,73 @@ def test_dossier_private_is_importable_on_its_own() -> None:
     from app.assets.dossier_private import load_researcher_only
 
     assert callable(load_researcher_only)
+
+
+# --------------------------------------------------------------------------- #
+# NT-47 — `a_level`은 descriptor다 (§1.5-4 · D-47)
+# --------------------------------------------------------------------------- #
+
+#: §1.5-4 — A-level을 읽어도 되는 곳. 이 목록이 그 조항의 실행 가능한 형태다.
+#:
+#: - `assets/dossier_loader.py` : 스키마 검증 + **무대지시 문안 선택**(D-47의 좁은 예외)
+#: - `core/assignment.py`       : 배정표 strata 제약(§5.2)
+#: - `api/admin.py`             : 연구자 콘솔·export 열(§1.2 표에서 허용)
+#: - `models/tables.py`         : `participants.a_level` 기록 열
+#:
+#: 목록을 늘리려면 §1.5-4를 함께 고쳐야 한다 — "고치는 김에" 한 줄 늘리는 것을 막는 것이
+#: 이 테스트의 일이다. A-level이 조건·측정·라우팅의 입력이 되는 순간 incident descriptor가
+#: 실험 요인이 된다(v1.0.1의 `actionability` 분기가 그렇게 자랐다).
+A_LEVEL_TOKEN = "a_level"
+A_LEVEL_ALLOWED_MODULES = {
+    "app.assets.dossier_loader",
+    "app.core.assignment",
+    "app.api.admin",
+    "app.models.tables",
+}
+
+
+def _modules_mentioning(token: str) -> set[str]:
+    return {
+        module_name(path)
+        for path in python_files(APP_ROOT)
+        if token in path.read_text(encoding="utf-8")
+    }
+
+
+def test_nt47_a_level_is_read_only_where_the_spec_allows() -> None:
+    offenders = sorted(_modules_mentioning(A_LEVEL_TOKEN) - A_LEVEL_ALLOWED_MODULES)
+    assert offenders == [], (
+        f"`a_level`이 허용되지 않은 모듈에 나타났다 — {offenders}. A-level은 incident "
+        "descriptor이고 조건·분기·검증의 입력이 될 수 없다 (§1.5-4 · NT-47)"
+    )
+
+
+def test_nt47_allowlist_is_not_stale() -> None:
+    """허용 목록이 실제보다 넓으면 검사가 조용히 헐거워진다 — 양방향으로 고정한다."""
+    unused = sorted(A_LEVEL_ALLOWED_MODULES - _modules_mentioning(A_LEVEL_TOKEN))
+    assert unused == [], f"허용 목록에 남은 죽은 항목: {unused}"
+
+
+def test_nt47_llm_path_never_sees_the_a_level() -> None:
+    """§1.2 — evidence_code에서 LLM 경로로 가는 것은 `prohibited_inference` 하나다.
+
+    무대지시 문면은 `presented()`가 만든 **문자열**로 넘어간다. A-level 자체가 payload
+    조립기에 닿으면 그건 다른 이야기다.
+    """
+    for path in python_files(LLM_ROOT):
+        text = path.read_text(encoding="utf-8")
+        assert A_LEVEL_TOKEN not in text, (
+            f"{path.relative_to(BACKEND)}: LLM 경로에 `a_level`이 있다 (§1.2 · NT-47)"
+        )
+
+
+def test_nt47_participant_payload_builder_selects_the_note_via_the_dossier() -> None:
+    """화면 payload는 A-level을 읽지 않는다 — `dossier.uptake_note` 한 속성만 부른다(D-47).
+
+    두 곳에서 따로 고르면 회색으로 그릴 자리(`ai1_note`)와 본문에 실제로 끼워 넣은 문면이
+    갈라진다. 그 순간 무대지시가 검은 글씨로 보이거나 회색 칠이 빗나간다.
+    """
+    text = (APP_ROOT / "api" / "state_payload.py").read_text(encoding="utf-8")
+    assert A_LEVEL_TOKEN not in text
+    assert "dossier.uptake_note" in text
+    assert "UPTAKE_NOTE_BY_A_LEVEL" not in text

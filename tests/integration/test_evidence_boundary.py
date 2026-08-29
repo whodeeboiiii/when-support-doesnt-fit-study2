@@ -266,7 +266,8 @@ async def test_ai2_payload_carries_the_uptake_note_for_a_c3_focal(
     assert payloads
     for payload in payloads:
         assert dossier.presented("C3") in payload
-        assert dossier_loader.UPTAKE_NOTE in payload
+        # P05는 A2 — 무대지시 문면은 dossier가 고른다(D-47).
+        assert dossier.uptake_note and dossier.uptake_note in payload
     # 그래도 **대안**은 들어가지 않는다 — 경계가 옮겨간 것이 아니라 focal 한 줄이 늘었을 뿐이다.
     for payload in payloads:
         assert dossier.presented("C4") not in payload

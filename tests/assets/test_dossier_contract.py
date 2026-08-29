@@ -289,13 +289,18 @@ def test_prohibited_inference_does_not_collide_with_the_evidence(
 def test_presented_adds_the_uptake_note_only_where_u_exists(
     participant_no: str, dossiers: dict[str, Dossier]
 ) -> None:
-    """D-40 — u가 있는 조건(C3·C4)에만 무대지시가 붙는다. C1·C2는 조립 결과 그대로다."""
+    """D-40 · D-47 — u가 있는 조건(C3·C4)에만, 그리고 문면이 있는 사건에만 붙는다.
+
+    A0은 문면이 빈 문자열이라 네 조건 전부 조립 결과 그대로다 — 무대지시가 "없는" 것이지
+    "빈 괄호"가 붙는 것이 아니다.
+    """
     dossier = dossiers[participant_no]
+    note = dossier.uptake_note
     for condition in CONDITIONS:
         presented = dossier.presented(condition)
-        if condition in {"C3", "C4"}:
+        if condition in {"C3", "C4"} and note:
             assert dossier.has_uptake_note(condition)
-            assert presented.count(dossier_loader.UPTAKE_NOTE) == 1
+            assert presented.count(note) == 1
         else:
             assert not dossier.has_uptake_note(condition)
             assert presented == dossier.assemble(condition)
@@ -312,9 +317,11 @@ def test_uptake_note_sits_right_after_u(
     """
     dossier = dossiers[participant_no]
     stimulus = dossier.stimulus
-    note = dossier_loader.UPTAKE_NOTE
-    assert dossier.presented("C3") == f"{stimulus.r} {stimulus.u} {note}"
-    assert dossier.presented("C4") == f"{stimulus.r} {stimulus.u} {note} {stimulus.q}"
+    note = dossier.uptake_note
+    # A0은 문면이 없다 — 자리도 없다(D-47). 빈 조각을 끼워 공백이 남지 않는지까지 본다.
+    tail = f" {note}" if note else ""
+    assert dossier.presented("C3") == f"{stimulus.r} {stimulus.u}{tail}"
+    assert dossier.presented("C4") == f"{stimulus.r} {stimulus.u}{tail} {stimulus.q}"
 
 
 @pytest.mark.parametrize("participant_no", ALL)
@@ -327,10 +334,58 @@ def test_assemble_is_untouched_by_the_note(
     표시·전달본과 자산 조립을 나눈 이유가 그것이다.
     """
     dossier = dossiers[participant_no]
+    note = dossier.uptake_note
     for condition in CONDITIONS:
-        assert dossier_loader.UPTAKE_NOTE not in dossier.assemble(condition)
+        assert not note or note not in dossier.assemble(condition)
     # 무대지시는 질문 수 계약도 건드리지 않는다(물음표가 없다).
-    assert count_questions(dossier_loader.UPTAKE_NOTE) == 0
+    assert count_questions(note) == 0
+
+
+# --------------------------------------------------------------------------- #
+# NT-47 — 무대지시 문안은 A-level이 고른다 (§4.4 · D-47)
+# --------------------------------------------------------------------------- #
+
+
+def test_uptake_note_table_covers_every_a_level() -> None:
+    """A-level 하나가 표에서 빠지면 그 사건은 `presented()`에서 KeyError로 죽는다.
+
+    자산 검증이 `a_level`을 A_LEVELS로 막고 있으므로, 표가 그 집합을 **정확히** 덮으면
+    무대지시 조회는 실패할 수 없다.
+    """
+    assert set(dossier_loader.UPTAKE_NOTE_BY_A_LEVEL) == A_LEVELS
+
+
+def test_uptake_note_wording_is_canonical() -> None:
+    """[PI 확정 2026-08-29 · D-47] — 문안 3종. 윤문하려면 이 테스트를 먼저 고쳐야 한다.
+
+    A0은 **무표시**다(빈 문자열). "(해당 없음)" 같은 placeholder를 붙이지 않는다 — 참가자
+    화면에 연구 어휘가 들어가고, 그 자체가 사건 분류의 단서가 된다.
+    """
+    assert dossier_loader.UPTAKE_NOTE_BY_A_LEVEL["A0"] == ""
+    assert dossier_loader.UPTAKE_NOTE_BY_A_LEVEL["A1"] == "(이후 응답은 위 범위 안에서 이어짐)"
+    assert dossier_loader.UPTAKE_NOTE_BY_A_LEVEL["A2"] == "(그 후 적절한 답변 제공)"
+
+
+@pytest.mark.parametrize("participant_no", ALL)
+def test_uptake_note_follows_the_a_level(
+    participant_no: str, dossiers: dict[str, Dossier]
+) -> None:
+    """D-47 — 문면 선택의 입력은 `a_level` 하나다. 사건별 예외는 없다(D-45 유지)."""
+    dossier = dossiers[participant_no]
+    assert dossier.uptake_note == dossier_loader.UPTAKE_NOTE_BY_A_LEVEL[
+        dossier.evidence_code.a_level
+    ]
+
+
+def test_uptake_note_passes_the_same_text_rules_as_the_stimulus() -> None:
+    """무대지시도 참가자가 본 AI1의 일부다 — 질문 0개·길이 상한(§6.4 R-3·R-4)을 지난다.
+
+    C4는 `q`가 질문 1개를 쓰므로 무대지시가 질문을 하나라도 더 얹으면 조립 결과의 질문 수
+    계약(NT-22)이 깨진다.
+    """
+    for note in dossier_loader.UPTAKE_NOTE_BY_A_LEVEL.values():
+        assert check_text_rules(note) == []
+        assert count_questions(note) == 0
 
 
 # --------------------------------------------------------------------------- #

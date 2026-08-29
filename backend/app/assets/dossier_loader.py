@@ -54,7 +54,8 @@ QUESTION_COUNT_BY_CONDITION: Mapping[str, int] = MappingProxyType(
     {"C1": 0, "C2": 1, "C3": 0, "C4": 1}
 )
 
-#: §4.4 [PI 확정 2026-08-26 · D-40 · 문안 개정 2026-08-28 · D-45] — u(uptake) 뒤 **무대지시**.
+#: §4.4 [PI 확정 2026-08-26 · D-40 · 문안 개정 2026-08-28 · D-45 · A-level 분기 2026-08-29 · D-47]
+#: — u(uptake) 뒤 **무대지시**. A-level별 1개이고, 한 참가자에게는 조건과 무관하게 1종이다.
 #:
 #: u는 "그 단정을 접고 …해 보겠습니다"처럼 **하겠다는 선언**으로 끝난다. 그대로 두면 참가자가
 #: "왜 해준다고만 하고 실제로는 안 하지?"라고 읽는다(P08 세션에서 실제로 나온 반응). 실제
@@ -65,12 +66,27 @@ QUESTION_COUNT_BY_CONDITION: Mapping[str, int] = MappingProxyType(
 #: payload의 focal AI1에도 그대로 실린다(D-40). `assemble()`(locked 자산의 결정론 조립)은
 #: 손대지 않는다: hash·`stimuli_meta`·자산 계약이 그 문자열을 기준으로 걸려 있다.
 #:
-#: 행위 명사가 "답변"인 이유(D-45): u가 약속하는 일은 dossier마다 비교·판단·재검토·범위
-#: 좁히기·추천으로 갈린다. 초판 문안 "추천"은 추천 사건(P10)에 맞춰져 있어서 나머지
-#: 사건(P00·P05·P08·P15)에서는 무대지시가 자극과 어긋났다. 이 한 줄이 해야 하는 일은
-#: "약속한 것이 실제로 이어졌다"는 신호뿐이므로 행위 유형에 중립이어야 한다. 문자열은
-#: 여전히 전 참가자 공통 1개다 — dossier별 문안은 두지 않는다.
-UPTAKE_NOTE = "(그 후 적절한 답변 제공)"
+#: **A-level로 갈리는 이유**(D-47). uptake가 후속 행위의 선언인 사건(A2)과, 확장을 멈추는
+#: 것이 uptake의 전부인 사건(A1)은 무대지시가 가리켜야 하는 것이 다르다. A1의 u는 "여기서
+#: 일단 멈추고 그대로 두겠습니다"(P14) · "더 이어가지 않겠습니다"(P17)로 끝나는데 거기에
+#: "그 후 적절한 답변 제공"을 붙이면 자극과 정면으로 어긋난다. A1은 제공이 아니라 **범위가
+#: 유지된 채 이어졌다**는 것을 알리고, A0은 아무 것도 붙이지 않는다(빈 문자열 — 무표시).
+#:
+#: A2 문안이 행위 중립인 이유(D-45): u가 약속하는 일은 사건마다 비교·판단·재검토·범위
+#: 좁히기·추천으로 갈린다. 사건별 행위 명사를 채우면 dossier마다 문안 QC와 계약 테스트가
+#: 늘고 "u 안에 실제 내용을 적지 않는다" 규칙이 새므로, D-45가 그 경로를 기각했다. D-47은
+#: 그 결정을 유지한다 — 갈리는 것은 **A-level 3종**이지 사건 24종이 아니다.
+#:
+#: ⚠ 여기가 `a_level`을 읽는 **유일한 표시 경로**다. A-level은 incident descriptor이고
+#: (§1.5-4) 배정표 제약·export 열 밖에서는 조건·분기·검증의 입력이 될 수 없다 — D-47은
+#: **표시 문안 선택 1건에 한한 예외**이며, 다른 분기가 늘지 않는지는 NT-47이 지킨다.
+UPTAKE_NOTE_BY_A_LEVEL: Mapping[str, str] = MappingProxyType(
+    {
+        "A0": "",
+        "A1": "(이후 응답은 위 범위 안에서 이어짐)",
+        "A2": "(그 후 적절한 답변 제공)",
+    }
+)
 
 #: 무대지시가 붙는 자리 — u **바로 뒤**다. C3(r u)는 문말, C4(r u q)는 q 앞이 된다.
 #: q 뒤가 아닌 이유: q는 "다음 응답을 위해 남은 질문"이라 마지막에 있어야 하고(STO1 문항이
@@ -78,7 +94,8 @@ UPTAKE_NOTE = "(그 후 적절한 답변 제공)"
 UPTAKE_NOTE_AFTER = "u"
 
 #: §5.3 — evidence-bounded actionability. **incident descriptor다**(§1.5-4).
-#: 조건·분기·검증의 입력으로 쓰면 결함이다. 배정표 제약과 export 열에만 쓴다.
+#: 조건·분기·검증의 입력으로 쓰면 결함이다. 배정표 제약과 export 열, 그리고 **무대지시 문안
+#: 선택**(D-47 — `UPTAKE_NOTE_BY_A_LEVEL` 한 곳)에만 쓴다.
 A_LEVELS: frozenset[str] = frozenset({"A0", "A1", "A2"})
 
 #: §5.3 `<TODO: PH-03b — broad locus 목록 확정>`. 초판 5종.
@@ -369,16 +386,28 @@ class Dossier:
         """§5.3 lock 절차 완료 여부. locked_at·hash가 있고 현재 내용과 일치해야 한다."""
         return bool(self.locked_at) and self.locked_hash == self.content_hash
 
+    @property
+    def uptake_note(self) -> str:
+        """§4.4 · D-47 — 이 사건의 무대지시 문면. **A0은 빈 문자열**(무표시)이다.
+
+        `a_level`을 읽는 유일한 표시 경로다(§1.5-4의 좁은 예외). 화면이 회색으로 그릴 자리를
+        찾는 `ai1_note`와 `presented()`가 실제로 끼워 넣는 문자열이 같은 값이어야 하므로,
+        둘 다 이 속성을 쓴다 — 두 곳에서 따로 고르면 회색 위치와 문면이 갈라진다.
+        """
+        return UPTAKE_NOTE_BY_A_LEVEL[self.evidence_code.a_level]
+
     def _parts(self, condition: str, *, with_note: bool) -> tuple[str, ...]:
         """§5.4 조립 레시피를 한 번만 걷는다 — `assemble()`·`presented()`의 공통 몸통."""
         recipe = STIMULUS_RECIPE.get(condition)
         if recipe is None:
             raise KeyError(f"알 수 없는 조건: {condition!r}")
+        note = self.uptake_note
         parts: list[str] = []
         for key in recipe:
             parts.append(self.stimulus.segment(key))
-            if with_note and key == UPTAKE_NOTE_AFTER:
-                parts.append(UPTAKE_NOTE)
+            # A0은 문면이 비어 있다 — 빈 조각을 끼우면 공백 하나가 남는다(D-47).
+            if with_note and note and key == UPTAKE_NOTE_AFTER:
+                parts.append(note)
         return tuple(parts)
 
     def assemble(self, condition: str) -> str:
@@ -401,13 +430,17 @@ class Dossier:
         없으면, 참가자는 "이미 답변을 받은 대화"를 이어가는데 AI2는 그 사실을 모른 채
         그 답변을 처음부터 다시 하게 된다(P6에서 AI1과 AI2가 나란히 보이므로 바로 어긋나 보인다).
 
-        C1·C2에는 u가 없으므로 `assemble()`과 같은 문자열이다.
+        C1·C2에는 u가 없으므로 `assemble()`과 같은 문자열이다. **A0 사건도 마찬가지다** —
+        무대지시 문면이 비어 있어 네 조건 전부 `assemble()`과 같다(D-47).
         """
         return " ".join(self._parts(condition, with_note=True))
 
     def has_uptake_note(self, condition: str) -> bool:
-        """이 조건의 AI1에 무대지시가 붙는가 (C3·C4)."""
-        return UPTAKE_NOTE_AFTER in STIMULUS_RECIPE.get(condition, ())
+        """이 조건의 AI1에 무대지시가 붙는가 — u가 있고(C3·C4) **문면이 비어 있지 않을** 때다.
+
+        A0은 문면이 없으므로 C3·C4에서도 False다(D-47).
+        """
+        return bool(self.uptake_note) and UPTAKE_NOTE_AFTER in STIMULUS_RECIPE.get(condition, ())
 
     def stimulus_hash(self, condition: str) -> str:
         """§8.1 `focal_runs.stimulus_hash`·`alt_exposures.stimulus_hash` — 조립 결과의 sha256."""

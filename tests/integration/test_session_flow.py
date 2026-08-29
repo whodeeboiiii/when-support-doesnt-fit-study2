@@ -754,7 +754,9 @@ async def test_p4_carries_the_uptake_note_for_a_c3_focal(client: AsyncClient) ->
 
     assert state["screen"] == "P4"
     assert state["data"]["ai1"] == dossier.presented("C3")
-    assert state["data"]["ai1"].endswith(dossier_loader.UPTAKE_NOTE)
+    # P05는 A2 — 무대지시가 "(그 후 …)" 쪽이다(D-47). 문면은 dossier가 고른다.
+    assert dossier.uptake_note
+    assert state["data"]["ai1"].endswith(dossier.uptake_note)
 
 
 async def test_uptake_note_field_ships_regardless_of_condition(client: AsyncClient) -> None:
@@ -767,8 +769,8 @@ async def test_uptake_note_field_ships_regardless_of_condition(client: AsyncClie
     state = await helpers.reach_focal(client, "P00")  # QA = focal C1
     dossier = dossier_loader.load("P00")
 
-    assert state["data"]["ai1_note"] == dossier_loader.UPTAKE_NOTE
-    assert dossier_loader.UPTAKE_NOTE not in state["data"]["ai1"]
+    assert state["data"]["ai1_note"] == dossier.uptake_note
+    assert dossier.uptake_note not in state["data"]["ai1"]
     assert state["data"]["ai1"] == dossier.assemble("C1")
 
 
@@ -801,8 +803,8 @@ async def test_pairwise_sides_carry_the_note_only_where_it_belongs(
     dossier = dossier_loader.load("P00")
     assert state["screen"] == "P10"
 
-    assert state["data"]["ai1_note"] == dossier_loader.UPTAKE_NOTE
+    assert state["data"]["ai1_note"] == dossier.uptake_note
     texts = [side["ai1"] for side in state["data"]["sides"]]
     # 첫 pair는 정본 순서상 sequence(C2 vs C4) — C4 쪽 하나에만 붙는다(D-41).
-    assert sum(dossier_loader.UPTAKE_NOTE in text for text in texts) == 1
+    assert sum(dossier.uptake_note in text for text in texts) == 1
     assert set(texts) == {dossier.presented("C2"), dossier.presented("C4")}
