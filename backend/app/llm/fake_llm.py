@@ -22,7 +22,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 
 from app.llm.gateway.client import LLMRequest, LLMResponse
-from app.llm.prompts import AI2_PROMPT_KEY, CHECKER_PROMPT_KEY
+from app.llm.prompts import AI2_CONSTRAINED_PROMPT_KEY, AI2_PROMPT_KEY, CHECKER_PROMPT_KEY
 
 #: 부록 A.1·A.2 v2 프롬프트의 블록 머리말.
 _CONTEXT_BLOCK = "[대화 맥락]"
@@ -110,7 +110,13 @@ def _default_checker(request: LLMRequest) -> str:
     return json.dumps({"violations": violations, "pass": False}, ensure_ascii=False)
 
 
-_DYNAMIC_DEFAULTS = {AI2_PROMPT_KEY: _default_ai2, CHECKER_PROMPT_KEY: _default_checker}
+#: R3(A.1b 최대 제약 모드)은 A.1과 같은 블록 구조를 쓰므로 기본 응답도 같다 — fixture
+#: 트리거도 그대로 먹는다(위반 초안을 R3에서도 재현할 수 있어야 fallback 경로가 닫힌다).
+_DYNAMIC_DEFAULTS = {
+    AI2_PROMPT_KEY: _default_ai2,
+    AI2_CONSTRAINED_PROMPT_KEY: _default_ai2,
+    CHECKER_PROMPT_KEY: _default_checker,
+}
 
 
 class FakeLLM:

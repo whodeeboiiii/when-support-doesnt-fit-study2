@@ -158,7 +158,47 @@ def test_checker_prompt_carries_no_text_from_any_incident() -> None:
 def test_prompt_role_mapping_is_dual_provider() -> None:
     """§2.2.1 D-18 이원화 — 생성은 MAIN, 검증은 VALIDATOR."""
     assert prompts.PROMPT_KEY_ROLE[prompts.AI2_PROMPT_KEY] == "main"
+    assert prompts.PROMPT_KEY_ROLE[prompts.AI2_CONSTRAINED_PROMPT_KEY] == "main"
     assert prompts.PROMPT_KEY_ROLE[prompts.CHECKER_PROMPT_KEY] == "validator"
+
+
+# --------------------------------------------------------------------------- #
+# NT-48 — A.1b R3 최대 제약 모드 (§6.1 · D-48)
+# --------------------------------------------------------------------------- #
+
+
+def test_constrained_prompt_has_the_same_data_blocks_as_a1() -> None:
+    """A.1b는 A.1과 **같은 자료부**를 쓴다 — 조립기(`build_ai2_payload`)가 하나이기 때문이다."""
+    from app.llm import context
+
+    payload = context._split_at_context(
+        prompts.system_template(prompts.AI2_CONSTRAINED_PROMPT_KEY)
+    )
+    assert payload.user.startswith(context.CONTEXT_BLOCK)
+    for slot in ("{ai_visible_context}", "{focal_ai1}", "{user1}"):
+        assert slot in payload.user and slot not in payload.system
+
+
+def test_constrained_prompt_states_the_three_constraints() -> None:
+    """§6.1 R3 — 질문 0개 · 사용자에 대한 서술 금지 · 맥락 안의 내용만.
+
+    이 셋이 R3의 존재 이유다: 질문을 안 하면 R-3이, 사용자에 대해 서술하지 않으면
+    unsupported_inference가, 맥락 안에서만 쓰면 expansion이 성립할 수 없다. 문면이 흐려지면
+    R3은 그냥 네 번째 후보가 된다.
+    """
+    system = prompts.system_template(prompts.AI2_CONSTRAINED_PROMPT_KEY)
+    assert "질문을 하지 않습니다" in system
+    assert "사용자에 대해 말하는 대신" in system
+    assert "이미 있는 내용만" in system
+    # 하겠다는 말만 남기지 않게 하는 조항 — 이게 없으면 R3이 곧 fallback과 같아진다.
+    assert "하겠다는 말만 남기지 않습니다" in system
+
+
+def test_constrained_prompt_shares_the_generation_parameters() -> None:
+    """§6.6 — 생성 파라미터는 A.1과 같다. R3이 좁히는 것은 **문면**이지 temperature가 아니다."""
+    assert prompts.parameters(prompts.AI2_CONSTRAINED_PROMPT_KEY) == prompts.parameters(
+        prompts.AI2_PROMPT_KEY
+    )
 
 
 def test_system_part_carries_the_whole_policy_not_just_the_first_line() -> None:

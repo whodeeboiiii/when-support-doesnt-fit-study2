@@ -325,23 +325,36 @@ async def test_prohibited_inference_is_the_only_evidence_code_field_in_llm(
 
 
 def test_build_ai2_payload_signature_is_the_allowlist() -> None:
-    """§6.2 — `build_ai2_payload(effective, focal_ai1, user1, *, violation_types)`.
+    """§6.2 — `build_ai2_payload(effective, focal_ai1, user1, *, feedback, prompt_key)`.
 
-    시그니처가 곧 allowlist이므로, 인자가 늘면 이 테스트가 먼저 깨진다.
+    시그니처가 곧 allowlist이므로, **사건 자료**를 받는 인자가 늘면 이 테스트가 먼저 깨진다.
+    `feedback`·`prompt_key`는 자료가 아니다 — 전자는 직전 라운드 초안에서 나온 문자열이고
+    후자는 정책 문면의 선택이다(D-48).
     """
     import inspect
 
-    from app.llm import context
+    from app.llm import context, prompts
 
     # `from __future__ import annotations` 때문에 문자열로 남는다 — 실제 타입으로 푼다.
     signature = inspect.signature(context.build_ai2_payload, eval_str=True)
-    assert list(signature.parameters) == ["effective", "focal_ai1", "user1", "violation_types"]
+    assert list(signature.parameters) == [
+        "effective",
+        "focal_ai1",
+        "user1",
+        "feedback",
+        "prompt_key",
+    ]
     assert (
         signature.parameters["effective"].annotation is dossier_loader.EffectiveAiVisible
     ), "원문(AiVisible)이 아니라 **수정본**을 받아야 한다 (D-25)"
-    # 나머지 둘은 문자열이다 — `Dossier`를 받을 자리가 없다는 것이 allowlist의 실질이다.
-    for name in ("focal_ai1", "user1"):
+    # 나머지는 문자열이다 — `Dossier`를 받을 자리가 없다는 것이 allowlist의 실질이다.
+    for name in ("focal_ai1", "user1", "feedback", "prompt_key"):
         assert signature.parameters[name].annotation is str
+    # 프롬프트 선택지는 생성 프롬프트 둘뿐이다. checker 프롬프트로는 생성하지 않는다.
+    assert set(context._AI2_PROMPT_KEYS) == {
+        prompts.AI2_PROMPT_KEY,
+        prompts.AI2_CONSTRAINED_PROMPT_KEY,
+    }
 
 
 def test_build_checker_payload_signature() -> None:
@@ -380,22 +393,43 @@ def test_ai2_payload_rejects_empty_focal_ai1() -> None:
         context.build_ai2_payload(effective, "", "비교만 해줘")
 
 
-def test_regeneration_feedback_carries_types_not_spans() -> None:
-    """§6.4 — 재생성 피드백에 **위반 유형만** 싣는다.
+def test_regeneration_feedback_carries_instructions_and_checker_spans_only() -> None:
+    """§6.4 (D-48) — [수정 요청]에는 **사람이 읽는 지시** + checker span만 싣는다.
 
-    span에는 sidecar·researcher_only·수정 전 원문이 들어 있을 수 있고, 그대로 돌려보내면
-    그 자체가 §1.2 위반이다.
+    checker span을 실어도 되는 이유는 구조적이다: checker는 규칙 계층(R-1 포함)을 통과한
+    초안에만 돌므로 그 초안에 금지 문자열이 남아 있을 수 없다. 반대로 **규칙 위반 쪽
+    detail은 어떤 경우에도 싣지 않는다** — 라벨뿐이라도 그 규율을 흐리지 않는다.
     """
     from app.llm import context
 
     dossier = dossier_loader.load("P00")
     effective = dossier_loader.build_effective(dossier.ai_visible, {})
+    feedback = context.render_feedback(
+        [{"rule": "R-3", "detail": "질문 2개 — 상한 1개"}],
+        [{"type": "expansion", "span": "6개월 커리어 계획", "rationale": "새 주제"}],
+    )
     payload = context.build_ai2_payload(
-        effective, dossier.assemble("C1"), "비교만 해줘", violation_types=["R-3", "expansion"]
+        effective, dossier.assemble("C1"), "비교만 해줘", feedback=feedback
     )
     joined = payload.joined()
-    assert "R-3" in joined and "expansion" in joined
+
+    assert context.RULE_FEEDBACK["R-3"] in joined, "규칙 위반이 지시로 번역되지 않았다"
+    assert "6개월 커리어 계획" in joined, "checker span이 실리지 않았다"
+    assert "R-3" not in joined, "규칙 ID를 그대로 보냈다 — 모델에게 의미가 없다"
+    assert "질문 2개 — 상한 1개" not in joined, "규칙 위반 detail이 실렸다"
     assert SIDECAR_SENTINEL not in joined
+
+
+def test_regeneration_feedback_never_carries_a_rule_violation_detail() -> None:
+    """§1.2 · §2.9 — R-1 detail은 라벨이지만, 그것도 [수정 요청]으로 돌아가지 않는다."""
+    from app.llm import context
+
+    feedback = context.render_feedback(
+        [{"rule": "R-1", "detail": f"{SIDECAR_SENTINEL} 문자열이 출력에 등장했다"}], []
+    )
+    assert feedback, "R-1도 지시로는 번역된다"
+    assert SIDECAR_SENTINEL not in feedback
+    assert "문자열이 출력에 등장했다" not in feedback
 
 
 def test_render_ai_visible_omits_researcher_metadata() -> None:

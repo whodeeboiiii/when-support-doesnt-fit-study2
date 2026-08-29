@@ -1,6 +1,7 @@
 """prompt_config 로더 (구현명세서 §6.6 · 부록 A.1·A.2 (v2)).
 
-`prompts/prompt_config_v2.json`이 **단일 정본**이다: AI2 시스템 프롬프트·checker 프롬프트·
+`prompts/prompt_config_v2.json`이 **단일 정본**이다: AI2 시스템 프롬프트(A.1)·R3 최대 제약
+프롬프트(A.1b — D-48)·checker 프롬프트(A.2)·
 파라미터(temperature·max_tokens)·`prompt_hash`. (`normalization_patterns_version` 키는 v2에서
 삭제됐다 — D-34.) 코드에 프롬프트 문자열을
 복사해 두지 않는다 — 두 곳에 있으면 어느 쪽이 실제로 호출된 문안인지 audit이 답하지 못한다.
@@ -25,12 +26,19 @@ from app.llm.gateway.client import ModelRole
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PROMPT_CONFIG_PATH = REPO_ROOT / "prompts" / "prompt_config_v2.json"
 
-#: 프롬프트 키 (§8.4 audit·fake LLM 분기). 부록 A.1 / A.2에 대응한다.
+#: 프롬프트 키 (§8.4 audit·fake LLM 분기). 부록 A.1 / A.1b / A.2에 대응한다.
 AI2_PROMPT_KEY = "ai2_generation"
 CHECKER_PROMPT_KEY = "integrity_checker"
 
+#: §6.1 R3 — **최대 제약 모드**(부록 A.1b, D-48). R1·R2가 모두 기각된 뒤 `neutral_fallback`
+#: 직전에 1회 돌린다. 질문 0개·사용자에 대한 서술 금지·맥락 내 내용만으로 출력 공간을 좁혀
+#: 세 위반 유형(R-3 / unsupported_inference / expansion)이 **구조적으로 성립할 수 없게** 한다.
+#: A.1(`ai2_generation`)은 이것과 무관하게 lock 상태 그대로다.
+AI2_CONSTRAINED_PROMPT_KEY = "ai2_constrained"
+
 PROMPT_KEY_ROLE: dict[str, ModelRole] = {
     AI2_PROMPT_KEY: ModelRole.MAIN,
+    AI2_CONSTRAINED_PROMPT_KEY: ModelRole.MAIN,
     CHECKER_PROMPT_KEY: ModelRole.VALIDATOR,
 }
 

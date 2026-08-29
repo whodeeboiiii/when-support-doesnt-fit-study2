@@ -63,11 +63,18 @@ class Settings(BaseSettings):
     #: [확인 1] 슬러그 가용성·단가는 개발 착수 시 OpenRouter 현행으로 재확인한다(부록 F).
     main_model_id: str | None = None
     validator_model_id: str | None = None
-    #: §0.5 — 동시 세션 상정 1–2
-    llm_concurrency: int = 2
+    #: §0.5 — 동시 세션 상정 1–2. **한 세션이 라운드당 후보 3건을 동시에 부른다**(D-48)
+    #: 이므로 연구자 2인 병행 진행이면 3×2 + checker 여유가 필요하다. 이 값이 작으면
+    #: 병렬 후보가 세마포어에서 직렬화돼 라운드 시간이 후보 수만큼 늘고, 45초 상한 안에서
+    #: R2·R3에 도달하지 못한다.
+    llm_concurrency: int = 8
     #: §0.5 [파일럿 확정]
     ai2_timeout_ms: int = 90_000
     checker_timeout_ms: int = 45_000
+    #: §6.1 AI2 한 턴의 **벽시계 상한(초)** [PI 확정 2026-08-29 · D-48]. 시도 수만으로는
+    #: §9.1이 닫히지 않는다 — 상한을 넘길 라운드는 시작하지 않고, 호출 타임아웃도 잔여로
+    #: 깎는다. 잔여가 checker를 못 돌릴 만큼이면 규칙 계층만으로 판정한다(`checker_skipped`).
+    ai2_deadline_seconds: int = 45
 
     # --- 연구자 콘솔 (§2.7 HTTP Basic auth) ---
     admin_user: str | None = None

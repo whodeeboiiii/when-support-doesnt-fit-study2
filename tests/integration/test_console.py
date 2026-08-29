@@ -416,7 +416,10 @@ async def test_r3_contrastive_view_shows_everything_the_interview_needs(
     assert trajectory["downstream"]["end_type"] == "seek_human"
     assert trajectory["downstream"]["reason_text"] == "사람에게 묻고 싶다"
     # §8.4 — generation 경로가 그대로 보인다(NT-15).
-    assert trajectory["generation_path"] and trajectory["generation_path"][-1]["final"] is True
+    # D-48 — 한 라운드에 후보가 여럿이다. `final`은 그중 정확히 1행이고, 마지막 행이
+    # 아니라 **먼저 통과한 후보**다.
+    finals = [row for row in trajectory["generation_path"] if row["final"]]
+    assert len(finals) == 1, f"final 행이 {len(finals)}개다"
 
     # ② 평정·MC
     from app.assets import rating_items

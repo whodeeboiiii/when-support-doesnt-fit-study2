@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.assets.dossier_loader import EffectiveAiVisible
 from app.llm import context, prompts
-from app.llm.gateway.calls import CallFailed, call_model
+from app.llm.gateway.calls import CallAttempt, CallFailed, dispatch_model, record_call
 from app.notify.discord import NotifyEvent, notify
 
 logger = logging.getLogger(__name__)
@@ -76,17 +76,16 @@ def parse_verdict(data: dict[str, Any] | None) -> CheckerVerdict:
     return CheckerVerdict(passed=not violations, violations=violations, result=data)
 
 
-async def run(
-    session: AsyncSession,
+async def dispatch(
     *,
     effective: EffectiveAiVisible,
     focal_ai1: str,
     user1: str,
     draft: str,
     prohibited_inference: Sequence[str] = (),
-    generation_id: uuid.UUID | None = None,
-) -> CheckerVerdict:
-    """checker 1회. 실패는 예외로 올리지 않고 `skipped` 판정으로 흡수한다(§9.1).
+    timeout_override_ms: int | None = None,
+) -> CallAttempt:
+    """checker 1건의 **왕복만** 한다 — DB를 건드리지 않는다(§6.1 라운드 병렬).
 
     입력은 §6.4가 허용한 다섯이다: effective checkpoint · focal AI1 · User1 · 초안 ·
     prohibited_inference (NT-02). 시그니처가 그 목록이다.
@@ -94,14 +93,27 @@ async def run(
     payload = context.build_checker_payload(
         effective, focal_ai1, user1, draft, prohibited_inference
     )
+    return await dispatch_model(
+        prompt_key=prompts.CHECKER_PROMPT_KEY,
+        system=payload.system,
+        user=payload.user,
+        timeout_override_ms=timeout_override_ms,
+    )
+
+
+async def absorb(
+    session: AsyncSession,
+    attempt: CallAttempt,
+    *,
+    generation_id: uuid.UUID | None = None,
+) -> CheckerVerdict:
+    """왕복 결과를 `llm_calls`에 남기고 판정으로 바꾼다. 실패는 `skipped`로 흡수한다(§9.1).
+
+    판정 불능을 위반으로 취급하면 정상 생성물이 fallback으로 떨어지고, 그건 조작 자체를
+    바꾼다(§6.6은 fallback을 예외 경로로 설계했다).
+    """
     try:
-        result = await call_model(
-            session,
-            prompt_key=prompts.CHECKER_PROMPT_KEY,
-            system=payload.system,
-            user=payload.user,
-            generation_id=generation_id,
-        )
+        result = await record_call(session, attempt, generation_id=generation_id)
         return parse_verdict(result.data)
     except (CallFailed, ValueError) as exc:
         logger.warning("checker 판정 불가 — 규칙 계층만으로 진행한다: %s", exc)
@@ -112,3 +124,33 @@ async def run(
         )
         # 판정 불능은 통과로 취급한다. 위반으로 취급하면 정상 생성물이 fallback으로 떨어진다.
         return CheckerVerdict(passed=True, violations=[], result=None, skipped=True)
+
+
+def skipped_verdict() -> CheckerVerdict:
+    """예산 소진으로 **호출 자체를 하지 않은** 경우의 판정 (§6.1 벽시계 상한 · §9.1).
+
+    호출하지 않은 것도 판정 불능이다 — 같은 자리로 수렴시킨다. `llm_calls` 행이 없다는 점이
+    타임아웃과 다르고, `generations.checker_skipped=True` + checker 행 부재로 구분된다.
+    """
+    return CheckerVerdict(passed=True, violations=[], result=None, skipped=True)
+
+
+async def run(
+    session: AsyncSession,
+    *,
+    effective: EffectiveAiVisible,
+    focal_ai1: str,
+    user1: str,
+    draft: str,
+    prohibited_inference: Sequence[str] = (),
+    generation_id: uuid.UUID | None = None,
+) -> CheckerVerdict:
+    """checker 1회(왕복 + 기록). 단건 경로가 쓰는 진입점이다."""
+    attempt = await dispatch(
+        effective=effective,
+        focal_ai1=focal_ai1,
+        user1=user1,
+        draft=draft,
+        prohibited_inference=prohibited_inference,
+    )
+    return await absorb(session, attempt, generation_id=generation_id)

@@ -31,10 +31,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Sequence
+from types import MappingProxyType
+from typing import Any, Mapping, Sequence
 
 from app.assets.dossier_loader import EffectiveAiVisible
-from app.llm import prompts
+from app.llm import integrity_rules, prompts
 
 #: 부록 A.1·A.2의 블록 머리말. 프롬프트 문안과 같은 문자열이어야 한다.
 CONTEXT_BLOCK = "[대화 맥락]"
@@ -47,11 +48,52 @@ FEEDBACK_BLOCK = "[수정 요청]"
 _AI2_PLACEHOLDERS = ("{ai_visible_context}", "{focal_ai1}", "{user1}")
 _CHECKER_PLACEHOLDER = "{prohibited_inference}"
 
-#: §6.4 재생성 안내 [제안]. **위반 유형만** 싣는다 — 위반 span에는 sidecar·researcher_only·
-#: 수정 전 원문이 들어 있을 수 있고(R-1), 그걸 되돌려 보내면 그 자체가 §1.2 위반이다.
-REGENERATION_NOTICE = (
-    "직전 초안에서 다음 문제가 발견되었습니다: {types}. 위 원칙을 모두 지켜 다시 작성하세요."
+#: §6.1 — 생성 프롬프트로 쓸 수 있는 키. R3의 최대 제약 모드(A.1b)가 두 번째다(D-48).
+_AI2_PROMPT_KEYS = (prompts.AI2_PROMPT_KEY, prompts.AI2_CONSTRAINED_PROMPT_KEY)
+
+#: §6.4 재생성 안내 (D-48 개정). v2는 위반 **유형 문자열**만 실었다 — 규칙 위반이면 모델에게
+#: 가는 문구가 문자 그대로 "R-3"이어서 아무것도 전달되지 않았다. 유형별로 **사람이 읽는
+#: 지시**를 싣고, checker 위반에는 직전 초안의 **span**을 함께 싣는다.
+#:
+#: ⚠ span을 실어도 되는 이유는 구조적이다. checker는 **규칙 계층을 통과한 초안에만** 돈다
+#: (§6.1 — 규칙 위반이 있으면 checker를 부르지 않는다). 그래서 그 초안에는 R-1 금지 문자열이
+#: 8자 이상 남아 있을 수 없고, 거기서 뽑은 span도 마찬가지다. **규칙 위반 쪽 detail은 어떤
+#: 경우에도 싣지 않는다** — 라벨뿐이라도 그 규율을 여기서 흐리지 않는다(§1.2 · §2.9).
+RULE_FEEDBACK: Mapping[str, str] = MappingProxyType(
+    {
+        "R-1": (
+            "직전 초안에 이 대화에 없는 자료의 문구가 들어갔습니다. 위에 주어진 [대화 맥락]·"
+            "[AI의 직전 답변]·[사용자 메시지] 안의 내용만 쓰세요."
+        ),
+        "R-3": "직전 초안에 질문이 두 개 이상 있었습니다. 질문은 최대 한 개입니다.",
+        "R-4": f"직전 초안이 너무 깁니다. {integrity_rules.MAX_OUTPUT_CHARS}자 이내로 쓰세요.",
+    }
 )
+
+#: 부록 A.2의 세 위반 유형 → 재생성 지시. `{spans}`에 직전 초안의 해당 부분이 들어간다.
+CHECKER_FEEDBACK: Mapping[str, str] = MappingProxyType(
+    {
+        "unsupported_inference": (
+            "직전 초안이 사용자에 대해 대화에 없는 것을 사실처럼 단정했습니다({spans}). 그 "
+            "내용은 사용자가 실제로 말한 범위 안에서만 다루거나, 아직 정해지지 않았다면 경우를 "
+            "나누어 각각을 같은 무게로 쓰세요."
+        ),
+        "expansion": (
+            "직전 초안이 대화에 없던 새 주제·장기 계획으로 넘어갔습니다({spans}). 지금까지 나온 "
+            "범위 안에서만 쓰세요."
+        ),
+        "correction_ignored": (
+            "직전 초안이 [사용자 메시지]에서 요청한 수정·경계를 반영하지 않았습니다({spans}). "
+            "그 요청을 그대로 반영해 다시 쓰세요."
+        ),
+    }
+)
+
+#: 유형당 인용할 span 수 상한. 전부 실으면 [수정 요청] 블록이 초안보다 길어진다.
+MAX_FEEDBACK_SPANS = 2
+
+REGENERATION_NOTICE_HEAD = "직전 초안은 다음 이유로 사용할 수 없습니다."
+REGENERATION_NOTICE_TAIL = "위 원칙을 모두 지켜 다시 작성하세요."
 
 
 class PayloadAssemblyError(RuntimeError):
@@ -113,32 +155,70 @@ def _assert_filled(text: str, placeholders: Sequence[str]) -> None:
             raise PayloadAssemblyError(f"치환되지 않은 자리: {placeholder}")
 
 
+def render_feedback(
+    rule_violations: Sequence[dict[str, Any]] = (),
+    checker_violations: Sequence[dict[str, Any]] = (),
+) -> str:
+    """§6.4 [수정 요청] 블록 문면 (D-48). 유형별 지시 + checker span.
+
+    같은 유형이 여러 후보에서 나와도 지시는 한 번만 싣는다 — 라운드 안의 후보 3건이 같은
+    이유로 기각되는 것은 흔한 일이고, 같은 문장을 세 번 보내면 그게 곧 강조가 된다.
+    """
+    lines: list[str] = []
+    for rule in dict.fromkeys(str(item.get("rule", "")) for item in rule_violations):
+        text = RULE_FEEDBACK.get(rule)
+        if text:
+            lines.append(f"- {text}")
+
+    spans_by_type: dict[str, list[str]] = {}
+    for item in checker_violations:
+        kind = str(item.get("type", ""))
+        if kind not in CHECKER_FEEDBACK:
+            continue
+        span = str(item.get("span", "")).strip()
+        bucket = spans_by_type.setdefault(kind, [])
+        if span and span not in bucket and len(bucket) < MAX_FEEDBACK_SPANS:
+            bucket.append(span)
+    for kind, spans in spans_by_type.items():
+        quoted = " / ".join(f'"{span}"' for span in spans) if spans else "해당 부분"
+        lines.append(f"- {CHECKER_FEEDBACK[kind].format(spans=quoted)}")
+
+    if not lines:
+        return ""
+    return "\n".join([REGENERATION_NOTICE_HEAD, *lines, REGENERATION_NOTICE_TAIL])
+
+
 def build_ai2_payload(
     effective: EffectiveAiVisible,
     focal_ai1: str,
     user1: str,
     *,
-    violation_types: Sequence[str] = (),
+    feedback: str = "",
+    prompt_key: str = prompts.AI2_PROMPT_KEY,
 ) -> Payload:
-    """§6.2 AI2 입력 3종 (D-34). `violation_types`는 §6.4의 재생성 1회에서만 채워진다.
+    """§6.2 AI2 입력 3종 (D-34). `feedback`은 §6.4의 R2에서만 채워진다.
 
-    시그니처가 곧 allowlist다 — 인자가 셋뿐이므로 여기 없는 정보는 payload에 실릴 방법이 없다.
+    시그니처가 곧 allowlist다 — 사건 자료는 인자가 셋뿐이므로 여기 없는 정보는 payload에
+    실릴 방법이 없다. `prompt_key`는 **정책 문면**의 선택이지 자료가 아니다(R3의 최대 제약
+    모드가 A.1b를 고른다 — D-48). `feedback`은 직전 라운드의 초안에서 나온 문자열이고, 그
+    안전성은 `render_feedback()`의 주석이 논증한다.
     """
     if not user1.strip():
         raise PayloadAssemblyError("User1이 비어 있다 — User1은 필수다(§4.4 · D-32)")
     if not focal_ai1.strip():
         raise PayloadAssemblyError("focal AI1이 비어 있다 — 조립된 자극이 필요하다(§5.4)")
+    if prompt_key not in _AI2_PROMPT_KEYS:
+        raise PayloadAssemblyError(f"AI2 생성 프롬프트가 아니다: {prompt_key!r}")
 
-    filled = prompts.system_template(prompts.AI2_PROMPT_KEY)
+    filled = prompts.system_template(prompt_key)
     filled = filled.replace("{ai_visible_context}", render_ai_visible(effective))
     filled = filled.replace("{focal_ai1}", focal_ai1)
     filled = filled.replace("{user1}", user1)
     _assert_filled(filled, _AI2_PLACEHOLDERS)
 
     payload = _split_at_context(filled)
-    if violation_types:
-        notice = REGENERATION_NOTICE.format(types=", ".join(sorted(set(violation_types))))
-        payload = Payload(payload.system, f"{payload.user}\n\n{FEEDBACK_BLOCK}\n{notice}")
+    if feedback:
+        payload = Payload(payload.system, f"{payload.user}\n\n{FEEDBACK_BLOCK}\n{feedback}")
     return payload
 
 
